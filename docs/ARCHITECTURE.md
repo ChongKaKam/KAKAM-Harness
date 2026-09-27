@@ -1,25 +1,50 @@
 # KH-Kernel 架构
 
+本文描述当前实现与需要保留的边界。入门阅读顺序见 [开发指南](DEVELOPMENT.md)，新增功能见 [FEATURES.md](FEATURES.md)，组件与视觉契约见 [UI_GUIDE.md](UI_GUIDE.md)。名称区分：Drift Space 是产品，KAKAM-Harness 是仓库，KH-Kernel 是平台层；Cordis 是被嵌入的库。
+
 ## 分层
 
 ```mermaid
 flowchart TD
-    UI[React Web Shell] --> Client[Feature Client Registry]
-    Client --> HTTP[HTTP API + 已验证 Request.user]
-    HTTP --> Kernel[KH-Kernel / Feature Registry]
-    Kernel --> Engine[Cordis Context / inject / effect]
-    Engine --> Core[Core features: auth users models chat usage preferences]
-    Engine --> Plugins[Optional features: prompts]
+    Main[server/main.ts] --> App[createApp / composition root]
+    App --> Kernel[KH-Kernel]
+    Kernel --> Engine[Cordis Context / Service / inject / effect]
+    Engine --> Core[Core: auth users models chat usage preferences]
+    Engine --> Plugins[Plugin: prompts]
+    UI[React Web Shell + Client Registry] --> HTTP[Express /api + 已验证 Request.user]
+    HTTP --> Routes[HttpService / 活动 Router 列表]
+    Routes --> Core
+    Routes --> Plugins
     Core --> DB[SQLite / WAL]
     Plugins --> DB
     Core --> AR[Adapter Registry]
     AR --> OA[OpenAI Compatible Adapter]
-    OA --> Provider[Configured model provider]
+    OA --> Provider[管理员配置的模型来源]
 ```
 
 **Cordis engine** 提供 Context、服务依赖注入和生命周期。**KH-Kernel** 管理本应用的 feature catalog、启动验证、核心能力保护、启停状态持久化。**Adapter** 隔离供应商模型协议。没有 fork 或重写 Cordis。
 
 Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启动等待生命周期任务完成，注册失败时拒绝启动。
+
+## 装配和运行路径
+
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → chat → usage → prompts → preferences 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和默认 OpenAI Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+
+每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
+
+客户端入口 [`client/main.tsx`](../src/client/main.tsx) 创建 UiProvider 和 App。App 解析 hash 路由、加载当前用户、获取服务器 feature 状态；编译期 `clientFeatures` 与运行时目录取交集，决定可见组件。UI 隐藏不代表后端已经鉴权，后端仍独立执行权限与归属校验。
+
+| Feature ID    | kind   | 提供的能力                                        | 主要 UI 位置                   |
+| ------------- | ------ | ------------------------------------------------- | ------------------------------ |
+| `auth`        | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像  | 登录页 / 设置中的账户设置      |
+| `users`       | core   | 管理用户、角色、停用、重置与会话撤销              | 管理员设置                     |
+| `models`      | core   | ModelsService、来源、白名单、模型授权、连通性测试 | 管理员设置；聊天可见已授权模型 |
+| `chat`        | core   | 私有对话、后台生成、SSE 订阅与停止                | 工作区                         |
+| `usage`       | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
+| `preferences` | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
+| `prompts`     | plugin | 私人提示词、配色、带草稿进入对话                  | 工作区                         |
+
+Models 的管理页受管理员限制，但已授权模型列表 API 向普通用户开放；不能把整个 models feature 的 HTTP 接口统一锁成管理员专用。Core / Plugin 是生命周期分类，`adminOnly` 是目录可见性，两者不是同一个维度。
 
 ## 关键边界
 
@@ -38,6 +63,8 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 Core 和可选插件都按 feature 组织；“core”指平台启动必须具备且不允许在 UI 停用的 feature，区别于 Cordis 引擎自身。
 
+注册与启停通过 Kernel 的 promise 链串行化，重复启用不会重复装配作用域。`settings` 保留启停状态，新插件无历史记录时启用；停用不删除数据，也不从前端 bundle 删除代码。没有沙箱隔离，只有可信的构建期模块与可释放的运行作用域。
+
 ## 安全与持久化
 
 - 密码以随机盐 + scrypt 哈希保存。首位用户通过公开注册创建，角色判断与插入在同一 SQLite 写事务内完成，避免并发产生多位初始管理员。后续注册忽略客户端角色，强制普通用户。
@@ -49,6 +76,23 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - `providers.api_mode` 追加迁移默认 `chat-completions`。同一 Adapter 依据来源分别序列化 Chat Completions 与 Responses；思考字段只在非 none 时发送。`ui_preferences` 以 user_id 隔离主题和头像。
 - 来源地址只允许管理员配置 HTTP(S)，默认不跟随重定向。支持内网模型是预期能力，因此没有阻止管理员选择私网地址。插件与管理员都属于可信边界，不能用它作为不可信租户任意网络访问的平台。
 - SQLite WAL、外键和关键索引；涉及模型授权或聊天 / 用量的关联写入使用事务。未来扩容多实例时需迁移存储和生成锁。
+
+### 数据归属
+
+| 数据                           | 当前持久化位置                                 | 边界                                                           |
+| ------------------------------ | ---------------------------------------------- | -------------------------------------------------------------- |
+| 账户 / 头像 / 会话             | `users`、`sessions`                            | 会话只存 token 摘要，客户端持有原 token                        |
+| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`          | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                  |
+| 对话 / 消息 / 图片             | `conversations`、`messages`                    | 图片随消息保存在数据库，访问检查用户归属                       |
+| 用量                           | `usage`                                        | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
+| 插件启停 / 提示词              | `settings`、`prompts`                          | 停用保留数据，重启恢复启停状态                                 |
+| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                               | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
+| 字号                           | localStorage `drift:font-size:<userId>`        | 按账户和当前浏览器保存，不随服务器备份迁移                     |
+| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>` | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
+
+表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。当前数据库事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
+
+`PUBLIC_ORIGIN` 目前只接受一个来源，比较浏览器发送的 Origin。`COOKIE_SECURE` 控制会话 Cookie 的 HTTPS 限制；`TRUST_PROXY` 控制 Express 对代理的信任，不是绕过 Origin 校验的开关。部署配置、数据库和密钥的备份规则见 [README](../README.md#备份与重新构建)。
 
 ## 取舍
 

@@ -4,6 +4,19 @@
 
 当前版本 v0.7.0 采用 **Node.js 24 + TypeScript + Express + React + Vite + SQLite**。UI 参考提供的 KAKAM Demo、Notion 和 ChatGPT，适配桌面和手机。
 
+## 开发者与模型入口
+
+首次接手项目先读 [开发指南](docs/DEVELOPMENT.md)；模型协作规则统一放在根目录 [AGENTS.md](AGENTS.md)。
+
+| 文档                             | 内容                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| [开发指南](docs/DEVELOPMENT.md)  | 技术栈、目录、修改入口、工作流、验证与规范同步矩阵                              |
+| [架构说明](docs/ARCHITECTURE.md) | Cordis / KH-Kernel 分工、请求与生命周期、权限、持久化、后台生成                 |
+| [功能扩展指南](docs/FEATURES.md) | 新 feature 的 DTO、数据库、server / client 示例、双注册入口、Service 与 Adapter |
+| [UI 组件指南](docs/UI_GUIDE.md)  | 公共组件接口、黑白灰 Shell、Color Pattern、字号、CSS 分层、交互与移动端         |
+
+功能或规范变化时，在同次改动中同步对应文档；规则与负责位置见 [规范与文档同步](docs/DEVELOPMENT.md#规范与文档同步)。文档中的教学组件与功能示例不代表已经上线的能力。
+
 ## 已实现
 
 | 能力                | 行为                                                                                                                      |
@@ -163,7 +176,7 @@ src/
 tests/                    API 集成、模拟模型服务、浏览器端到端测试
 ```
 
-进一步说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，添加插件见 [docs/FEATURES.md](docs/FEATURES.md)。
+完整开发入口见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)；架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，添加功能见 [docs/FEATURES.md](docs/FEATURES.md)，新增或修改 UI 组件见 [docs/UI_GUIDE.md](docs/UI_GUIDE.md)。
 
 ## 验证
 
