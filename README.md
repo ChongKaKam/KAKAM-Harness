@@ -17,7 +17,7 @@
 | Token 统计          | 输入 / 输出 / 总量，日期与用户筛选、每日 / 每周 / 累计活动热力图、调用记录；管理员看全局，普通用户仅看自己                |
 | 可选插件            | 提示词库：私有收藏、一键用于新对话；管理员可启停，停用移除页面和 API，保留数据                                            |
 | 界面设置            | 白天 / 黑夜 / 跟随系统，Color Pattern 多色色系、对话和卡片选色、头像按账户保存；四档字号在当前设备按用户保存              |
-| 部署                | 多阶段 Dockerfile、Compose 持久化卷、健康检查、`depoly.sh` 一键部署（另有 `deploy.sh` 别名）                              |
+| 部署                | 多阶段 Dockerfile、Compose 持久化卷、健康检查、`deploy.sh` 一键部署                                                       |
 
 没有预置或虚构模型、聊天或 Token 消耗。首次运行后需要管理员接入模型。
 
@@ -26,12 +26,12 @@
 需要 Docker Engine / Docker Desktop、Compose v2+、Bash、OpenSSL。
 
 ```bash
-./depoly.sh
+./deploy.sh
 ```
 
 脚本第一次运行会生成权限为 `600` 的 `.env`，其中只包含随机 `APP_SECRET` 和服务配置；随后构建镜像、启动容器，并等待健康检查通过。**打开网页注册，首位注册用户成为管理员，后续用户为普通用户。** 密码只以加盐哈希保存在数据库，不再通过文件配置。首次远端安装可先通过 SSH 端口转发在私有访问下完成注册，再开放域名。
 
-默认访问 **http://localhost:3600**。`deploy.sh` 是同一脚本的拼写别名。
+默认访问 **http://localhost:3600**。统一使用 `deploy.sh` 作为部署入口。
 
 登录后：
 
@@ -72,7 +72,7 @@ npm start
 
 ## 远端部署
 
-将仓库复制到服务器后执行 `./depoly.sh`。首次运行默认仅绑定服务器 `127.0.0.1:3600`，适合放在 Caddy / Nginx 之后。配置 `.env`：
+将仓库复制到服务器后执行 `./deploy.sh`。首次运行默认仅绑定服务器 `127.0.0.1:3600`，适合放在 Caddy / Nginx 之后。配置 `.env`：
 
 ```dotenv
 PUBLIC_ORIGIN=https://ai.example.com
@@ -101,7 +101,7 @@ location / {
 
 如果要直接通过服务器 IP / 局域网访问，将 `BIND_ADDRESS=0.0.0.0`、`PUBLIC_ORIGIN=http://服务器IP:3600`、`COOKIE_SECURE=false`、`TRUST_PROXY=0`。公开互联网部署应使用 HTTPS。
 
-修改配置后再次执行 `./depoly.sh`。Compose 会保留数据库卷。不要运行 `docker compose down -v`，除非确实要删除所有数据。
+修改配置后再次执行 `./deploy.sh`。Compose 会保留数据库卷。不要运行 `docker compose down -v`，除非确实要删除所有数据。
 
 常用命令：
 
@@ -112,17 +112,36 @@ docker compose restart app
 docker compose down
 ```
 
-备份时应同时保留 `.env` 中的 `APP_SECRET` 和数据卷。可以在暂停服务后复制数据库，避免遗漏 WAL 中的内容：
+### 备份与重新构建
+
+| 内容                                                             | 保存位置                                               | 下次构建 / 部署时的行为                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
+| 服务配置与 `APP_SECRET`                                          | 项目目录中的 `.env`                                    | 文件存在时沿用，不会重新生成密钥。迁移服务器时需要一并恢复。         |
+| 用户、密码哈希、头像、对话、图片、模型配置、授权、用量和插件数据 | Docker 命名卷中的 `/app/data`，数据库名 `kakam.sqlite` | 重建镜像、替换容器时保留；应用启动时按需迁移数据库结构。             |
+| 模型供应商 API Key                                               | 数据库中加密保存                                       | 解密依赖原 `APP_SECRET`。原始 API Key 也建议独立保存在密码管理器中。 |
+| 域名和 HTTPS 代理配置                                            | 宿主机 Caddy / Nginx 配置（如有）                      | 不受应用构建影响，需单独留档；自行管理的证书私钥也需备份。           |
+| 镜像、容器、依赖和 `dist/`                                       | Docker / 构建产物                                      | 可以从代码重新生成，不作为用户数据备份。                             |
+
+脚本仅在 `.env` 不存在时生成 `APP_SECRET`（32 字节随机值，编码为 64 位十六进制字符串）。它不是登录密码，而是模型 API Key 的加密根密钥。**保留数据库却丢失或改掉此密钥，会导致已保存的模型 API Key 无法解密。** 用户密码的随机盐、加密所需的随机 IV 和认证标签已随数据库保存，无需另行抄录。
+
+`PUBLIC_ORIGIN`、`PORT`、`BIND_ADDRESS`、`COOKIE_SECURE` 和 `TRUST_PROXY` 也会沿用，只有更换域名、端口或代理方式时才需要修改。Compose 当前固定项目名为 `kakam-harness`，默认卷名为 `kakam-harness_kakam-data`；正常更新保持项目名与卷的映射不变，避免连接到新建的空卷。字号、最近模型及思考程度等浏览器本地偏好不在服务器备份内。
+
+备份时应将真实 `.env` 与完整数据目录配套保存到私有位置；`.env.example` 只是模板，不能代替真实配置。以下命令在项目目录执行，将备份放到仓库外的新目录，暂停服务后复制，避免遗漏 WAL 中的内容：
 
 ```bash
-mkdir -p backups
-docker compose stop app
-docker compose cp app:/app/data ./backups/data
-cp .env ./backups/.env
-docker compose start app
+(
+  set -e
+  umask 077
+  drift_backup_dir="$(mktemp -d ../drift-space-backup.XXXXXX)"
+  trap 'docker compose start app' EXIT
+  docker compose stop app
+  docker compose cp app:/app/data "$drift_backup_dir/data"
+  cp .env "$drift_backup_dir/.env"
+  echo "备份已保存到 $drift_backup_dir"
+)
 ```
 
-备份中包含账户、对话、图片和加密密钥，需按私有数据保管。迁移时将完整数据目录恢复到新卷并沿用原 `APP_SECRET`。第一版没有自动密钥轮换；更换密钥前需重新录入模型凭据。
+备份中包含账户、对话、图片和加密密钥，需按私有数据保管，并另存一份到服务器之外的私有备份位置。迁移时将完整数据目录恢复到新卷并沿用原 `APP_SECRET`。第一版没有自动密钥轮换；更换密钥前需重新录入模型凭据。Git 不保存 `.env` 或数据卷，单纯克隆仓库会创建一套新数据。
 
 ## 架构与开发
 
