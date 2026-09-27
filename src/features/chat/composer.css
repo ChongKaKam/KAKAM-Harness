@@ -1,0 +1,223 @@
+/* Compact controls; editor height continues to grow with content and font size. */
+:root .chat-page .composer {
+  padding: 10px 14px 8px;
+}
+:root .composer-format {
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+:root .composer-format button {
+  min-width: 30px;
+  min-height: 28px;
+  height: 28px;
+}
+:root .chat-page .composer .live-composer {
+  min-height: 3.25em;
+  padding: 4px 2px 8px;
+}
+:root .composer-tools {
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.model-picker {
+  min-width: 0;
+  margin-left: auto;
+  max-width: calc(100% - 84px);
+}
+.model-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: 18px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: var(--font-ui);
+  line-height: 1.4;
+}
+.model-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.model-picker-effort {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.model-picker-trigger svg,
+.model-picker-current svg,
+.model-picker-list svg {
+  flex-shrink: 0;
+}
+:root .composer-tools .send-button {
+  margin-left: 0;
+}
+.model-picker-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px #00000020;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--font-ui);
+}
+.model-picker-popover::backdrop {
+  background: transparent;
+}
+.effort-heading,
+.model-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.effort-heading > strong,
+.model-list-heading > strong {
+  flex: 1;
+  font-weight: 550;
+}
+.model-picker-current,
+.model-picker-list > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 9px;
+  text-align: left;
+  min-height: 44px;
+  color: var(--ink);
+}
+.model-picker-current {
+  margin: 4px 0 6px;
+}
+.model-picker-current > span,
+.model-picker-list > button > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.model-picker-current strong,
+.model-picker-list strong {
+  font-size: var(--font-ui);
+  font-weight: 500;
+}
+.model-picker-current small,
+.model-picker-list small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  margin-top: 4px;
+}
+.model-picker-current:hover,
+.model-picker-list > button:hover,
+.model-picker-list > button[aria-checked='true'] {
+  background: var(--soft);
+}
+.model-picker-popover input[type='range'] {
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  border: 0;
+  box-shadow: none;
+  accent-color: var(--primary);
+  appearance: none;
+  background: transparent;
+}
+.effort-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: linear-gradient(
+    to right,
+    var(--primary) var(--effort-progress),
+    var(--soft) var(--effort-progress)
+  );
+}
+.effort-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 4px #00000020;
+}
+.effort-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.effort-slider::-moz-range-progress {
+  height: 10px;
+  border-radius: 10px;
+  background: var(--primary);
+}
+.effort-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.effort-stops {
+  display: flex;
+  gap: 3px;
+}
+.effort-stops button {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border-radius: 6px;
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+.effort-stops button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--selection);
+  font-weight: 600;
+}
+.model-picker-popover input[type='search'] {
+  width: 100%;
+  margin: 8px 0;
+  min-width: 0;
+  font-size: var(--font-ui);
+}
+.model-picker-list {
+  max-height: min(340px, 45dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.model-picker-list > p {
+  padding: 16px 10px;
+}
+@media (max-width: 760px) {
+  :root .chat-page .composer {
+    padding: 8px 10px;
+  }
+  :root .composer-format button {
+    min-height: 32px;
+    height: 32px;
+    min-width: 32px;
+  }
+  .model-picker {
+    flex: 0 1 auto;
+  }
+  .model-picker-trigger {
+    min-height: 36px;
+  }
+}

@@ -1,0 +1,111 @@
+/* Semantic groups adapted from highlight.js GitHub / GitHub Dark (github.com, @Hirse).
+   Keep syntax independent of shell and Color Pattern tokens. Light colors are darkened
+   for contrast on our neutral code surface; both modes cover the same token groups. */
+:root {
+  --syntax-foreground: #24292e;
+  --syntax-keyword: #c83242;
+  --syntax-entity: #6f42c1;
+  --syntax-constant: #005cc5;
+  --syntax-string: #032f62;
+  --syntax-builtin: #b84f00;
+  --syntax-comment: #626a73;
+  --syntax-tag: #1f7d35;
+  --syntax-heading: #005cc5;
+  --syntax-bullet: #735c0f;
+  --syntax-added: #22863a;
+  --syntax-added-bg: #f0fff4;
+  --syntax-deleted: #b31d28;
+  --syntax-deleted-bg: #ffeef0;
+}
+:root[data-theme='dark'] {
+  --syntax-foreground: #c9d1d9;
+  --syntax-keyword: #ff7b72;
+  --syntax-entity: #d2a8ff;
+  --syntax-constant: #79c0ff;
+  --syntax-string: #a5d6ff;
+  --syntax-builtin: #ffa657;
+  --syntax-comment: #8b949e;
+  --syntax-tag: #7ee787;
+  --syntax-heading: #79c0ff;
+  --syntax-bullet: #f2cc60;
+  --syntax-added: #aff5b4;
+  --syntax-added-bg: #033a16;
+  --syntax-deleted: #ffdcd7;
+  --syntax-deleted-bg: #67060c;
+}
+.markdown pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  color: var(--syntax-foreground);
+  background: transparent;
+}
+.markdown .hljs-doctag,
+.markdown .hljs-keyword,
+.markdown .hljs-meta .hljs-keyword,
+.markdown .hljs-template-tag,
+.markdown .hljs-template-variable,
+.markdown .hljs-type,
+.markdown .hljs-variable.language_ {
+  color: var(--syntax-keyword);
+}
+.markdown .hljs-title {
+  color: var(--syntax-entity);
+}
+.markdown .hljs-attr,
+.markdown .hljs-attribute,
+.markdown .hljs-literal,
+.markdown .hljs-meta,
+.markdown .hljs-number,
+.markdown .hljs-operator,
+.markdown .hljs-variable,
+.markdown .hljs-selector-attr,
+.markdown .hljs-selector-class,
+.markdown .hljs-selector-id {
+  color: var(--syntax-constant);
+}
+.markdown .hljs-regexp,
+.markdown .hljs-string,
+.markdown .hljs-meta .hljs-string {
+  color: var(--syntax-string);
+}
+.markdown .hljs-built_in,
+.markdown .hljs-symbol {
+  color: var(--syntax-builtin);
+}
+.markdown .hljs-comment,
+.markdown .hljs-code,
+.markdown .hljs-formula {
+  color: var(--syntax-comment);
+}
+.markdown .hljs-name,
+.markdown .hljs-quote,
+.markdown .hljs-selector-tag,
+.markdown .hljs-selector-pseudo {
+  color: var(--syntax-tag);
+}
+.markdown .hljs-subst,
+.markdown .hljs-emphasis,
+.markdown .hljs-strong {
+  color: var(--syntax-foreground);
+}
+.markdown .hljs-section {
+  color: var(--syntax-heading);
+  font-weight: bold;
+}
+.markdown .hljs-bullet {
+  color: var(--syntax-bullet);
+}
+.markdown .hljs-emphasis {
+  font-style: italic;
+}
+.markdown .hljs-strong {
+  font-weight: bold;
+}
+.markdown .hljs-addition {
+  color: var(--syntax-added);
+  background-color: var(--syntax-added-bg);
+}
+.markdown .hljs-deletion {
+  color: var(--syntax-deleted);
+  background-color: var(--syntax-deleted-bg);
+}

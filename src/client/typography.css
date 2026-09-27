@@ -1,0 +1,340 @@
+/* Scale only semantic typography tokens. The rem root and layout dimensions stay fixed. */
+:root {
+  font-size: 16px;
+  --font-scale: 1;
+  --detail-scale: 1;
+  --font-body: calc(1rem * var(--font-scale));
+  --font-chat: var(--font-body);
+  --font-input: var(--font-body);
+  --font-ui: calc(0.875rem * var(--font-scale));
+  --font-code: var(--font-ui);
+  --font-caption: max(0.75rem, calc(0.75rem * var(--font-scale)));
+  --font-title: calc(1.875rem * var(--font-scale));
+  --font-heading-small: calc(1.125rem * var(--font-scale));
+  --font-heading: calc(1.25rem * var(--font-scale));
+  --font-heading-large: calc(1.5rem * var(--font-scale));
+  --font-hero: calc(2.125rem * var(--font-scale));
+  --font-hero-wide: calc(2.375rem * var(--font-scale));
+  --font-display: calc(2.6875rem * var(--font-scale));
+  --font-brand: calc(1.875rem * var(--detail-scale));
+  --font-ornament: 4.375rem;
+}
+body {
+  font-size: var(--font-ui);
+  line-height: 1.6;
+}
+button,
+input,
+select,
+textarea {
+  line-height: 1.5;
+}
+:root .markdown,
+:root .thinking {
+  font-size: var(--font-chat);
+  line-height: 1.8;
+}
+:root .live-composer,
+:root .composer textarea,
+:root input:not([type='checkbox']):not([type='radio']),
+:root textarea,
+:root .modal label select,
+:root .font-preview input {
+  font-size: var(--font-input);
+}
+:root .live-composer {
+  min-height: 4.5em;
+  max-height: min(14em, 28dvh);
+}
+:root .markdown pre,
+:root .markdown code,
+:root .live-code pre,
+:root .live-code code {
+  font-size: var(--font-code);
+  line-height: 1.65;
+}
+:root .markdown th,
+:root .markdown td {
+  font-size: var(--font-chat);
+}
+:root .markdown h1 {
+  font-size: calc(var(--font-chat) * 1.6);
+}
+:root .markdown h2 {
+  font-size: calc(var(--font-chat) * 1.4);
+}
+:root .markdown h3 {
+  font-size: calc(var(--font-chat) * 1.2);
+}
+:root .markdown h4 {
+  font-size: calc(var(--font-chat) * 1.1);
+}
+:root .page-heading h1,
+:root .settings-heading h1,
+:root .font-preview-title {
+  font-size: var(--font-title);
+  line-height: 1.35;
+}
+:root .button,
+:root .nav-item,
+:root .conversation-open,
+:root .settings-navigation button,
+:root .tabs > button,
+:root .new-chat,
+:root .profile strong,
+:root .theme-option,
+:root .accent-name,
+:root .message-author strong,
+:root select,
+:root .auth-switch {
+  font-size: var(--font-ui);
+}
+:root label {
+  font-size: var(--font-ui);
+  line-height: 1.5;
+}
+:root .small,
+:root small,
+:root .eyebrow,
+:root .composer-caption,
+:root .code-toolbar,
+:root .font-preview-caption {
+  font-size: var(--font-caption);
+}
+:root .button {
+  min-height: 2.5em;
+  height: auto;
+  padding: 0.55em 1em;
+  white-space: normal;
+}
+:root .icon-button,
+:root .send-button {
+  min-width: 36px;
+  min-height: 36px;
+}
+:root .send-button {
+  width: 2.5em;
+  height: 2.5em;
+}
+:root input:not([type='checkbox']):not([type='radio']),
+:root select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.5em;
+}
+:root .sidebar-search input {
+  min-height: 2em;
+  font-size: var(--font-ui);
+}
+:root .sidebar-search {
+  height: auto;
+}
+:root .nav-item,
+:root .profile,
+:root .settings-navigation button {
+  min-height: 2.8em;
+  height: auto;
+}
+:root .message-author {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+:root .message-author strong,
+:root .message-author > span:last-child:not(.avatar) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:root .message-author .avatar,
+:root .assistant-avatar {
+  width: calc(29px * var(--detail-scale));
+  height: calc(29px * var(--detail-scale));
+  flex-shrink: 0;
+}
+:root .avatar.large {
+  width: calc(44px * var(--detail-scale));
+  height: calc(44px * var(--detail-scale));
+}
+:root .avatar-setting .assistant-avatar {
+  width: calc(56px * var(--detail-scale));
+  height: calc(56px * var(--detail-scale));
+}
+:root .message-author .lucide {
+  width: calc(19px * var(--detail-scale));
+  height: calc(19px * var(--detail-scale));
+}
+:root .composer-format .lucide,
+:root .button > .lucide {
+  width: calc(16px * var(--detail-scale));
+  height: calc(16px * var(--detail-scale));
+  flex-shrink: 0;
+}
+:root .composer-format {
+  flex-wrap: wrap;
+}
+:root .composer-format button {
+  min-width: 32px;
+  min-height: 32px;
+}
+:root .composer-tools {
+  flex-wrap: wrap;
+}
+:root .model-select {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 180px;
+}
+:root .model-select select {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+:root .composer-tools > .grow {
+  display: none;
+}
+:root .effort-select {
+  max-width: 100%;
+  flex: 0 1 auto;
+}
+:root .composer-tools .send-button {
+  margin-left: auto;
+}
+:root .modal {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+:root .modal-heading {
+  align-items: flex-start;
+}
+:root .modal-heading h2 {
+  overflow-wrap: anywhere;
+}
+:root .modal-actions,
+:root .toolbar,
+:root .avatar-setting,
+:root .font-setting-heading {
+  flex-wrap: wrap;
+}
+:root .theme-option {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:root .theme-option > span {
+  min-width: 0;
+}
+:root .page-heading > div,
+:root .row > .grow {
+  min-width: 0;
+}
+:root .page-heading p,
+:root .row,
+:root .error-note {
+  overflow-wrap: anywhere;
+}
+:root .login-layout {
+  overflow-wrap: anywhere;
+}
+:root .login-footer {
+  flex-wrap: wrap;
+  text-align: center;
+}
+.font-setting-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.font-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.font-option {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: left;
+  min-width: 0;
+}
+.font-option strong {
+  display: block;
+  font-size: var(--font-ui);
+}
+.font-option span {
+  display: block;
+  font-size: var(--font-caption);
+  color: var(--muted);
+  margin-top: 4px;
+}
+.font-option.selected {
+  border-color: var(--accent);
+  background: var(--selection);
+  color: var(--accent);
+}
+.font-preview {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  border-radius: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+.font-preview-title {
+  margin: 0 0 20px;
+  font-weight: 600;
+}
+.font-preview-caption {
+  color: var(--muted);
+  margin: 16px 0 10px;
+}
+.font-preview input {
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .font-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .font-preview {
+    padding: 14px;
+  }
+  :root .composer-tools {
+    display: flex;
+  }
+  :root .composer-tools .model-select {
+    flex: 1 1 55%;
+  }
+  :root .effort-select {
+    order: 4;
+    flex-basis: 100%;
+    width: 100%;
+  }
+  :root .composer-caption {
+    flex-wrap: wrap;
+    gap: 4px;
+    line-height: 1.5;
+  }
+  :root .settings-content .theme-options {
+    grid-template-columns: 1fr;
+  }
+  :root .hero-mark {
+    display: none;
+  }
+  :root .message.user .message-content {
+    margin-left: 0;
+  }
+  :root .modal {
+    max-height: 90dvh;
+    padding: 20px;
+  }
+  :root .avatar-setting .grow {
+    display: none;
+  }
+}
+/* Brand glyphs are decorative, not body text. Keep their original visual size. */
+:root .logo {
+  font-size: var(--font-brand);
+}
+:root .logo.small {
+  font-size: calc(1.5rem * var(--detail-scale));
+}
