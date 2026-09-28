@@ -18,20 +18,21 @@
 
 ### 当前可复用的接口
 
-| 组件 / hook                         | 位置                        | 用法与边界                                                                         |
-| ----------------------------------- | --------------------------- | ---------------------------------------------------------------------------------- |
-| `PageHeader`                        | `client/components.tsx`     | `eyebrow`、`title`、`description`、可选 `action`；统一页面标题与操作位置           |
-| `Empty` / `Spinner` / `ErrorNote`   | 同上                        | 空状态、加载状态、`text` 错误反馈；Spinner 含 status、ErrorNote 含 alert           |
-| `Modal`                             | 同上                        | `title`、`close`、`children`；原生 dialog，支持 Escape 与外部点击关闭              |
-| `useLoad`                           | 同上                        | `loader`、可选依赖数组；返回 data / error / reload，无全局缓存                     |
-| `api` / `post` / `patch` / `remove` | `client/api.ts`             | 相对 API 路径，例如 `/prompts`；不要重复 `/api`                                    |
-| `useWorkspace`                      | `client/context.tsx`        | user、setUser、models、conversations、features、refresh、navigate、notify、草稿    |
-| `useUi`                             | `client/ui-preferences.tsx` | preferences、resolvedTheme、fontSize、setFontSize、save；激活账户由 Shell 管理     |
-| `UserAvatar`                        | `client/user-avatar.tsx`    | `user: { displayName, avatar }`，可选 `size`；图片失败回退首字                     |
-| `AssistantAvatar`                   | `client/ui-preferences.tsx` | 从 UI 偏好读取自定义 Chatbot 图标，无参                                            |
-| `Markdown`                          | `client/markdown.tsx`       | `content`、可选 `streaming`；统一 Markdown / 数学 / 图表 / 代码复制                |
-| `usePatternColors`                  | `client/color-pattern.tsx`  | `pattern`、`resolve(assignment)`、`style(assignment)`                              |
-| `ColorPickerButton`                 | 同上                        | `label`、`value`、`colorKey`、异步 `onChange`；只选择颜色，数据由所属 feature 保存 |
+| 组件 / hook                         | 位置                        | 用法与边界                                                                                                                    |
+| ----------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `PageHeader`                        | `client/components.tsx`     | `eyebrow`、`title`、`description`、可选 `action`；统一页面标题与操作位置                                                      |
+| `Empty` / `Spinner` / `ErrorNote`   | 同上                        | 空状态、加载状态、`text` 错误反馈；Spinner 含 status、ErrorNote 含 alert                                                      |
+| `Modal`                             | 同上                        | `title`、`close`、`children`；原生 dialog，支持 Escape 与外部点击关闭                                                         |
+| `useLoad`                           | 同上                        | `loader`、可选依赖数组；返回 data / error / reload，无全局缓存                                                                |
+| `api` / `post` / `patch` / `remove` | `client/api.ts`             | 相对 API 路径，例如 `/prompts`；不要重复 `/api`                                                                               |
+| `useWorkspace`                      | `client/context.tsx`        | user、setUser、models、conversations、features、refresh、navigate、notify、草稿                                               |
+| `useUi`                             | `client/ui-preferences.tsx` | preferences、resolvedTheme、fontSize、setFontSize、save；激活账户由 Shell 管理                                                |
+| `Tooltip`                           | `client/tooltip.tsx`        | `label`、触发内容 `children`、浮层 `content`、可选 `className`；悬停 / 聚焦 / 点击固定，Escape 与外侧关闭；内容不可含交互控件 |
+| `UserAvatar`                        | `client/user-avatar.tsx`    | `user: { displayName, avatar }`，可选 `size`；图片失败回退首字                                                                |
+| `AssistantAvatar`                   | `client/ui-preferences.tsx` | 从 UI 偏好读取自定义 Chatbot 图标，无参                                                                                       |
+| `Markdown`                          | `client/markdown.tsx`       | `content`、可选 `streaming`；统一 Markdown / 数学 / 图表 / 代码复制                                                           |
+| `usePatternColors`                  | `client/color-pattern.tsx`  | `pattern`、`resolve(assignment)`、`style(assignment)`                                                                         |
+| `ColorPickerButton`                 | 同上                        | `label`、`value`、`colorKey`、异步 `onChange`；只选择颜色，数据由所属 feature 保存                                            |
 
 源码链接：[公共组件](../src/client/components.tsx)、[色彩](../src/client/color-pattern.tsx)、[偏好](../src/client/ui-preferences.tsx)、[内容](../src/client/markdown.tsx)。当前没有 `Button` / `Card` React 组件，按钮使用原生元素配合公共 CSS 类，不能假定存在某个 UI 库 API。
 
@@ -185,6 +186,24 @@ CSS 必须显式导入，可在所属 client 模块导入仅作用于本功能�
 - `syntax-highlighting.css` 的代码 token 不继承 Shell 的 muted 颜色；验证明暗切换时关键词、函数、数值、字符串、注释仍有区分。
 - 聊天输入沿用 Tiptap 实时编辑，不再增加编辑 / 预览切换。编辑器要保留选择与 undo；中文输入法合成期间不能发送。桌面和手机 Enter 的既有行为见 README。
 - 保留聊天的独立滚动容器、底部跟随、上翻后暂停、大纲定位和返回最新按钮。组件 cleanup 不能调用聊天停止 API。
+
+## 来源列表与连接诊断
+
+来源列表使用 `models-provider-list` / `models-provider-card`：图标、名称 / 协议、API 地址及元信息集中排列，右侧提供探测、编辑、删除。窄屏操作区换到下一行，长地址可折行，保留触控命中区域；不通过缩小字号提高密度。样式位于 feature 旁的 `models.css`，保持灰色框架与四档语义字号。
+
+来源表单只做模型探测，结果采用限高滚动列表；保存后复用白名单选择弹窗，不堆叠原生 dialog。模型设置中使用 `ModelConnectionProbe`：显示已保存协议与模型、可选思考程度、按钮及诊断指标。首段文本与总耗时分开，缺失值显示“未收到 / 未上报”；不能把计量缺失显示为零。测试期间禁止重复提交及关闭表单，结束或失败后恢复操作，结果支持屏幕阅读器 status 提示。
+
+## 模型排序与回复用量
+
+`features/models/sortable-models.tsx` 使用 dnd-kit 的 Pointer / Keyboard sensors 和 SortableContext；拖动手柄单独设置 touch-action: none，行内容正常滚动。列表保留表格语义，窄屏转换为逐项卡片；DragOverlay 与位移动画保持表格列宽一致，尊重 prefers-reduced-motion。列表乐观更新，保存期间禁止重复排序，失败恢复并展示错误。默认标记跟随首个已启用项，聊天选择列表以首个可用项标记默认。后续分组排序应复用交互约定，但不能复用本组件的模型权限逻辑。
+
+`features/chat/token-usage.tsx` 在回复操作行与复制并列，调用共享 Tooltip；浮层使用原生 Popover 顶层定位，避免被聊天滚动容器裁切。不要把 null 当 0，失败回复可能有真实的已上报用量。仅统计 Token，不显示价格估算；颜色与字号继承 Shell 中性 token / font-caption、font-ui。手机点击可固定浮层，桌面悬停与键盘聚焦均可查看。
+
+`features/chat/generation-time.tsx` 在同一操作行显示回复用时，使用 font-caption 和中性文字；小于 0.1 秒显示“< 0.1 秒”，其余显示一位小数。未完成回复标注“已用时”，未计时的旧消息不显示。小字随操作行换行，不能覆盖复制或 Token 控件。
+
+用量统计的最近调用表格局部采用 font-ui（标准档 14px，原为 font-caption 的 12px）；表头、状态和正文遵循统一缩放，手机端不额外缩小。`features/usage/usage.css` 的 usage-status 使用独立的语义色：完成为绿色、失败为红色，已停止 / 生成中保持中性。明暗主题各有高对比前景和淡底色，保留文字和圆点标记，不依赖颜色独自传达状态。这属于语义色例外，不跟随装饰性的 Color Pattern，也不改写全局 badge 或 td。
+
+这些 feature CSS 在所属模块显式导入，类名前缀为 models-* / chat-token-*；通用 Tooltip 使用 ds-tooltip。不要修改全局表格或 copy-button 规则来实现局部外观。
 
 ## 验证与同步
 

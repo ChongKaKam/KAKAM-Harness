@@ -1,6 +1,11 @@
 import type { AccentColor } from './appearance';
 export type Role = 'admin' | 'user';
-export type ApiMode = 'chat-completions' | 'responses';
+export type ApiMode = 'chat-completions' | 'responses' | 'anthropic-messages';
+export const apiModeLabels: Record<ApiMode, string> = {
+  'chat-completions': 'Chat Completions',
+  responses: 'Responses',
+  'anthropic-messages': 'Anthropic Messages',
+};
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 export interface UiPreferences {
   theme: 'light' | 'dark' | 'system';
@@ -41,6 +46,19 @@ export interface Provider {
   baseUrl: string;
   hasKey: boolean;
   apiMode: ApiMode;
+  platformUrl: string | null;
+}
+export interface ModelConnectionTest {
+  ok: boolean;
+  model: string;
+  apiMode: ApiMode;
+  reasoningEffort: ReasoningEffort;
+  /** Server-to-provider measurement, excluding the browser's network latency. */
+  firstTextMs: number | null;
+  latencyMs: number;
+  textChunks: number;
+  usage: MessageUsage | null;
+  error?: string;
 }
 export interface Attachment {
   name: string;
@@ -54,6 +72,15 @@ export interface Message {
   modelName?: string;
   status: 'complete' | 'error' | 'cancelled' | 'streaming';
   createdAt: string;
+  /** Final, provider-reported usage. Null/absent means not reported, never zero. */
+  usage?: MessageUsage | null;
+  /** Server-measured model request duration, including wait and generation. Unknown for old messages. */
+  durationMs?: number | null;
+}
+export interface MessageUsage {
+  input: number;
+  output: number;
+  total: number;
 }
 export interface Conversation {
   id: string;

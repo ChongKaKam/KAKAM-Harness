@@ -1,0 +1,12 @@
+.chat-generation-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chat-generation-time svg {
+  flex-shrink: 0;
+}

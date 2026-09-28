@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/server/app';
@@ -6,6 +6,7 @@ import { mockProvider } from './mock-provider';
 import { hashPassword } from '../src/kernel/crypto';
 import { randomUUID } from 'node:crypto';
 import { layoutConversation, layoutReply } from './layout-fixture';
+import { fixtureSessionPath } from './e2e-session';
 import { syntaxConversation, syntaxReply } from './syntax-fixture';
 const dir = await mkdtemp(join(tmpdir(), 'kh-e2e-'));
 const mock = await mockProvider(3211);
@@ -20,7 +21,7 @@ const { app, kernel } = await createApp({
 });
 const server = app.listen(3210, '127.0.0.1');
 await new Promise<void>((resolve) => server.once('listening', resolve));
-await fetch('http://127.0.0.1:3210/api/auth/register', {
+const registered = await fetch('http://127.0.0.1:3210/api/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -29,6 +30,23 @@ await fetch('http://127.0.0.1:3210/api/auth/register', {
     password: 'Browser-test-password-123',
   }),
 });
+if (!registered.ok) throw new Error('Unable to create E2E fixture administrator');
+const cookie = registered.headers.get('set-cookie')!.split(';')[0];
+await writeFile(
+  fixtureSessionPath,
+  JSON.stringify([
+    {
+      name: 'kh_session',
+      value: cookie.slice(cookie.indexOf('=') + 1),
+      domain: '127.0.0.1',
+      path: '/',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Strict',
+    },
+  ]),
+  { mode: 0o600 },
+);
 console.log('E2E fixture: http://127.0.0.1:3210');
 for (const device of ['desktop', 'mobile']) {
   kernel.ctx.db.run(
@@ -89,6 +107,7 @@ async function stop() {
   server.close(async () => {
     await kernel.stop();
     await mock.close();
+    await rm(fixtureSessionPath, { force: true });
     await rm(dir, { recursive: true, force: true });
     process.exit(0);
   });

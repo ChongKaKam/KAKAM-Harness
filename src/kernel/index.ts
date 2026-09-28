@@ -4,6 +4,7 @@ import type { FeatureManifest } from '../shared/types';
 import { Database } from './database';
 import { HttpService, HttpError } from './http';
 import { AdapterRegistry } from '../adapters/registry';
+import { AnthropicMessagesAdapter } from '../adapters/anthropic-messages';
 import { OpenAICompatibleAdapter } from '../adapters/openai-compatible';
 export class KHKernel {
   readonly ctx = new Context();
@@ -32,6 +33,9 @@ export class KHKernel {
       inject: ['adapters'],
       apply(ctx) {
         ctx.effect(() => ctx.adapters.register('openai-compatible', new OpenAICompatibleAdapter()));
+        ctx.effect(() =>
+          ctx.adapters.register('anthropic-messages', new AnthropicMessagesAdapter()),
+        );
       },
     });
   }

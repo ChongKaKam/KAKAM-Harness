@@ -81,6 +81,36 @@ export class Database extends Service {
     this.connection.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE) WHERE email IS NOT NULL',
     );
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(providers)').some(
+        (c) => c.name === 'platform_url',
+      )
+    ) {
+      this.connection.exec('ALTER TABLE providers ADD COLUMN platform_url TEXT');
+    }
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(models)').some((c) => c.name === 'sort_order')
+    ) {
+      this.transaction(() => {
+        this.connection.exec('ALTER TABLE models ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+        // Preserve the pre-migration display order, then only change it on explicit reordering.
+        this.all<{ id: string }>(
+          'SELECT m.id FROM models m JOIN providers p ON p.id=m.provider_id ORDER BY p.name,m.label,m.id',
+        ).forEach((model, index) =>
+          this.run('UPDATE models SET sort_order=? WHERE id=?', index, model.id),
+        );
+      });
+    }
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(messages)').some(
+        (c) => c.name === 'duration_ms',
+      )
+    ) {
+      // Old messages have no reliable timing; do not infer it from timestamps or token counts.
+      this.connection.exec(
+        'ALTER TABLE messages ADD COLUMN duration_ms INTEGER CHECK(duration_ms IS NULL OR duration_ms >= 0)',
+      );
+    }
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

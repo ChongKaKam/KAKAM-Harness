@@ -221,7 +221,10 @@ export function ModelPicker({
                   }}
                 >
                   <span>
-                    <strong>{model.label}</strong>
+                    <strong>
+                      {model.label}{' '}
+                      {model.id === models[0]?.id && <span className="badge">默认模型</span>}
+                    </strong>
                     <small>{model.providerName}</small>
                   </span>
                   {model.vision && <ImagePlus size={15} aria-label="支持图片" />}

@@ -19,6 +19,7 @@ flowchart TD
     Plugins --> DB
     Core --> AR[Adapter Registry]
     AR --> OA[OpenAI Compatible Adapter]
+    AR --> AA[Anthropic Messages Adapter]
     OA --> Provider[管理员配置的模型来源]
 ```
 
@@ -28,7 +29,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → chat → usage → prompts → preferences 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和默认 OpenAI Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → chat → usage → prompts → preferences 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和OpenAI 兼容与 Anthropic Messages Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
 每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
@@ -52,7 +53,7 @@ Models 的管理页受管理员限制，但已授权模型列表 API 向普通�
 - `models` 是白名单。探测到的供应商模型不会自动启用；管理员明确创建白名单条目。来源 `providers` 与模型 `models` 分表，授权 `model_grants` 以 `(model_id,user_id)` 为复合主键。
 - `ModelsService.authorize(user, modelId)` 在每次模型调用前检查白名单、enabled 和授权。管理员也不能调用停用的模型。撤销权限对下一次请求生效，已在执行的请求可完成或由用户停止。
 - 所有会话操作同时检查 `conversation.id + user.id`。管理员可管理用户及全局统计，但会话 API 不提供读取其他用户对话的旁路。
-- 用量在请求开始时落库为 `streaming`，结束时记录实际 usage 和状态。取消 / 异常 / 未上报的 tokens 为 NULL。重启将遗留的 streaming 消息与用量标为 error。
+- 用量在请求开始时落库为 `streaming`，结束时记录实际 usage 和状态。取消 / 异常时保留已上报用量，未上报的 tokens 为 NULL。重启将遗留的 streaming 消息与用量标为 error。
 - 图片经格式、MIME、数量、大小检查，以 data URL 随消息存入 SQLite，发送给被选择的模型来源；不通过公共静态 URL 暴露。
 
 ## 生命周期
@@ -73,9 +74,18 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - Session 使用随机 256-bit token，数据库只保存 SHA-256 摘要；HttpOnly + SameSite=Strict Cookie，7 天过期。停用 / 改角色 / 管理员重置密码会撤销对应账户 session。
 - API Key 使用 AES-256-GCM 加密，密钥从 `APP_SECRET` 派生。查询响应仅返回 `hasKey`，错误不反射上游凭据。
 - 修改 API 要求 JSON 与匹配 Origin（浏览器请求）。登录限速、CSP、HTML 非执行渲染、Mermaid strict 模式作为补充。
-- `providers.api_mode` 追加迁移默认 `chat-completions`。同一 Adapter 依据来源分别序列化 Chat Completions 与 Responses；思考字段只在非 none 时发送。`ui_preferences` 以 user_id 隔离主题和头像。
+- `providers.api_mode` 追加迁移默认 `chat-completions`。`ModelsService.adapter(apiMode)` 将 Chat Completions / Responses 路由到 OpenAI 兼容 Adapter，将 `anthropic-messages` 路由到独立 Anthropic Adapter；探测、测试和聊天必须统一使用此映射。思考字段只在非 none 时发送。`ui_preferences` 以 user_id 隔离主题和头像。
 - 来源地址只允许管理员配置 HTTP(S)，默认不跟随重定向。支持内网模型是预期能力，因此没有阻止管理员选择私网地址。插件与管理员都属于可信边界，不能用它作为不可信租户任意网络访问的平台。
 - SQLite WAL、外键和关键索引；涉及模型授权或聊天 / 用量的关联写入使用事务。未来扩容多实例时需迁移存储和生成锁。
+
+### 模型顺序、来源元数据与回复用量
+
+- `providers.platform_url` 为可空的平台链接，仅 HTTP(S) 且不含嵌入凭据。只出现在管理员 DTO，API 连接仍只使用 baseUrl / key / apiMode。更新时省略该字段保留旧值，空字符串或 null 清空。
+- `models.sort_order` 为全局顺序。首次升级按旧的来源名称 / 模型名称排序初始化；后续启动不重排。新模型使用 MAX + 1 追加，列表按 sort_order、id 稳定排序。
+- `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一项为其默认。浏览器已明确选择且仍有权限的模型继续优先。
+- `usage.id = messages.id = requestId`（assistant）。读取历史时 LEFT JOIN 用量，`Message.usage` 为 `{ input, output, total } | null`；用户消息不带此字段。最终 SSE `done.message` 也带相同值，重连 snapshot 与历史一致。查询用量前仍先校验对话所有权；此关联不会让管理员读到其他用户的私人回复。
+- `messages.duration_ms` 是可空非负整数，追加迁移保留旧数据为 null。聊天任务用服务器单调时钟从发起模型请求到结束计时，包含上游等待与生成；完成、失败和主动停止都持久保存。`Message.durationMs` 在 SSE done、历史与重连 snapshot 中一致，浏览器离开或幂等重试不会重置。旧消息及异常进程退出前未记录的用时不推算。
+- Anthropic 原生头为 x-api-key / anthropic-version，图片转为 base64 内容块；只向聊天正文转发 text_delta，忽略 thinking/signature 内容。message_start 与 message_delta 的 usage 按字段合并，输出为累计计数。输入加上 cache creation / cache read，message_stop 才代表协议结束；缺失结束、error、max_tokens 等保留已生成文本并报告未完成。None 不发送思考字段；非 None 使用 adaptive + output_config.effort，兼容范围和输出上限见 README。
 
 ### 数据归属
 

@@ -215,6 +215,18 @@ test('stream text/images, retain history, record actual tokens and isolate conve
   const history = await json(`/conversations/${conversationId}`, alice);
   assert.equal(history.messages.length, 2);
   assert.equal(history.messages[1].status, 'complete');
+  assert.ok(
+    Number.isSafeInteger(history.messages[1].durationMs) && history.messages[1].durationMs > 0,
+  );
+  assert.equal(history.messages[0].durationMs, null);
+  const done = text
+    .split('\n\n')
+    .filter((frame) => frame.startsWith('data: '))
+    .map((frame) => JSON.parse(frame.slice(6)))
+    .find((event) => event.type === 'done');
+  assert.equal(done.message.durationMs, history.messages[1].durationMs);
+  assert.deepEqual(history.messages[1].usage, { input: 23, output: 42, total: 65 });
+  assert.ok(text.includes('"usage":{"input":23,"output":42,"total":65}'));
   const upstream = mock.requests.at(-1) as { messages: { content: { type: string }[] }[] };
   assert.equal(upstream.messages[0].content[1].type, 'image_url');
   for (const cookie of [bob, admin]) {
@@ -305,6 +317,7 @@ test('stopping a stream retains partial output, records missing usage honestly a
   }
   const saved = await json(`/conversations/${convo}`, admin);
   assert.equal(saved.messages[1].status, 'cancelled');
+  assert.ok(Number.isSafeInteger(saved.messages[1].durationMs) && saved.messages[1].durationMs > 0);
   assert.ok(saved.messages[1].content.length);
   const usage = await json('/usage', admin);
   assert.equal(usage.totals.unreported, 1);
@@ -321,6 +334,10 @@ test('missing usage, truncated SSE and provider failures are represented accurat
     assert.ok(!stream.includes('sensitive upstream details'));
     const saved = await json(`/conversations/${convo}`, admin);
     assert.equal(saved.messages[1].status, name === 'no-usage' ? 'complete' : 'error');
+    assert.ok(
+      Number.isSafeInteger(saved.messages[1].durationMs) && saved.messages[1].durationMs >= 0,
+    );
+    assert.equal(saved.messages[1].usage, null);
   }
   const usage = await json('/usage', admin);
   assert.equal(usage.totals.total, 65);
@@ -336,6 +353,10 @@ test('disabling a user immediately invalidates existing sessions', async () => {
   );
 });
 test('data and plugin state survive app restart', async () => {
+  const timing = app.kernel.ctx.db.get<{ duration_ms: number }>(
+    "SELECT duration_ms FROM messages WHERE conversation_id=? AND role='assistant'",
+    conversationId,
+  )!.duration_ms;
   await json('/features/prompts', admin, 'PATCH', { enabled: false });
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
@@ -346,6 +367,13 @@ test('data and plugin state survive app restart', async () => {
   server = createServer(app.app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  assert.equal(
+    app.kernel.ctx.db.get<{ duration_ms: number }>(
+      "SELECT duration_ms FROM messages WHERE conversation_id=? AND role='assistant'",
+      conversationId,
+    )!.duration_ms,
+    timing,
+  );
   assert.equal((await json('/admin/models', admin)).length, 5);
   assert.equal((await request('/prompts', admin)).status, 404);
   assert.equal((await json('/usage', admin)).totals.total, 65);
@@ -501,12 +529,13 @@ test('personal avatars persist, validate raster uploads and only update the sign
   await json('/auth/avatar', signedIn, 'PATCH', { avatar: null });
   assert.equal((await json('/auth/me', bob)).user.avatar, null);
 });
-test('provider testing uses unsaved protocol and saved credentials; Responses chat records scoped activity', async () => {
-  const test = { id: providerId, baseUrl: mock.url, apiMode: 'responses', model: 'test-vision' };
-  assert.equal((await request('/admin/providers/test', bob, 'POST', test)).status, 403);
-  const result = await json('/admin/providers/test', admin, 'POST', test);
-  assert.equal(result.ok, true);
-  assert.equal(result.apiMode, 'responses');
+test('draft discovery does not save configuration; model testing measures streaming with saved credentials', async () => {
+  const draft = { id: providerId, baseUrl: mock.url, apiMode: 'anthropic-messages' };
+  const beforeDiscovery = (await json('/usage', admin)).totals.requests;
+  assert.equal((await request('/admin/providers/discover', bob, 'POST', draft)).status, 403);
+  const discovery = await json('/admin/providers/discover', admin, 'POST', draft);
+  assert.deepEqual(discovery.models, ['test-vision', 'test-text']);
+  assert.equal((await json('/usage', admin)).totals.requests, beforeDiscovery);
   assert.equal((await json('/admin/providers', admin))[0].apiMode, 'chat-completions');
   await json(`/admin/providers/${providerId}`, admin, 'PATCH', {
     name: 'Local test',
@@ -514,6 +543,23 @@ test('provider testing uses unsaved protocol and saved credentials; Responses ch
     apiMode: 'responses',
   });
   assert.equal((await json('/admin/providers', admin))[0].hasKey, true);
+  assert.equal((await request(`/admin/models/${modelId}/test`, bob, 'POST')).status, 403);
+  assert.equal((await request(`/admin/models/${modelId}/test`, undefined, 'POST')).status, 401);
+  assert.equal((await request(`/admin/models/${randomUUID()}/test`, admin, 'POST')).status, 404);
+  assert.equal(
+    (await request(`/admin/models/${modelId}/test`, admin, 'POST', { baseUrl: mock.url })).status,
+    400,
+  );
+  const result = await json(`/admin/models/${modelId}/test`, admin, 'POST', {
+    reasoningEffort: 'low',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.apiMode, 'responses');
+  assert.equal(result.model, 'test-vision');
+  assert.ok(result.firstTextMs !== null && result.firstTextMs <= result.latencyMs);
+  assert.equal(result.textChunks, 3);
+  assert.deepEqual(result.usage, { input: 23, output: 42, total: 65 });
+  assert.equal((mock.requests.at(-1) as any).reasoning.effort, 'low');
   const convo = (await json('/conversations', admin, 'POST')).id;
   const response = await submitStream(convo, admin, {
     modelId,
@@ -565,11 +611,11 @@ test('passwords accept short, Unicode and long values without composition rules,
   }
 });
 
-test('both protocols continue after all viewers disconnect, resume snapshots, deduplicate submits and isolate subscribers', async () => {
+test('all protocols continue after all viewers disconnect, resume snapshots, deduplicate submits and isolate subscribers', async () => {
   const slow = (await json('/admin/models', admin)).find(
     (model: { name: string }) => model.name === 'slow',
   ).id;
-  for (const apiMode of ['chat-completions', 'responses']) {
+  for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages']) {
     await json(`/admin/providers/${providerId}`, admin, 'PATCH', {
       name: 'Local test',
       baseUrl: mock.url,
@@ -605,13 +651,22 @@ test('both protocols continue after all viewers disconnect, resume snapshots, de
     const saved = (await json(`/conversations/${convo}`, admin)).messages;
     assert.equal(saved.length, 2);
     assert.equal(saved[1].status, 'complete');
+    assert.ok(
+      saved[1].durationMs >= 3500,
+      'timing includes generation while the browser is disconnected',
+    );
     assert.equal(saved[1].content, '慢速回复 '.repeat(50));
+    assert.deepEqual(saved[1].usage, { input: 23, output: 42, total: 65 });
     assert.equal(mock.requests.length, before + 1);
     assert.equal(
       (await request(`/conversations/${convo}/messages`, admin, 'POST', input)).status,
       202,
     );
     assert.equal(mock.requests.length, before + 1);
+    assert.equal(
+      (await json(`/conversations/${convo}`, admin)).messages[1].durationMs,
+      saved[1].durationMs,
+    );
     assert.equal(
       (await json('/usage', admin)).rows.filter((row: { id: string }) => row.id === input.requestId)
         .length,

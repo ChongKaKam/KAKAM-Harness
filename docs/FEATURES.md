@@ -290,6 +290,20 @@ interface ModelAdapter {
 
 `ProviderEvent` 是 `{ type: 'text', text }` 或 `{ type: 'usage', usage: { input, output, total } }`；相关类型均从该契约文件导入，`ReasoningEffort` 来自共享 DTO。Adapter 必须处理取消、协议错误、流结束及真实用量，不能将无 usage 伪造成零。
 
-在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册。当前 `ModelsService.adapter()` 固定选择 `openai-compatible`，providers 只记录 `api_mode`；**仅注册第二个 Adapter 并不能让用户选到它**。还需要追加来源 adapter ID、更新 DTO / Zod / 管理表单 / 路由选择和迁移，默认映射旧来源到现有 Adapter。
+在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible` 和 `anthropic-messages`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `chat-completions` / `responses`，后者处理 `anthropic-messages`。来源表保留 `api_mode`，旧来源迁移默认 Chat Completions。
 
-Chat Completions 与 Responses 已由同一个兼容 Adapter 支持。思考档位是 `none / low / medium / high / xhigh`；`none` 省略上游字段。新协议应在 Adapter 中转换，不让聊天页面负责拼供应商请求。
+新增协议时同步共享 `ApiMode` / `apiModeLabels`、provider Zod、管理表单、ModelsService 映射与注册；已有三个值保持兼容。聊天、连通性测试、探测都传入来源的 apiMode，不在调用点硬编码 Adapter ID。如果未来协议需要独立于来源的 Adapter ID，再设计相应迁移。
+
+思考档位是 `none / low / medium / high / xhigh`；None 省略上游字段。OpenAI 两种模式分别使用 reasoning_effort / reasoning.effort；Anthropic 当前使用 adaptive thinking / output_config.effort，不支持该字段的模型使用 None。协议转换放在 Adapter 中，聊天页面只提交统一 DTO。不要把 thinking_delta 当最终回复正文，也不要为协议错误自动重复付费调用。
+
+用量计数必须来自供应商，累计 usage 以最新值替换，不将多次事件重复相加。`TokenUsage` 是共享 `MessageUsage` 的类型别名。新增或变更计数方式时同时验证统计页、消息历史及 SSE done 的一致性。参考 `tests/anthropic-adapter.test.ts`（图片、认证、分页、五档思考、缓存计数、缺失/零用量、失败及取消）与 `tests/models-iteration.test.ts`（权限、迁移、顺序、来源链接及消息用量）。
+
+## 来源探测与模型连通性测试
+
+- `POST /admin/providers/discover` 接收未保存的 `{ baseUrl, apiMode, apiKey?, id? }`。编辑来源时，省略 apiKey 会沿用 id 对应的已存密钥；显式空字符串表示免鉴权。只调用 Adapter.discover，不写来源、白名单或用量。现有来源也可调用 `POST /admin/providers/:id/discover`。
+- `POST /admin/models/:id/test` 替代旧的 `/admin/providers/test`。仅管理员可调用，body 只允许可选 `reasoningEffort`，默认 none。模型 API 名称、来源与协议从数据库读取，不接受任意临时模型或连接覆盖；停用模型也可在启用前测试，不改变权限。
+- `features/models/connection-test.ts` 调用与聊天相同的 generate 流，单次简短请求，60 秒截止。DTO `ModelConnectionTest` 包含 ok、model、apiMode、reasoningEffort、firstTextMs（未收到则 null）、latencyMs、textChunks、usage 及可选脱敏 error。已有有效用量在后续失败时保留，累计值取最新。
+- API 校验 / 权限错误仍使用 HTTP 错误码；完成诊断后返回 HTTP 200，客户端必须检查 ok，不能仅凭 HTTP 成功或收到 usage 判定模型连接成功。无可显示文字的流判为失败。每次真正开始生成的测试记录当前管理员的用量，独立于聊天，不保存测试文本。
+- 前端来源表单探测后展示列表，保存成功再打开白名单添加弹窗。输入地址、密钥或协议变化即清除过期结果；取消不能保存配置或自动添加模型。
+
+`tests/streaming-latency.test.ts` 使用受控流在结束帧发送前验证首个文字已转发，同时覆盖拆分 UTF-8 / SSE 边界；它验证本地逐片行为，不代表真实供应商延迟。集成测试覆盖草稿探测不写库、权限、三种协议、失败用量与思考参数。真实来源问题需要用户授权后的独立诊断，不加入付费凭据或生产数据到自动测试。

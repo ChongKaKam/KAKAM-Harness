@@ -1,0 +1,24 @@
+.ds-tooltip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(248px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 6px 24px #0002;
+  font-size: var(--font-caption);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ds-tooltip strong {
+  font-size: var(--font-ui);
+}
+.ds-tooltip p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}

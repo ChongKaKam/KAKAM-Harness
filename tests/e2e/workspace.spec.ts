@@ -86,16 +86,11 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await page
     .getByLabel('响应模式')
     .selectOption(suffix === 'desktop' ? 'responses' : 'chat-completions');
-  await page.getByLabel('测试模型').fill('test-vision');
-  await page.getByRole('button', { name: '测试连通性' }).click();
-  await expect(page.getByText(/连接成功/)).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: '探测模型' }).click();
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('发现 6 个模型');
+  await expect(page.getByRole('dialog').getByRole('button', { name: '测试连通性' })).toHaveCount(0);
   await page.getByRole('button', { name: '保存来源' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page
-    .locator('.provider-card')
-    .filter({ hasText: sourceName })
-    .getByRole('button', { name: '探测模型' })
-    .click();
+  await expect(page.getByRole('dialog')).toContainText('探测结果');
   await page
     .locator('.discovery-list>.row')
     .filter({ hasText: /^test-vision添加$/ })
@@ -111,6 +106,10 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await page.getByRole('button', { name: /模型管理与授权/ }).click();
   const row = page.getByRole('row').filter({ hasText: sourceName });
   await row.getByRole('button', { name: '管理', exact: true }).click();
+  await page.getByRole('button', { name: '测试连通性' }).click();
+  await expect(page.locator('.models-probe-result')).toContainText('连接成功');
+  await expect(page.locator('.models-probe-result')).toContainText('首段文本');
+  await expect(page.locator('.models-probe-result')).toContainText('总耗时');
   await page.getByLabel('显示名称').fill(modelLabel);
   await page.getByLabel('支持图片输入').check();
   await page.getByRole('checkbox', { name: new RegExp(username) }).check();
@@ -421,6 +420,7 @@ test('conversation and prompt colors can be assigned, remapped and reset without
     })
   ).json();
   await page.reload();
+  await expect(page.locator('.idea-card')).toHaveCount(3);
   const fills = await page
     .locator('.idea-card')
     .evaluateAll((elements) =>

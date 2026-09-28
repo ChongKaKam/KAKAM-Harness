@@ -165,3 +165,41 @@ test('email migration preserves legacy accounts and adds a case-insensitive uniq
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('message duration migration leaves legacy timings unknown and preserves recorded durations on restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kh-duration-migration-'));
+  let kernel = new KHKernel(dir);
+  try {
+    kernel.ctx.db.run(
+      "INSERT INTO users(id,username,display_name,password_hash,role) VALUES('owner','owner','Owner','hash','admin')",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO conversations(id,user_id,title,updated_at) VALUES('conversation','owner','Old chat','2026-01-01')",
+    );
+    for (const id of ['old', 'timed'])
+      kernel.ctx.db.run(
+        "INSERT INTO messages(id,conversation_id,role,content,created_at) VALUES(?,'conversation','assistant','Preserve me','2026-01-01')",
+        id,
+      );
+    kernel.ctx.db.connection.exec('ALTER TABLE messages DROP COLUMN duration_ms');
+    await kernel.stop();
+    for (let restart = 0; restart < 2; restart++) {
+      kernel = new KHKernel(dir);
+      const rows = kernel.ctx.db.all<{ id: string; content: string; duration_ms: number | null }>(
+        'SELECT id,content,duration_ms FROM messages ORDER BY id',
+      );
+      assert.deepEqual(
+        rows.map((row) => row.content),
+        ['Preserve me', 'Preserve me'],
+      );
+      assert.equal(rows[0].duration_ms, null);
+      assert.equal(rows[1].duration_ms, restart === 0 ? null : 1234);
+      assert.deepEqual(kernel.ctx.db.all('PRAGMA foreign_key_check'), []);
+      if (restart === 0) kernel.ctx.db.run("UPDATE messages SET duration_ms=1234 WHERE id='timed'");
+      await kernel.stop();
+    }
+  } finally {
+    await kernel.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

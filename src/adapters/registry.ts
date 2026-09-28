@@ -1,5 +1,5 @@
 import { Service, type Context } from 'cordis';
-import type { Attachment, ApiMode, ReasoningEffort } from '../shared/types';
+import type { Attachment, ApiMode, ReasoningEffort, MessageUsage } from '../shared/types';
 export interface ProviderConnection {
   baseUrl: string;
   apiKey: string;
@@ -10,11 +10,7 @@ export interface ProviderMessage {
   content: string;
   images?: Attachment[];
 }
-export interface TokenUsage {
-  input: number;
-  output: number;
-  total: number;
-}
+export type TokenUsage = MessageUsage;
 export type ProviderEvent = { type: 'text'; text: string } | { type: 'usage'; usage: TokenUsage };
 export interface ModelAdapter {
   discover(connection: ProviderConnection): Promise<string[]>;

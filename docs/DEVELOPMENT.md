@@ -1,6 +1,6 @@
 # Drift Space 开发指南
 
-本指南让新加入的开发者和模型快速理解项目、选择扩展位置并保持风格一致。内容依据当前 v0.7.0 源码；版本以 [`APP_VERSION`](../src/shared/version.ts) 和 [`package.json`](../package.json) 为准。规范变化需要与实现一起更新文档，不要求每次文档修改都发布新版本。
+本指南让新加入的开发者和模型快速理解项目、选择扩展位置并保持风格一致。内容依据当前 v0.8.0 源码；版本以 [`APP_VERSION`](../src/shared/version.ts) 和 [`package.json`](../package.json) 为准。规范变化需要与实现一起更新文档，不要求每次文档修改都发布新版本。
 
 ## 阅读地图
 
@@ -50,7 +50,7 @@ src/
     database.ts                 SQLite service、表结构和追加迁移
     http.ts                     可撤销 Router registry、鉴权与 HttpError
     crypto.ts                   密码哈希、会话摘要、模型密钥加密
-  adapters/                     ModelAdapter 契约、注册表、OpenAI 兼容实现
+  adapters/                     ModelAdapter 契约、注册表、OpenAI 兼容与 Anthropic Messages 实现
   features/<id>/
     manifest.ts                 纯数据目录声明
     server.ts                   服务 / API / 生命周期
@@ -77,16 +77,16 @@ compose.yaml / Dockerfile       运行和构建契约
 
 ## 应该改哪一层
 
-| 需求                               | 推荐位置                                                 | 注册 / 契约影响                                       |
-| ---------------------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
-| 新增私人知识、收藏、记忆等独立能力 | 新 `src/features/<id>/`，通常为 plugin                   | server + client 两个注册入口；需要存储时追加迁移      |
-| 扩展已有聊天或账户功能             | 对应 feature；局部组件 / hooks 放同目录                  | 保持已有接口兼容，更新 DTO / 校验 / 测试              |
-| 多个页面复用的小 UI                | `src/client/<component>.tsx`，参照 UI 指南               | 普通组件不需要 manifest 或 Kernel 注册                |
-| 设置中的新页面                     | feature client 的 `placement: 'settings'`                | 使用 `navigate('settings', id)`，不要在侧栏重复加入口 |
-| 多个服务端能力复用的业务服务       | 由所属 feature 提供 Cordis Service                       | Context 类型扩充、消费者 inject、生命周期清理         |
-| 新模型协议                         | `src/adapters/` + 来源配置能力                           | Registry、provider adapter ID、表单、迁移、适配器测试 |
-| 全局主题 / 字号规则                | `shared/appearance.ts`、`shared/typography.ts`、公共 CSS | 影响所有页面，需要完整视觉回归                        |
-| 用户身份、来源校验、全局 HTTP 限制 | `server/app.ts`、auth / users、kernel/http               | 属于全局边界，不能由页面显示状态代替后端鉴权          |
+| 需求                               | 推荐位置                                                 | 注册 / 契约影响                                                |
+| ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| 新增私人知识、收藏、记忆等独立能力 | 新 `src/features/<id>/`，通常为 plugin                   | server + client 两个注册入口；需要存储时追加迁移               |
+| 扩展已有聊天或账户功能             | 对应 feature；局部组件 / hooks 放同目录                  | 保持已有接口兼容，更新 DTO / 校验 / 测试                       |
+| 多个页面复用的小 UI                | `src/client/<component>.tsx`，参照 UI 指南               | 普通组件不需要 manifest 或 Kernel 注册                         |
+| 设置中的新页面                     | feature client 的 `placement: 'settings'`                | 使用 `navigate('settings', id)`，不要在侧栏重复加入口          |
+| 多个服务端能力复用的业务服务       | 由所属 feature 提供 Cordis Service                       | Context 类型扩充、消费者 inject、生命周期清理                  |
+| 新模型协议                         | `src/adapters/` + 来源配置能力                           | Registry、来源 apiMode 与 Adapter 映射、表单、迁移、适配器测试 |
+| 全局主题 / 字号规则                | `shared/appearance.ts`、`shared/typography.ts`、公共 CSS | 影响所有页面，需要完整视觉回归                                 |
+| 用户身份、来源校验、全局 HTTP 限制 | `server/app.ts`、auth / users、kernel/http               | 属于全局边界，不能由页面显示状态代替后端鉴权                   |
 
 不要仅因为“以后可能有很多插件”就先建立任意扩展点系统。先明确谁提供能力、谁消费能力，沿用已有 Service / Registry 模式；依赖关系和失败时行为应可描述、可测试。
 
@@ -137,6 +137,8 @@ npm run format:check
 
 默认浏览器为已安装的 Chrome，配置在 `playwright.config.ts`；可用 `npx playwright install chromium` 后执行 `PW_CHANNEL=chromium npm run test:e2e`。E2E 默认顺序执行，有共享初始化与限速约束，不应随意增加并发。模型选择等共用浏览器操作放 `tests/e2e/controls.ts`。
 
+`tests/streaming-latency.test.ts` 验证文本先于结束事件交付；`tests/e2e/model-connections.spec.ts` 验证来源草稿探测、紧凑列表、模型诊断与明暗 / 字号 / 手机布局。自动回归使用模拟服务；用户授权的真实供应商耗时测量单独执行，不能将密钥写入测试或日志。
+
 ## 规范与文档同步
 
 文档与代码在同一次变更中同步，这是交付完成条件；不是另设周期任务，也不是只在对话中说明。新增约定注明适用范围，实际实现尚不支持的内容明确标记为方案。
@@ -168,3 +170,5 @@ git diff --check
 仓库包含源码，不包含用户数据库或真实 `.env`。远端配置是部署状态，不应硬编码到 UI、示例文档或测试。`PUBLIC_ORIGIN` 当前只支持单一浏览器来源；填写 Tunnel 的公开访问域名，不填写 CNAME Target，应用配置变更需要重建容器加载环境。
 
 更新通常为 `git pull --ff-only` 后 `./deploy.sh`；先按 README 备份配置和数据。已有 `.env` 不会重建密钥，SQLite 卷会继续使用。生产重启会中断当前模型生成，不能把“浏览器离开不断流”等同于“服务重启也续跑”。具体的备份、部署和限制以 [README](../README.md) 为主。
+
+新增浏览器功能测试可调用 `tests/e2e-session.ts` 的 `useFixtureSession(page)`，复用临时测试服务器首次注册的会话；文件仅保存在系统临时目录且关闭服务器时移除。登录/注册行为仍由原有用例验证，不通过提高生产限流阈值来容纳测试。

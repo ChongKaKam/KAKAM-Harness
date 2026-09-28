@@ -2,7 +2,7 @@
 
 基于真实 **Cordis 3.18.1** 引擎的个人 / 小型多用户 AI 工作区。KH-Kernel 在 Cordis 上负责 feature 装配、能力目录、核心能力保护和插件启停；每个 feature 将 `manifest`、`server`、`client` 放在一起。
 
-当前版本 v0.7.0 采用 **Node.js 24 + TypeScript + Express + React + Vite + SQLite**。UI 参考提供的 KAKAM Demo、Notion 和 ChatGPT，适配桌面和手机。
+当前版本 v0.8.0 采用 **Node.js 24 + TypeScript + Express + React + Vite + SQLite**。UI 参考提供的 KAKAM Demo、Notion 和 ChatGPT，适配桌面和手机。
 
 ## 开发者与模型入口
 
@@ -19,18 +19,18 @@
 
 ## 已实现
 
-| 能力                | 行为                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 账户                | 邮箱 + 显示名称 + 密码注册（首位为管理员），邮箱登录、旧账户绑定邮箱、资料与密码修改、管理用户和角色                      |
-| 模型来源            | 仅管理员可见；设置 Base URL / API Key；编辑 / 删除来源；主动探测 `/models`；Chat Completions / Responses 协议；连通性测试 |
-| 白名单 / 模型注册表 | SQLite `models` 表 + `ModelsService`；手动添加或从探测结果加入；逐模型启停、图片能力标记、逐用户授权                      |
-| 聊天                | 私有会话、历史持久化、搜索标题、重命名、删除、SSE 流式回复、离开后后台生成与重连同步、停止生成；按用户和模型记忆思考等级  |
-| 多模态              | 文字 + 图片；PNG/JPEG/WebP，每条最多 4 张、每张 5 MB；需选择支持图片的模型                                                |
-| 内容渲染            | 双方消息支持 Markdown、GFM 表格、代码高亮与一键复制、KaTeX 公式、LaTeX 代码块公式预览、Mermaid 图表、输入框实时富文本编辑 |
-| Token 统计          | 输入 / 输出 / 总量，日期与用户筛选、每日 / 每周 / 累计活动热力图、调用记录；管理员看全局，普通用户仅看自己                |
-| 可选插件            | 提示词库：私有收藏、一键用于新对话；管理员可启停，停用移除页面和 API，保留数据                                            |
-| 界面设置            | 白天 / 黑夜 / 跟随系统，Color Pattern 多色色系、对话和卡片选色、头像按账户保存；四档字号在当前设备按用户保存              |
-| 部署                | 多阶段 Dockerfile、Compose 持久化卷、健康检查、`deploy.sh` 一键部署                                                       |
+| 能力                | 行为                                                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 账户                | 邮箱 + 显示名称 + 密码注册（首位为管理员），邮箱登录、旧账户绑定邮箱、资料与密码修改、管理用户和角色                                                           |
+| 模型来源            | 仅管理员可见；设置 Base URL / API Key；编辑 / 删除来源；主动探测 `/models`；Chat Completions / Responses / Anthropic Messages 协议；可选平台链接；紧凑来源列表 |
+| 白名单 / 模型注册表 | SQLite `models` 表 + `ModelsService`；手动添加或从探测结果加入；逐模型启停、图片能力标记、逐用户授权；拖动排序与默认模型；逐模型连通性测试                     |
+| 聊天                | 私有会话、历史持久化、搜索标题、重命名、删除、SSE 流式回复、离开后后台生成与重连同步、停止生成；按用户和模型记忆思考等级                                       |
+| 多模态              | 文字 + 图片；PNG/JPEG/WebP，每条最多 4 张、每张 5 MB；需选择支持图片的模型                                                                                     |
+| 内容渲染            | 双方消息支持 Markdown、GFM 表格、代码高亮与一键复制、KaTeX 公式、LaTeX 代码块公式预览、Mermaid 图表、输入框实时富文本编辑                                      |
+| Token 统计          | 回复复制按钮旁可查看本次输入 / 输出 / 总量；日期与用户筛选、每日 / 每周 / 累计活动热力图、调用记录；管理员看全局，普通用户仅看自己                             |
+| 可选插件            | 提示词库：私有收藏、一键用于新对话；管理员可启停，停用移除页面和 API，保留数据                                                                                 |
+| 界面设置            | 白天 / 黑夜 / 跟随系统，Color Pattern 多色色系、对话和卡片选色、头像按账户保存；四档字号在当前设备按用户保存                                                   |
+| 部署                | 多阶段 Dockerfile、Compose 持久化卷、健康检查、`deploy.sh` 一键部署                                                                                            |
 
 没有预置或虚构模型、聊天或 Token 消耗。首次运行后需要管理员接入模型。
 
@@ -48,9 +48,9 @@
 
 登录后：
 
-1. 「左下角用户 → 设置 → 管理员 → 模型与接入 → 添加来源」填写来源名称、完整 Base URL、API Key 和响应模式。Base URL 必须包含来源要求的 API 前缀，例如 `https://api.example.com/v1`，不要填到 `/chat/completions` 或 `/responses`。填写测试模型后可点击「测试连通性」，使用当前未保存配置发送简短请求；消耗计入当前管理员。
-2. 「探测模型」后选择加入白名单，或在「模型管理与授权」手动填写精确模型 ID。
-3. 为视觉模型勾选「支持图片输入」。探测 API 通常不返回可靠的能力信息，因此不会自动猜测图片能力。
+1. 「左下角用户 → 设置 → 管理员 → 模型与接入 → 添加来源」填写来源名称、完整 Base URL、API Key 和响应模式。Base URL 必须包含来源要求的 API 前缀，例如 `https://api.example.com/v1`，不要填到 `/chat/completions` 或 `/responses`。可在来源表单中点击「探测模型」，使用当前未保存配置获取列表，不发送聊天请求或修改来源配置。修改地址、密钥或协议后，原探测结果失效。
+2. 探测后「保存来源」，在结果列表中选择加入白名单；也可以直接保存，之后通过来源条目的「探测模型」添加，或在「模型管理与授权」手动填写精确模型 ID。探测失败不妨碍手动配置。
+3. 已保存模型的「模型设置与授权」提供「连通性测试」，使用来源当前保存的地址、密钥和协议。可选择测试思考程度，显示首段文本、总耗时、文本片段数与实际 Token；最长 60 秒，用量计入当前管理员，失败或未上报也会保留记录。新模型需要先保存。为视觉模型勾选「支持图片输入」。探测 API 通常不返回可靠的能力信息，因此不会自动猜测图片能力。
 4. 用户自行注册或由管理员创建，然后在模型设置中授予访问权限。管理员可使用所有已启用模型。
 5. 回到「对话」，选择模型并开始聊天。
 
@@ -161,7 +161,7 @@ docker compose down
 ```text
 src/
   kernel/                 KH-Kernel、数据库、HTTP 注册、密钥保险库
-  adapters/               模型协议契约、AdapterRegistry、OpenAI 兼容实现
+  adapters/               模型协议契约、AdapterRegistry、OpenAI 兼容与 Anthropic Messages 实现
   features/
     auth/                 manifest.ts + server.ts + client.tsx
     users/                manifest.ts + server.ts + client.tsx
@@ -193,7 +193,7 @@ npm run test:e2e
 
 ## 当前范围
 
-- 模型协议支持 OpenAI 兼容 `/models`、流式 `/chat/completions` 和 `/responses`。原生 Anthropic / Gemini、语音、视频、PDF / 文档解析、Agent 工具调用、RAG 尚未实现。
+- 模型协议支持 OpenAI 兼容 `/models`、流式 `/chat/completions`、`/responses`，以及 Anthropic 原生流式 `/messages` 和分页 `/models`。Gemini 原生协议、语音、视频、PDF / 文档解析、Agent 工具调用、RAG 尚未实现。
 - Mermaid 在回复完成后渲染，流式阶段显示源码；原始 HTML 不执行，远程 Markdown 图片不会自动加载。附件是私有消息的一部分。
 - Token 仅记录来源实际上报的 `usage`；缺失、失败、中断明确标记“未上报”，不会用估算数冒充账单。没有费用换算或配额计费。
 - 单进程、单 SQLite 卷，适合个人与小型团队。每用户同时最多一个生成请求；单次生成 180 秒超时。长对话到达保护上限需新建对话。聊天列表最多展示最近 300 条，用量详情最多 200 条，汇总不受详情条数限制。
@@ -222,14 +222,30 @@ npm run test:e2e
 - 发送新问题会回到最新消息。停留底部时跟随流式输出、图片 / 图表展开；向上翻阅或点击大纲后暂停跟随，点击下箭头即可返回底部并恢复跟随。
 - 对话正文左侧的大纲按用户提问生成，鼠标悬停或键盘聚焦显示简介，点击跳到该问题开头；手机可直接点按。重新打开对话时根据完整历史重建大纲，默认定位最新消息。
 
+## 排查 Responses 与 Chat Completions 的速度差异
+
+两种模式均逐片转发文字，不等待最终事件才输出。Responses 的思考参数为 `reasoning.effort`，Chat Completions 为 `reasoning_effort`；本应用的 None 是省略字段，不能当作关闭思考。推理档位和默认值由模型 / 来源决定，第三方中转也可能对两个端点采用不同路由或协议转换，不能仅凭协议名判断哪一种更快。
+
+在「模型设置与授权 → 连通性测试」固定同一个模型、同一档思考程度进行比较。首段文本耗时是应用服务器收到第一段可显示文本的时间，总耗时包含随后输出与结束事件，不包含浏览器到应用的网络时间。若首段快、总耗时慢，检查输出长度和尾部事件；若首段就慢，检查上游排队、推理或中转缓冲。文本片段数不是 Token 数，短回答只有一个片段也不能证明缓冲。
+
+测试不会自动切换协议、重试或替换模型。需要比较另一协议时，在来源中明确保存该协议后再次测试，并留意这会影响使用同一来源的其他模型。短请求的一次测量不是性能保证；对长上下文问题还需同内容、同配置复测。官方依据：[流式输出](https://developers.openai.com/api/docs/guides/streaming-responses)、[思考参数与速度](https://developers.openai.com/api/docs/guides/reasoning)。
+
 ## 内容与模型设置
 
-- Chat Completions 与 Responses 均向上游请求 `stream: true`，收到文字增量后立即通过 SSE 显示。提交成功后，生成任务由服务器持有；浏览器离开、锁屏、切换应用、断网或关闭标签页不会取消任务。返回时先同步完整消息，再继续接收增量；已经完成则直接显示完整回复。只有主动点击停止、上游错误、生成超时或服务关闭才会结束任务。
+- Chat Completions、Responses 与 Anthropic Messages 均向上游请求 `stream: true`，收到文字增量后立即通过 SSE 显示。提交成功后，生成任务由服务器持有；浏览器离开、锁屏、切换应用、断网或关闭标签页不会取消任务。返回时先同步完整消息，再继续接收增量；已经完成则直接显示完整回复。只有主动点击停止、上游错误、生成超时或服务关闭才会结束任务。
 - 后台生成限于当前服务器进程，重启或重新部署不会自动续跑模型请求：已保存的部分回复保留，异常重启的未完成记录标记为失败。客户端恢复连接只订阅结果，不重新提交模型请求；同一个提交 ID 的重试也不会重复调用模型。
 - 输入框使用 Tiptap 实时富文本编辑，直接显示渲染结果，无需切换编辑与预览。支持 Markdown 输入快捷语法与粘贴、粗体、列表、表格、代码、公式和撤销；发送时序列化为 Markdown。点选公式可修改 LaTeX，Mermaid / LaTeX 代码块附带实时预览。桌面普通段落 Enter 发送，Shift + Enter 换行；列表、表格、代码块中 Enter 继续编辑。手机 Enter 换行；Ctrl / ⌘ + Enter 可发送。
 - 支持 `$…$`、`$$…$$`、`\(…\)`、`\[…\]`；`latex` / `tex` / `math` 代码块显示公式预览，原文可展开和复制。KaTeX 支持常见数学环境，但不是完整 TeX 编译器，不编译任意宏包、TikZ 或 LaTeX 文档排版。
 - 思考程度提供 `none / low / medium / high / extra high`。Extra high 对应 API 的 `xhigh`。**None 完全省略思考字段，由来源使用默认行为，不保证关闭模型内部推理。** 其他等级是否可用取决于具体模型；不支持时选择 None。Chat Completions 使用 `reasoning_effort`，Responses 使用 `reasoning: { effort }`。
+- Anthropic 来源选择 **Anthropic Messages**，Base URL 填 `https://api.anthropic.com/v1`（代理填写其 API 前缀），使用 `x-api-key` 与 `anthropic-version: 2023-06-01`。支持文字、图片、模型探测与连通性测试。None 省略思考配置，输出上限为 4096；其他档位发送 `thinking: { type: 'adaptive' }` 和 `output_config: { effort }`，输出上限为 16384（含思考）。这些档位要求模型支持 adaptive thinking 及相应 effort；旧模型或不支持的代理请选择 None，当前不自动降级或重试付费调用。达到输出上限会保留已生成内容并标记未完成。
+- 「模型管理与授权」拖动左侧手柄排序，鼠标、手机触控及键盘均可操作（空格选中，上下方向键移动，空格保存，Escape 取消）。顺序自动保存，首个已启用模型标记默认；普通用户按该顺序选择首个有权限的模型。新模型追加至末尾，用户已主动选择的模型优先保留。停用或无授权模型不能成为聊天实际使用的默认模型。
+- 来源中的「平台链接」可留空，用于快速打开供应商控制台 / 官网，与 Base URL 分开保存，仅管理员可见，不作为模型请求地址。
+- 每条回复下方的用量提示支持悬停、键盘聚焦或手机点击；显示真实上报的输入、输出与合计，刷新后仍保留。历史记录没有用量或供应商未上报时明确显示「用量未上报」，实际零消耗仍显示 0。输入包含本次发送的历史上下文；Anthropic 的输入合计还包含 cache creation / cache read Token，输出累计值取最新值，不重复相加。
+- 回复底部与复制、Token 消耗并列显示生成用时，从服务器发起模型请求到结束（含等待与生成）。刷新、重新登录后保留，失败 / 停止时显示“已用时”；旧消息没有计时数据则不显示。
+- 用量统计的最近调用表格采用稍大的统一字号；完成标记为绿色，失败为红色，生成中与已停止保持中性，明暗主题均保留清晰文字。
 - Responses 使用 `store: false`，历史由本地保存并逐次发送，支持文本与图片、流式结束/失败/不完整事件及真实 Token 用量。
 - 热力图使用 UTC 日界线。每日每格一天，每周按周一分组，累计为所选时间范围内的累计值。多模型一天以分段颜色展示，聚焦或点击可查看详情；未上报用量的调用仍保留。
 
 字段依据：[OpenAI Chat Completions 参考](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[迁移到 Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[推理参数](https://developers.openai.com/api/docs/guides/reasoning)、[Responses 流式事件](https://developers.openai.com/api/docs/guides/streaming-responses)。
+
+Anthropic 字段依据：[Messages](https://platform.claude.com/docs/en/api/messages/create)、[流式事件](https://platform.claude.com/docs/en/build-with-claude/streaming)、[思考程度](https://platform.claude.com/docs/en/build-with-claude/effort)、[图片输入](https://platform.claude.com/docs/en/build-with-claude/vision)。

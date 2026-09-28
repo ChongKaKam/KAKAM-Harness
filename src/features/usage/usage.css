@@ -1,0 +1,54 @@
+/* Semantic status colors are independent of the user's decorative Color Pattern. */
+.usage-recent {
+  --usage-success-ink: #166534;
+  --usage-success-fill: #eaf6ee;
+  --usage-error-ink: #a51d2d;
+  --usage-error-fill: #fdecef;
+}
+[data-theme='dark'] .usage-recent {
+  --usage-success-ink: #8adca9;
+  --usage-success-fill: #173b28;
+  --usage-error-ink: #ffa0a8;
+  --usage-error-fill: #482329;
+}
+.usage-recent-heading,
+.usage-recent th,
+.usage-recent td {
+  font-size: var(--font-ui);
+  line-height: 1.6;
+}
+.usage-recent-heading {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.usage-recent td {
+  font-variant-numeric: tabular-nums;
+}
+.usage-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: var(--font-ui);
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--soft);
+  color: var(--muted);
+}
+.usage-status::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+.usage-status[data-status='complete'] {
+  color: var(--usage-success-ink);
+  background: var(--usage-success-fill);
+}
+.usage-status[data-status='error'] {
+  color: var(--usage-error-ink);
+  background: var(--usage-error-fill);
+}

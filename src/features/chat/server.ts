@@ -39,14 +39,30 @@ function validateImages(images: Attachment[]) {
   }
 }
 const messageColumns =
-  'id,role,content,images,model_name AS modelName,status,created_at AS createdAt';
+  'm.id,m.role,m.content,m.images,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
 function messages(ctx: Context, id: string): Message[] {
   return ctx.db
-    .all<Omit<Message, 'images'> & { images: string }>(
-      `SELECT ${messageColumns} FROM messages WHERE conversation_id=? ORDER BY rowid`,
+    .all<
+      Omit<Message, 'images'> & {
+        images: string;
+        input: number | null;
+        output: number | null;
+        total: number | null;
+      }
+    >(
+      `SELECT ${messageColumns} FROM messages m LEFT JOIN usage u ON u.id=m.id WHERE m.conversation_id=? ORDER BY m.rowid`,
       id,
     )
-    .map((m) => ({ ...m, images: JSON.parse(m.images) }));
+    .map(({ input, output, total, ...m }) => ({
+      ...m,
+      images: JSON.parse(m.images),
+      ...(m.role === 'assistant'
+        ? {
+            usage:
+              input !== null && output !== null && total !== null ? { input, output, total } : null,
+          }
+        : {}),
+    }));
 }
 interface Generation {
   abort: AbortController;
@@ -197,7 +213,7 @@ export const server = {
       )
         throw new HttpError(400, '对话较长，请新建对话后继续');
       const connection = ctx.models.connection(model.providerId);
-      const adapter = ctx.models.adapter();
+      const adapter = ctx.models.adapter(connection.apiMode);
       const now = new Date().toISOString();
       const generation: Generation = {
         abort: new AbortController(),
@@ -271,6 +287,7 @@ export const server = {
         }
       };
       generation.finished = (async () => {
+        const started = performance.now();
         let usage: TokenUsage | undefined;
         let status: Message['status'] = 'complete';
         let checkpoint = Date.now();
@@ -310,12 +327,16 @@ export const server = {
             });
         } finally {
           generation.message.status = status;
+          generation.message.usage = usage ?? null;
+          const durationMs = Math.round(performance.now() - started);
+          generation.message.durationMs = durationMs;
           try {
             ctx.db.transaction(() => {
               ctx.db.run(
-                'UPDATE messages SET content=?,status=? WHERE id=?',
+                'UPDATE messages SET content=?,status=?,duration_ms=? WHERE id=?',
                 generation.message.content,
                 status,
+                durationMs,
                 messageId,
               );
               ctx.db.run(

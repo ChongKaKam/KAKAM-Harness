@@ -22,6 +22,8 @@ import { useChatNavigation } from './use-chat-navigation';
 import { ConversationOutline } from './outline';
 import { useWorkspace } from '../../client/context';
 import { AssistantAvatar } from '../../client/ui-preferences';
+import { TokenUsage } from './token-usage';
+import { GenerationTime } from './generation-time';
 import { copyText } from '../../client/clipboard';
 import { Markdown } from '../../client/markdown';
 import { usePatternColors } from '../../client/color-pattern';
@@ -91,7 +93,8 @@ export function ChatPage() {
   const file = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!models.some((m) => m.id === modelId)) setModelId(models[0]?.id ?? '');
+    if (!localStorage.getItem('kh:model') || !models.some((m) => m.id === modelId))
+      setModelId(models[0]?.id ?? '');
   }, [models, modelId]);
   useEffect(() => {
     setError('');
@@ -274,23 +277,29 @@ export function ChatPage() {
                       {m.status === 'cancelled' && m.content && (
                         <small className="message-status">已停止生成</small>
                       )}
-                      {m.role === 'assistant' && m.content && m.status !== 'streaming' && (
-                        <button
-                          className="copy-button"
-                          aria-label="复制回复"
-                          onClick={async () => {
-                            try {
-                              await copyText(m.content);
-                              setCopied(m.id);
-                              setTimeout(() => setCopied(''), 1800);
-                            } catch {
-                              notify('浏览器未允许复制，请手动选择文本');
-                            }
-                          }}
-                        >
-                          {copied === m.id ? <Check size={14} /> : <Copy size={14} />}
-                          <span>{copied === m.id ? '已复制' : '复制'}</span>
-                        </button>
+                      {m.role === 'assistant' && m.status !== 'streaming' && (
+                        <div className="chat-message-actions">
+                          {m.content && (
+                            <button
+                              className="copy-button"
+                              aria-label="复制回复"
+                              onClick={async () => {
+                                try {
+                                  await copyText(m.content);
+                                  setCopied(m.id);
+                                  setTimeout(() => setCopied(''), 1800);
+                                } catch {
+                                  notify('浏览器未允许复制，请手动选择文本');
+                                }
+                              }}
+                            >
+                              {copied === m.id ? <Check size={14} /> : <Copy size={14} />}
+                              <span>{copied === m.id ? '已复制' : '复制'}</span>
+                            </button>
+                          )}
+                          <TokenUsage message={m} />
+                          <GenerationTime message={m} />
+                        </div>
                       )}
                     </div>
                   </article>

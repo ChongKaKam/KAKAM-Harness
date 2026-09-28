@@ -1,0 +1,33 @@
+.chat-message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 13px;
+}
+.chat-message-actions .copy-button {
+  min-height: 32px;
+  font-size: var(--font-caption);
+  margin-top: 0;
+}
+.chat-token-counts {
+  margin: 10px 0;
+}
+.chat-token-counts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+.chat-token-counts dt {
+  color: var(--muted);
+}
+.chat-token-counts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.chat-token-counts > div:last-child {
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 6px;
+  font-weight: 600;
+}

@@ -6,6 +6,7 @@ import { useWorkspace } from '../../client/context';
 import { PageHeader, Spinner, ErrorNote, Empty, useLoad } from '../../client/components';
 import type { UsageData, User } from '../../shared/types';
 import { usePatternColors } from '../../client/color-pattern';
+import './usage.css';
 const number = (n: number | null) => (n === null ? '未上报' : n.toLocaleString());
 export function UsagePage() {
   const colors = usePatternColors();
@@ -82,11 +83,11 @@ export function UsagePage() {
             统计仅累计模型来源实际上报的 Token 数。所选期间有 {data.totals.unreported}{' '}
             次调用未上报用量（包括中断或不支持 usage 的来源），实际消耗可能更高。
           </div>
-          <div className="section-label">
+          <div className="section-label usage-recent-heading">
             最近调用<span>最多显示 200 条 · 汇总包含全部记录</span>
           </div>
-          <div className="panel table-wrap">
-            <table>
+          <div className="panel table-wrap usage-recent">
+            <table aria-label="最近调用">
               <thead>
                 <tr>
                   <th>时间</th>
@@ -115,7 +116,7 @@ export function UsagePage() {
                     <td>{number(row.outputTokens)}</td>
                     <td>{number(row.totalTokens)}</td>
                     <td>
-                      <span className={`badge ${row.status !== 'complete' ? 'warm' : ''}`}>
+                      <span className="usage-status" data-status={row.status}>
                         {
                           (
                             {
