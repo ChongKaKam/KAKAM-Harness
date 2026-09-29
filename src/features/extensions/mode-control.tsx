@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { SegmentedControl } from '../../client/segmented-control';
 import type { ExtensionMode } from '../../shared/types';
 const options = [
   { value: 'auto', label: 'Auto', description: '自动判断' },
@@ -18,41 +18,15 @@ export function ExtensionModeControl({
   saving?: boolean;
   change: (mode: ExtensionMode) => void;
 }) {
-  const id = useId();
   return (
-    <div
+    <SegmentedControl
       className="extensions-modes"
-      role="radiogroup"
-      aria-label={`${name} 默认模式`}
-      aria-busy={saving}
-    >
-      {options.map((option) => (
-        <label key={option.value} title={option.description}>
-          <input
-            type="radio"
-            name={id}
-            value={option.value}
-            checked={mode === option.value}
-            disabled={disabled}
-            aria-disabled={saving || disabled}
-            aria-label={`${option.label} · ${option.description}`}
-            onClick={(event) => {
-              if (saving) event.preventDefault();
-            }}
-            onKeyDown={(event) => {
-              if (
-                saving &&
-                [' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
-              )
-                event.preventDefault();
-            }}
-            onChange={() => {
-              if (!saving) change(option.value);
-            }}
-          />
-          <span>{option.label}</span>
-        </label>
-      ))}
-    </div>
+      label={`${name} 默认模式`}
+      options={options}
+      value={mode}
+      disabled={disabled}
+      busy={saving}
+      onChange={change}
+    />
   );
 }

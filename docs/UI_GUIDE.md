@@ -18,23 +18,28 @@
 
 ### 当前可复用的接口
 
-| 组件 / hook                         | 位置                        | 用法与边界                                                                                                                    |
-| ----------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `PageHeader`                        | `client/components.tsx`     | `eyebrow`、`title`、`description`、可选 `action`；统一页面标题与操作位置                                                      |
-| `Empty` / `Spinner` / `ErrorNote`   | 同上                        | 空状态、加载状态、`text` 错误反馈；Spinner 含 status、ErrorNote 含 alert                                                      |
-| `Modal`                             | 同上                        | `title`、`close`、`children`；原生 dialog，支持 Escape 与外部点击关闭                                                         |
-| `useLoad`                           | 同上                        | `loader`、可选依赖数组；返回 data / error / reload，无全局缓存                                                                |
-| `api` / `post` / `patch` / `remove` | `client/api.ts`             | 相对 API 路径，例如 `/prompts`；不要重复 `/api`                                                                               |
-| `useWorkspace`                      | `client/context.tsx`        | user、setUser、models、conversations、features、refresh、navigate、notify、草稿                                               |
-| `useUi`                             | `client/ui-preferences.tsx` | preferences、resolvedTheme、fontSize、setFontSize、save；激活账户由 Shell 管理                                                |
-| `Tooltip`                           | `client/tooltip.tsx`        | `label`、触发内容 `children`、浮层 `content`、可选 `className`；悬停 / 聚焦 / 点击固定，Escape 与外侧关闭；内容不可含交互控件 |
-| `UserAvatar`                        | `client/user-avatar.tsx`    | `user: { displayName, avatar }`，可选 `size`；图片失败回退首字                                                                |
-| `AssistantAvatar`                   | `client/ui-preferences.tsx` | 从 UI 偏好读取自定义 Chatbot 图标，无参                                                                                       |
-| `Markdown`                          | `client/markdown.tsx`       | `content`、可选 `streaming`；统一 Markdown / 数学 / 图表 / 代码复制                                                           |
-| `usePatternColors`                  | `client/color-pattern.tsx`  | `pattern`、`resolve(assignment)`、`style(assignment)`                                                                         |
-| `ColorPickerButton`                 | 同上                        | `label`、`value`、`colorKey`、异步 `onChange`；只选择颜色，数据由所属 feature 保存                                            |
+| 组件 / hook                         | 位置                           | 用法与边界                                                                                                                    |
+| ----------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `PageHeader`                        | `client/components.tsx`        | `eyebrow`、`title`、`description`、可选 `action`；统一页面标题与操作位置                                                      |
+| `Empty` / `Spinner` / `ErrorNote`   | 同上                           | 空状态、加载状态、`text` 错误反馈；Spinner 含 status、ErrorNote 含 alert                                                      |
+| `Modal`                             | 同上                           | `title`、`close`、`children`；原生 dialog，支持 Escape 与外部点击关闭                                                         |
+| `useLoad`                           | 同上                           | `loader`、可选依赖数组；返回 data / error / reload，无全局缓存                                                                |
+| `api` / `post` / `patch` / `remove` | `client/api.ts`                | 相对 API 路径，例如 `/prompts`；不要重复 `/api`                                                                               |
+| `useWorkspace`                      | `client/context.tsx`           | user、setUser、models、conversations、features、refresh、navigate、notify、草稿                                               |
+| `useUi`                             | `client/ui-preferences.tsx`    | preferences、resolvedTheme、fontSize、setFontSize、save；激活账户由 Shell 管理                                                |
+| `Tooltip`                           | `client/tooltip.tsx`           | `label`、触发内容 `children`、浮层 `content`、可选 `className`；悬停 / 聚焦 / 点击固定，Escape 与外侧关闭；内容不可含交互控件 |
+| `SegmentedControl`                  | `client/segmented-control.tsx` | `label`、`value`、`options`、`onChange`，可选 `disabled` / `busy` / `className`；受控分段单选，保存与业务逻辑由调用方负责     |
+| `UserAvatar`                        | `client/user-avatar.tsx`       | `user: { displayName, avatar }`，可选 `size`；图片失败回退首字                                                                |
+| `AssistantAvatar`                   | `client/ui-preferences.tsx`    | 从 UI 偏好读取自定义 Chatbot 图标，无参                                                                                       |
+| `Markdown`                          | `client/markdown.tsx`          | `content`、可选 `streaming`；统一 Markdown / 数学 / 图表 / 代码复制                                                           |
+| `usePatternColors`                  | `client/color-pattern.tsx`     | `pattern`、`resolve(assignment)`、`style(assignment)`                                                                         |
+| `ColorPickerButton`                 | 同上                           | `label`、`value`、`colorKey`、异步 `onChange`；只选择颜色，数据由所属 feature 保存                                            |
 
 源码链接：[公共组件](../src/client/components.tsx)、[色彩](../src/client/color-pattern.tsx)、[偏好](../src/client/ui-preferences.tsx)、[内容](../src/client/markdown.tsx)。当前没有 `Button` / `Card` React 组件，按钮使用原生元素配合公共 CSS 类，不能假定存在某个 UI 库 API。
+
+`SegmentedControl` 用于同一设置的互斥选项，使用原生 radio group 保留方向键、Space 与读屏语义；不用于切换内容面板的 tabs。`options` 包含字符串 `value`、`label` 和可选 `description`。`value` 由父级控制；`busy` 阻止重复修改但保留键盘焦点，`disabled` 表示不可操作。组件自行导入命名空间样式 `segmented-control.css`，统一灰度 token、选中态、焦点与手机触控区域；页面只调整所在布局，不复制控件内部样式。
+
+分段选项等宽，选中背景使用独立滑块，以 240ms 缓出曲线平移；文字及桌面悬停背景以 160ms 过渡。滑块由 CSS 按控件实际宽度计算位置，适配字号、手机布局和 Popover 重新打开；连续切换时从当前动画位置过渡，不通过定时器逐帧更新。动画跟随父级确认的 `value`，不提前表示保存成功；系统启用 `prefers-reduced-motion` 时直接切换。
 
 ## 颜色 token
 
@@ -217,7 +222,7 @@ UI 变更至少查看：light / dark（含系统跟随）、自然鲜明 / 柔�
 
 聊天输入栏的 `ExtensionControls` 消费核心 `/extensions` 目录，不导入 Search 实现。输入栏只显示统一拼图按钮，点击打开原生 Popover 顶层中的能力列表；每项显示自己的图标、说明与 Auto / On / Off 原生单选控件，支持方向键、Space、Escape 和焦点恢复。菜单响应可视视口、滚动及手机软键盘，避免输入区裁切。未配置或管理员关闭的能力禁用，生成和保存模式时同样禁用。模式按账户保存在服务器；发送时提交快照。
 
-管理入口是设置中的“拓展能力”。可选插件通过 `ClientFeature.settingsParent` 将设置页归于该入口，保留自己的 client 页面，不重复加入设置侧栏。核心页采用类似模型管理的紧凑灰度条目列表，不使用 Color Pattern 背景或彩色边框。每项显示能力、可用状态、默认模式、能力设置和插件设置；手机换行保留触控区域。Auto 策略与辅助模型选择放入该条目的原生 Modal，插件专属配置继续使用独立子页；插件停用后显示重新启用入口。列表默认模式与聊天菜单复用 `ExtensionModeControl` 和 `useExtensions`，共用当前账户偏好，保存后同步到同源标签页。
+管理入口是设置中的“拓展能力”。可选插件通过 `ClientFeature.settingsParent` 将设置页归于该入口，保留自己的 client 页面，不重复加入设置侧栏。核心页采用类似模型管理的紧凑灰度条目列表，不使用 Color Pattern 背景或彩色边框。每项显示能力、可用状态、默认模式、能力设置和插件设置；手机换行保留触控区域。Auto 策略与辅助模型选择放入该条目的原生 Modal，插件专属配置继续使用独立子页；插件停用后显示重新启用入口。列表默认模式与聊天菜单通过 `ExtensionModeControl` 复用公共 `SegmentedControl`，由 `useExtensions` 管理当前账户偏好，保存后同步到同源标签页。
 
 回复的 `ExtensionDetails` 使用原生 details/summary 展示状态、搜索词、编号来源和分阶段 Token；来源标题与摘要以纯文本呈现，外链使用安全 HTTP(S) URL、noopener noreferrer。状态独立使用明暗绿色 / 红色并保留文字。最终回答继续用原有安全 Markdown 管线，回复旁 Token 只表示最终回答调用，拓展消耗在详情和统计中查看。总耗时包含拓展处理。
 
