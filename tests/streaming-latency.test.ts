@@ -82,7 +82,7 @@ test('connection probes keep first-text timing distinct from completion, and pre
   };
   const result = await testModelConnection(
     adapter,
-    { baseUrl: '', apiKey: '' },
+    { baseUrl: '', apiKey: 'secret' },
     'fixture',
     'none',
     controller.signal,
@@ -93,6 +93,8 @@ test('connection probes keep first-text timing distinct from completion, and pre
   assert.deepEqual(result.usage, { input: 2, output: 3, total: 5 });
   assert.match(result.error!, /超时/);
   assert.ok(!JSON.stringify(result).includes('secret'));
+  assert.equal(result.diagnostics.output, 'OK');
+  assert.match(result.diagnostics.error!, /\[REDACTED\] upstream diagnostic/);
 });
 
 test('a successful HTTP stream without visible text is not a successful model connection', async () => {

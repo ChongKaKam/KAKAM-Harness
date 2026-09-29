@@ -29,33 +29,6 @@
   font-size: var(--font-caption);
   line-height: 1.6;
 }
-.extensions-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.extensions-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 36px;
-  padding: 7px 9px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  font-size: var(--font-caption);
-  color: var(--muted);
-  background: transparent;
-}
-.extensions-toggle.active {
-  color: var(--ink);
-  background: var(--item-soft, var(--soft));
-  border-color: var(--item-line, var(--line));
-}
-.extensions-toggle:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
 .extensions-results {
   --extensions-success: #166534;
   --extensions-error: #a51d2d;
@@ -116,7 +89,7 @@
   .extensions-card {
     padding: 16px;
   }
-  .extensions-toggle {
+  .extensions-trigger {
     min-width: 42px;
     min-height: 42px;
   }
@@ -140,11 +113,250 @@
 }
 .chat-page .extensions-controls {
   flex: 0 0 auto;
-  max-width: 40%;
   min-width: 0;
-  flex-wrap: nowrap;
-  overflow-x: auto;
 }
-.chat-page .extensions-toggle {
+
+.extensions-help {
+  margin: 0 0 22px;
+  line-height: 1.7;
+}
+.extensions-list {
+  overflow: hidden;
+  container-type: inline-size;
+}
+.extensions-list-heading,
+.extensions-list-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 80px 178px 270px;
+  gap: 20px;
+  align-items: center;
+  padding: 18px 20px;
+}
+.extensions-list-heading {
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  padding-block: 12px;
+}
+.extensions-list-row {
+  border-top: 1px solid var(--line);
+}
+.extensions-list-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.extensions-list-name > svg {
+  margin-top: 3px;
   flex-shrink: 0;
+  color: var(--muted);
+}
+.extensions-list-name h2 {
+  font-size: var(--font-ui);
+  margin: 0;
+  line-height: 1.6;
+}
+.extensions-list-name p {
+  font-size: var(--font-caption);
+  margin: 3px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.extensions-list-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.extensions-list-actions .button {
+  font-size: var(--font-caption);
+  white-space: nowrap;
+  padding: 8px 10px;
+}
+.extensions-availability {
+  justify-self: start;
+}
+.extensions-policy-form p {
+  line-height: 1.7;
+}
+.extensions-modes {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+.extensions-modes label {
+  position: relative;
+  flex: 1;
+  margin: 0;
+  display: block;
+  cursor: pointer;
+}
+.extensions-modes input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.extensions-modes span {
+  display: block;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+.extensions-modes input:checked + span {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.extensions-modes input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.extensions-modes input:disabled + span {
+  opacity: 0.45;
+}
+.extensions-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+.extensions-trigger:hover,
+.extensions-trigger.active {
+  background: var(--soft);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.extensions-trigger:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.extensions-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: var(--font-caption);
+  line-height: 1;
+  min-width: 14px;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--surface-alt);
+}
+.extensions-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(350px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 36px #0002;
+  font-size: var(--font-ui);
+}
+.extensions-popover::backdrop {
+  background: transparent;
+}
+.extensions-popover-heading,
+.extensions-menu-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.extensions-popover-heading strong {
+  flex: 1;
+}
+.extensions-popover p {
+  line-height: 1.6;
+  margin: 8px 0 14px;
+}
+.extensions-menu-item {
+  border-top: 1px solid var(--line);
+  padding: 16px 0 4px;
+  margin-top: 12px;
+}
+.extensions-menu-name strong {
+  flex: 1;
+}
+.extensions-menu-item .extensions-modes {
+  width: 100%;
+}
+@container (max-width: 840px) {
+  .extensions-list-heading {
+    display: none;
+  }
+  .extensions-list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+  .extensions-list-row:first-of-type {
+    border-top: 0;
+  }
+  .extensions-list-row > .extensions-modes {
+    justify-self: start;
+  }
+  .extensions-list-actions {
+    justify-content: flex-end;
+  }
+}
+@media (max-width: 1150px) {
+  .extensions-list-heading {
+    display: none;
+  }
+  .extensions-list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+  .extensions-list-row:first-of-type {
+    border-top: 0;
+  }
+  .extensions-list-row > .extensions-modes {
+    justify-self: start;
+  }
+  .extensions-list-actions {
+    justify-content: flex-end;
+  }
+}
+@media (max-width: 600px) {
+  .extensions-list-row {
+    padding: 16px;
+  }
+  .extensions-list-row > .extensions-modes,
+  .extensions-list-actions {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+  .extensions-list-actions {
+    justify-content: flex-start;
+  }
+  .extensions-modes span {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .extensions-trigger {
+    width: 42px;
+    height: 42px;
+  }
 }

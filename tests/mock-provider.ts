@@ -57,7 +57,9 @@ export async function mockProvider(portNumber = 0) {
   app.post('/jev/systemone', (req, res) => {
     decisions.push(req.body);
     if (req.body.model === 'jev-error') {
-      res.status(401).json({ error: 'secret upstream error' });
+      res
+        .status(401)
+        .json({ error: { message: 'Invalid API key', api_key: req.headers.authorization } });
       return;
     }
     const respond = () =>

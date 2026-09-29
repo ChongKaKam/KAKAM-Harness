@@ -61,7 +61,16 @@ export interface ModelConnectionTest {
   latencyMs: number;
   textChunks: number;
   usage: MessageUsage | null;
+  diagnostics: ModelDiagnosticLog;
   error?: string;
+}
+/** Ephemeral, credential-redacted log returned only by the admin connection test. */
+export interface ModelDiagnosticLog {
+  request?: { method: string; url: string; headers: Record<string, string>; body: string };
+  response?: { status: number; headers: Record<string, string>; body: string };
+  output: string;
+  error?: string;
+  truncated: boolean;
 }
 export interface Attachment {
   name: string;

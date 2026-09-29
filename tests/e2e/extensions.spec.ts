@@ -39,6 +39,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await expect(page.getByLabel('清除已保存的密钥')).toBeVisible();
     await expect(page.getByLabel('Perplexity Search API Key')).toHaveValue('');
     await page.getByRole('button', { name: '拓展能力', exact: true }).last().click();
+    await page.getByRole('button', { name: '能力设置', exact: true }).click();
     await page.getByLabel('Auto 决策方式').selectOption('llm-jev');
     await page.getByLabel('辅助 LLM').selectOption(llm);
     await page.getByLabel('Jev 决策模型').selectOption(jev);
@@ -51,17 +52,43 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
       .toBe('llm-jev');
     await page.goto('/#/chat');
     await chooseModel(page, { id: llm });
-    await expect(page.getByRole('button', { name: 'Search：关闭', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Search：关闭', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Search：开启', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await page.getByRole('button', { name: 'Search：开启', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Search：自动', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'mixed',
-    );
+    const trigger = page.getByRole('button', { name: '拓展能力', exact: true });
+    const popup = page.getByRole('dialog', { name: '聊天拓展能力' });
+    await expect(trigger).toBeEnabled();
+    await expect(page.getByRole('radio', { name: 'Auto · 自动判断' })).not.toBeVisible();
+    await trigger.click();
+    await expect(popup).toBeVisible();
+    await expect(popup.getByRole('radio', { name: 'Off · 始终关闭' })).toBeChecked();
+    await popup.getByRole('radio', { name: 'On · 始终开启' }).click();
+    await expect(popup.getByRole('radio', { name: 'On · 始终开启' })).toBeChecked();
+    await popup.getByRole('radio', { name: 'Auto · 自动判断' }).click();
+    await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
+    await popup.getByRole('button', { name: '关闭拓展能力' }).click();
+    await expect(trigger).toBeFocused();
+    // Management uses the same account preference as the chat popover.
+    await page.goto('/#/settings/extensions');
+    await expect(page.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
+    const other = await page.context().newPage();
+    try {
+      await other.goto('/#/chat');
+      await other.getByRole('button', { name: '拓展能力', exact: true }).click();
+      await expect(other.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
+      await page.getByRole('radio', { name: 'Off · 始终关闭' }).click();
+      await expect(page.getByRole('radio', { name: 'Off · 始终关闭' })).toBeChecked();
+      await expect(other.getByRole('radio', { name: 'Off · 始终关闭' })).toBeChecked();
+    } finally {
+      await other.close();
+    }
+    await page.goto('/#/chat');
+    await trigger.click();
+    await expect(popup.getByRole('radio', { name: 'Off · 始终关闭' })).toBeChecked();
+    await expect(popup.getByRole('radio', { name: 'Off · 始终关闭' })).toBeFocused();
+    await popup.getByRole('radio', { name: 'Auto · 自动判断' }).focus();
+    await page.keyboard.press('Space');
+    await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
+    await page.keyboard.press('Escape');
+    await expect(popup).not.toBeVisible();
+    await expect(trigger).toBeFocused();
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('搜索最新信息并提供来源');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     const result = page.locator('.extensions-result');
@@ -78,10 +105,9 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await expect(result).toContainText('<script>not executed</script>');
     await page.reload();
     await expect(result.locator('summary')).toContainText('2 个来源');
-    await expect(page.getByRole('button', { name: 'Search：自动', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'mixed',
-    );
+    await trigger.click();
+    await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
+    await popup.getByRole('button', { name: '关闭拓展能力' }).click();
     for (const theme of ['light', 'dark']) {
       await page.request.patch('/api/preferences', { data: { theme, assistantIcon: null } });
       await page.reload();
@@ -96,6 +122,16 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
         ).toBe(true);
         await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeVisible();
+        await trigger.click();
+        await expect(popup).toBeVisible();
+        const bounds = await popup.boundingBox();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.y).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+        expect(await popup.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+        if (size.id === 'large')
+          await page.screenshot({ path: test.info().outputPath(`extensions-menu-${theme}.png`) });
+        await popup.getByRole('button', { name: '关闭拓展能力' }).click();
         expect(
           await page
             .getByRole('group', { name: '拓展能力', exact: true })
@@ -108,6 +144,8 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
       });
     }
     await page.goto('/#/settings/extensions');
+    await expect(page.locator('.extensions-list-row').first()).toBeVisible();
+    await expect(page.locator('.extensions-page .pattern-card')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -123,6 +161,36 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await page.getByRole('button', { name: '测试连通性', exact: true }).click();
     await expect(page.locator('.models-probe-result')).toContainText('连接成功');
     await expect(page.locator('.models-probe-result')).toContainText('有效 JSON');
+    await page.locator('.models-probe-log summary').click();
+    await expect(page.locator('.models-probe-log')).toContainText(
+      'The user asks for current news.',
+    );
+    await expect(page.locator('.models-probe-log')).toContainText('HTTP 200');
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
+    const badJev = await createModel('jev', 'jev-error', 'http://127.0.0.1:3211/jev');
+    for (const theme of ['light', 'dark']) {
+      await page.request.patch('/api/preferences', { data: { theme, assistantIcon: null } });
+      await page.reload();
+      await page.getByRole('button', { name: /模型管理与授权/ }).click();
+      await page
+        .locator(`[data-model-id="${badJev}"]`)
+        .getByRole('button', { name: '管理', exact: true })
+        .click();
+      await expect(page.getByLabel('支持图片输入')).not.toBeVisible();
+      await page.getByRole('button', { name: '测试连通性', exact: true }).click();
+      const log = page.locator('.models-probe-log');
+      await expect(log).toHaveAttribute('open', '');
+      await expect(log).toContainText('HTTP 401');
+      await expect(log).toContainText('Invalid API key');
+      await expect(log).toContainText('[REDACTED]');
+      await expect(log).not.toContainText('Bearer fixture');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await log.getByRole('heading', { name: '上游响应 · HTTP 401' }).scrollIntoViewIfNeeded();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({ path: test.info().outputPath(`jev-error-${theme}.png`) });
+    }
     expect(errors).toEqual([]);
   } finally {
     await page.request.patch('/api/extensions/preferences', { data: { modes: {} } });

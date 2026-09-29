@@ -1,75 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { Globe, Puzzle } from 'lucide-react';
-import { api, patch } from '../../client/api';
-import type { ExtensionInfo, ExtensionMode, FeatureManifest } from '../../shared/types';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Globe, Puzzle, X } from 'lucide-react';
+import { ErrorNote } from '../../client/components';
+import { ExtensionModeControl } from './mode-control';
+import { useExtensions } from './use-extensions';
+export { useExtensions } from './use-extensions';
 import './extensions.css';
-interface Catalog {
-  capabilities: ExtensionInfo[];
-  modes: Record<string, ExtensionMode>;
-}
-const names = { auto: '自动', on: '开启', off: '关闭' };
-const next = { off: 'on', on: 'auto', auto: 'off' } as const;
-export function useExtensions(userId: string, features: FeatureManifest[]) {
-  const [state, setState] = useState<{ userId: string; data: Catalog }>();
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const editing = useRef(false);
-  const version = useRef(0);
-  const revision = features.map((f) => `${f.id}:${f.enabled}`).join(',');
-  useEffect(() => {
-    let current = true;
-    setError('');
-    const reload = () => {
-      if (editing.current) return;
-      const requested = version.current;
-      api<Catalog>('/extensions')
-        .then((data) => {
-          if (current && requested === version.current) {
-            setState({ userId, data });
-            setError('');
-          }
-        })
-        .catch((error) => {
-          if (current && requested === version.current) setError(error.message);
-        });
-    };
-    reload();
-    const timer = setInterval(reload, 30_000);
-    window.addEventListener('focus', reload);
-    window.addEventListener('online', reload);
-    return () => {
-      current = false;
-      clearInterval(timer);
-      window.removeEventListener('focus', reload);
-      window.removeEventListener('online', reload);
-    };
-  }, [userId, revision]);
-  const data = state?.userId === userId ? state.data : undefined;
-  const capabilities = data?.capabilities ?? [];
-  const modes = Object.fromEntries(
-    capabilities
-      .filter((item) => item.ready && item.enabled)
-      .map((item) => [item.id, data?.modes[item.id] ?? 'off']),
-  );
-  async function change(id: string, mode: ExtensionMode) {
-    if (!data || editing.current) return;
-    editing.current = true;
-    version.current++;
-    setSaving(true);
-    setError('');
-    const updated = { ...data.modes, [id]: mode };
-    try {
-      await patch('/extensions/preferences', { modes: updated });
-      setState({ userId, data: { ...data, modes: updated } });
-    } catch (error) {
-      setError((error as Error).message);
-    } finally {
-      editing.current = false;
-      setSaving(false);
-    }
-  }
-  return { capabilities, modes, change, saving, error, loading: !data && !error };
-}
+
 export function ExtensionControls({
   controls,
   disabled,
@@ -77,32 +13,125 @@ export function ExtensionControls({
   controls: ReturnType<typeof useExtensions>;
   disabled: boolean;
 }) {
+  const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const active = Object.values(controls.modes).filter((mode) => mode !== 'off').length;
+  const close = () => {
+    popup.current?.hidePopover();
+    trigger.current?.focus();
+  };
+  useEffect(() => {
+    if (disabled) popup.current?.hidePopover();
+  }, [disabled]);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const panel = popup.current!;
+    const position = () => {
+      const anchor = trigger.current!.getBoundingClientRect();
+      const bounds = panel.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const top = viewport?.offsetTop ?? 0,
+        left = viewport?.offsetLeft ?? 0;
+      const width = viewport?.width ?? innerWidth,
+        height = viewport?.height ?? innerHeight;
+      const above = anchor.top - bounds.height - 8;
+      panel.style.left = `${Math.max(left + 12, Math.min(anchor.left, left + width - bounds.width - 12))}px`;
+      panel.style.top = `${Math.max(top + 12, Math.min(above >= top + 12 ? above : anchor.bottom + 8, top + height - bounds.height - 12))}px`;
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(panel);
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener('keydown', keydown);
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    window.visualViewport?.addEventListener('resize', position);
+    window.visualViewport?.addEventListener('scroll', position);
+    panel
+      .querySelector<HTMLInputElement>('input:checked:not(:disabled)')
+      ?.focus({ preventScroll: true });
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('keydown', keydown);
+      window.removeEventListener('resize', position);
+      window.removeEventListener('scroll', position, true);
+      window.visualViewport?.removeEventListener('resize', position);
+      window.visualViewport?.removeEventListener('scroll', position);
+    };
+  }, [open]);
   return (
     <div className="extensions-controls" role="group" aria-label="拓展能力">
-      {controls.capabilities.map((item) => {
-        const mode = controls.modes[item.id] ?? 'off';
-        const Icon = item.icon === 'globe' ? Globe : Puzzle;
-        const ready = item.ready && item.enabled;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            className={`extensions-toggle ${mode !== 'off' ? 'active' : ''}`}
-            disabled={disabled || controls.saving || !ready}
-            aria-label={`${item.name}：${names[mode]}`}
-            aria-pressed={mode === 'auto' ? 'mixed' : mode === 'on'}
-            title={
-              ready
-                ? `${item.name} · ${names[mode]}，点击切换为${names[next[mode]]}`
-                : `${item.name} 尚未配置或已关闭，请联系管理员`
-            }
-            onClick={() => void controls.change(item.id, next[mode])}
-          >
-            <Icon size={17} aria-hidden="true" />
-            <span>{names[mode]}</span>
+      <button
+        ref={trigger}
+        type="button"
+        className={`extensions-trigger ${active ? 'active' : ''}`}
+        popoverTarget={id}
+        disabled={disabled || controls.loading}
+        aria-label="拓展能力"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={id}
+        title={active ? `拓展能力 · ${active} 项开启或自动` : '拓展能力 · 全部关闭'}
+      >
+        <Puzzle size={18} aria-hidden="true" />
+        {active > 0 && (
+          <span className="extensions-count" aria-hidden="true">
+            {active}
+          </span>
+        )}
+      </button>
+      <div
+        id={id}
+        ref={popup}
+        popover="auto"
+        role="dialog"
+        aria-label="聊天拓展能力"
+        className="extensions-popover"
+        style={{ visibility: open ? 'visible' : 'hidden' }}
+        onToggle={(event) => setOpen(event.newState === 'open')}
+      >
+        <header className="extensions-popover-heading">
+          <Puzzle size={18} />
+          <strong>拓展能力</strong>
+          <button className="icon-button" aria-label="关闭拓展能力" onClick={close}>
+            <X size={16} />
           </button>
-        );
-      })}
+        </header>
+        <p className="small muted">Auto 自动判断 · On 开启 · Off 关闭</p>
+        <ErrorNote text={controls.error} />
+        {controls.capabilities.map((item) => {
+          const Icon = item.icon === 'globe' ? Globe : Puzzle;
+          return (
+            <section key={item.id} className="extensions-menu-item" aria-label={item.name}>
+              <div className="extensions-menu-name">
+                <Icon size={18} />
+                <strong>{item.name}</strong>
+                {(!item.ready || !item.enabled) && (
+                  <span className="badge">{item.enabled ? '待配置' : '已关闭'}</span>
+                )}
+              </div>
+              <p className="small muted">{item.description}</p>
+              <ExtensionModeControl
+                name={item.name}
+                mode={controls.preferences[item.id] ?? 'off'}
+                disabled={disabled || !item.ready || !item.enabled}
+                saving={controls.saving}
+                change={(mode) => void controls.change(item.id, mode)}
+              />
+            </section>
+          );
+        })}
+        {!controls.capabilities.length && (
+          <p className="muted">暂无可用拓展，请在设置中启用插件。</p>
+        )}
+      </div>
     </div>
   );
 }

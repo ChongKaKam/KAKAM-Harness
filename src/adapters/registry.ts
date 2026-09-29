@@ -1,9 +1,11 @@
 import { Service, type Context } from 'cordis';
 import type { Attachment, ApiMode, ReasoningEffort, MessageUsage } from '../shared/types';
+import type { ProviderDiagnostics } from './diagnostics';
 export interface ProviderConnection {
   baseUrl: string;
   apiKey: string;
   apiMode?: ApiMode;
+  diagnostics?: ProviderDiagnostics;
 }
 export interface ProviderMessage {
   role: 'user' | 'assistant';

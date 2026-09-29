@@ -49,6 +49,11 @@ export function ModelConnectionProbe({
       <p className="small muted">
         使用已保存的来源发送简短请求，最多等待 60 秒；实际用量计入当前管理员。
       </p>
+      {apiMode === 'jev' && (
+        <p className="small muted">
+          使用英文 state 和 Choice 问题调用 /systemone。HTTP 401 表示鉴权失败，与中文支持无关。
+        </p>
+      )}
       <div className="models-probe-controls">
         {apiMode !== 'jev' && (
           <label>
@@ -115,9 +120,48 @@ export function ModelConnectionProbe({
             耗时从服务器发起请求开始计算，不含浏览器网络延迟。片段数量不代表 Token 数量。
           </p>
           <ErrorNote text={result.error} />
+          {result.diagnostics && (
+            <details className="models-probe-log" open={!result.ok}>
+              <summary>诊断日志 · 输入 / 输出 / 错误</summary>
+              <p className="small muted">
+                密钥已脱敏；日志仅用于本次测试，不会存入数据库。
+                {result.diagnostics.truncated && '内容过长，已截断。'}
+              </p>
+              <h4>请求输入</h4>
+              <pre>
+                {result.diagnostics.request
+                  ? `${result.diagnostics.request.method} ${result.diagnostics.request.url}\n${JSON.stringify(result.diagnostics.request.headers, null, 2)}\n\n${pretty(result.diagnostics.request.body)}`
+                  : '请求尚未发出'}
+              </pre>
+              <h4>
+                上游响应
+                {result.diagnostics.response ? ` · HTTP ${result.diagnostics.response.status}` : ''}
+              </h4>
+              <pre>
+                {result.diagnostics.response
+                  ? `${JSON.stringify(result.diagnostics.response.headers, null, 2)}\n\n${pretty(result.diagnostics.response.body) || '响应体为空'}`
+                  : '未收到 HTTP 响应'}
+              </pre>
+              <h4>模型输出</h4>
+              <pre>{pretty(result.diagnostics.output) || '未收到模型输出'}</pre>
+              {result.diagnostics.error && (
+                <>
+                  <h4>错误信息</h4>
+                  <pre>{result.diagnostics.error}</pre>
+                </>
+              )}
+            </details>
+          )}
         </div>
       )}
       <ErrorNote text={error} />
     </section>
   );
+}
+function pretty(value: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
 }

@@ -204,7 +204,9 @@ test('admin-only ordering, default fallback, platform URLs and Anthropic chat us
     assert.equal(failed.ok, false);
     assert.equal(failed.firstTextMs, null);
     assert.equal(failed.usage, null);
-    assert.ok(!JSON.stringify(failed).includes('sensitive upstream details'));
+    assert.ok(!failed.error.includes('sensitive upstream details'));
+    assert.equal(failed.diagnostics.response.status, 401);
+    assert.match(failed.diagnostics.response.body, /sensitive upstream details/);
     assert.equal((await json('/usage', admin)).rows[0].status, 'error');
     const disabledProbe = await json(`/admin/models/${ids[2]}/test`, admin, 'POST', {});
     assert.equal(disabledProbe.ok, true);

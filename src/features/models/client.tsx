@@ -221,8 +221,9 @@ export function ModelsPage() {
           <div className="notice">
             <Radio size={17} />
             <span>
-              支持 OpenAI 兼容接口与 Anthropic Messages。Base URL 请包含 API 前缀，例如{' '}
-              <code>https://api.example.com/v1</code>。探测结果需要主动加入白名单才会启用。
+              支持 OpenAI 兼容接口、Anthropic Messages 与 Jev 决策协议。Base URL 请包含 API
+              前缀，例如 <code>https://api.example.com/v1</code>
+              。探测结果需要主动加入白名单才会启用。
             </span>
           </div>
           <div className="models-provider-list">
@@ -492,14 +493,16 @@ export function ModelsPage() {
                   defaultValue={modelModal === 'new' ? '' : modelModal.label}
                 />
               </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  name="vision"
-                  defaultChecked={modelModal !== 'new' && modelModal.vision}
-                />
-                支持图片输入
-              </label>
+              {(modelModal === 'new' || modelModal.kind !== 'jev') && (
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    name="vision"
+                    defaultChecked={modelModal !== 'new' && modelModal.vision}
+                  />
+                  支持图片输入
+                </label>
+              )}
               {modelModal !== 'new' && (
                 <>
                   <label className="check-row">

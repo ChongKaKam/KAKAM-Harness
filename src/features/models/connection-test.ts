@@ -1,6 +1,7 @@
 import type { ModelAdapter, ProviderConnection } from '../../adapters/registry';
 import { HttpError } from '../../kernel/http';
 import type { ModelConnectionTest, ReasoningEffort } from '../../shared/types';
+import { ProviderDiagnostics } from '../../adapters/diagnostics';
 
 /** Probe the same streaming path as chat, without persisting a conversation. */
 export async function testModelConnection(
@@ -12,6 +13,9 @@ export async function testModelConnection(
 ): Promise<ModelConnectionTest> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
+  const diagnostics = new ProviderDiagnostics(connection);
+  connection = { ...connection, diagnostics };
+  let failure: unknown;
   const result: ModelConnectionTest = {
     ok: false,
     model,
@@ -21,6 +25,7 @@ export async function testModelConnection(
     latencyMs: 0,
     textChunks: 0,
     usage: null,
+    diagnostics: { output: '', truncated: false },
   };
   try {
     const events =
@@ -40,11 +45,13 @@ export async function testModelConnection(
           );
     for await (const chunk of events) {
       if (chunk.type === 'decision') {
+        diagnostics.text(JSON.stringify({ enabled: chunk.enabled }));
         result.ok = true;
         continue;
       }
       if (chunk.type === 'usage') result.usage = chunk.usage;
       else if (chunk.text.length) {
+        diagnostics.text(chunk.text);
         result.textChunks++;
         if (chunk.text.trim() && result.firstTextMs === null) result.firstTextMs = elapsed();
       }
@@ -55,6 +62,7 @@ export async function testModelConnection(
       result.error = '请求已结束，但未收到可显示的文本，请检查来源的流式协议兼容性。';
     else result.ok = true;
   } catch (error) {
+    failure = error;
     result.ok = false;
     result.error = signal.aborted
       ? '连接测试超时，请降低思考程度或检查上游响应。'
@@ -63,5 +71,6 @@ export async function testModelConnection(
         : '连接测试失败，请检查来源地址、密钥、模型及响应模式。';
   }
   result.latencyMs = elapsed();
+  result.diagnostics = diagnostics.finish(failure ?? result.error);
   return result;
 }

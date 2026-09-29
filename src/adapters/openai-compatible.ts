@@ -1,15 +1,16 @@
 import type { ModelAdapter, ProviderConnection, ProviderMessage, ProviderEvent } from './registry';
 import type { ReasoningEffort } from '../shared/types';
 import { HttpError } from '../kernel/http';
+import { providerFetch, captureErrorBody } from './diagnostics';
 const endpoint = (c: ProviderConnection, path: string) =>
   `${c.baseUrl.replace(/\/+$/, '')}/${path}`;
 const headers = (c: ProviderConnection) => ({
   'Content-Type': 'application/json',
   ...(c.apiKey ? { Authorization: `Bearer ${c.apiKey}` } : {}),
 });
-async function check(response: Response) {
+async function check(response: Response, connection: ProviderConnection) {
   if (!response.ok) {
-    await response.body?.cancel();
+    await captureErrorBody(response, connection);
     throw new HttpError(
       502,
       `模型服务返回 HTTP ${response.status}，请检查来源地址、密钥和模型名称`,
@@ -18,12 +19,12 @@ async function check(response: Response) {
 }
 export class OpenAICompatibleAdapter implements ModelAdapter {
   async discover(c: ProviderConnection) {
-    const response = await fetch(endpoint(c, 'models'), {
+    const response = await providerFetch(c, endpoint(c, 'models'), {
       headers: headers(c),
       signal: AbortSignal.timeout(20_000),
       redirect: 'error',
     });
-    await check(response);
+    await check(response, c);
     const body = (await response.json()) as { data?: { id: string }[] };
     if (!Array.isArray(body.data))
       throw new HttpError(502, '来源未返回兼容的模型列表，请手动添加模型');
@@ -75,14 +76,18 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
               : m.content,
           })),
         };
-    const response = await fetch(endpoint(c, responses ? 'responses' : 'chat/completions'), {
-      method: 'POST',
-      headers: headers(c),
-      redirect: 'error',
-      signal,
-      body: JSON.stringify(body),
-    });
-    await check(response);
+    const response = await providerFetch(
+      c,
+      endpoint(c, responses ? 'responses' : 'chat/completions'),
+      {
+        method: 'POST',
+        headers: headers(c),
+        redirect: 'error',
+        signal,
+        body: JSON.stringify(body),
+      },
+    );
+    await check(response, c);
     if (!response.body) throw new HttpError(502, '模型服务返回空响应');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

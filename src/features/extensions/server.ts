@@ -308,13 +308,26 @@ export const server = {
         }),
       );
       router.patch('/extensions/preferences', requireUser, (req, res) => {
-        const { modes } = z.object({ modes: modesSchema }).parse(req.body);
+        const input = z
+          .union([
+            z.object({ id: z.string(), mode: z.enum(['auto', 'on', 'off']) }),
+            z.object({ modes: modesSchema }),
+          ])
+          .parse(req.body);
+        if ('id' in input && !ctx.extensions.catalog().some((item) => item.id === input.id))
+          throw new HttpError(404, '拓展能力未注册');
+        // Each control updates only its own capability, preserving concurrent edits to others.
+        const modes = modesSchema.parse(
+          'id' in input
+            ? { ...ctx.extensions.preferences(req.user!), [input.id]: input.mode }
+            : input.modes,
+        );
         ctx.db.run(
           'INSERT INTO extension_preferences(user_id,modes) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET modes=excluded.modes',
           req.user!.id,
           JSON.stringify(modes),
         );
-        res.json({ ok: true });
+        res.json({ ok: true, modes });
       });
       router.get('/admin/extensions', requireAdmin, (_req, res) =>
         res.json(

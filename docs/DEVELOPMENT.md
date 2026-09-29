@@ -174,3 +174,5 @@ git diff --check
 新增浏览器功能测试可调用 `tests/e2e-session.ts` 的 `useFixtureSession(page)`，复用临时测试服务器首次注册的会话；文件仅保存在系统临时目录且关闭服务器时移除。登录/注册行为仍由原有用例验证，不通过提高生产限流阈值来容纳测试。
 
 拓展能力回归在 `tests/extensions.test.ts` 与 `tests/e2e/extensions.spec.ts`，覆盖 Search、Jev、权限、模式、来源持久化、停止、卸载与重连；mock-provider 提供隔离的原生 Jev 和 Perplexity Search 响应，不需要真实密钥或付费调用。
+
+模型诊断回归位于 `tests/model-diagnostics.test.ts`：覆盖四种协议的真实测试请求、401、半截流、超时、非 JSON、日志限长及凭据脱敏。拓展菜单与管理列表的模式同步、原生 Popover 键盘和手机布局由 `tests/e2e/extensions.spec.ts` 验证。

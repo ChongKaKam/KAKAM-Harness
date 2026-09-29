@@ -1,4 +1,5 @@
 import { HttpError } from '../kernel/http';
+import { providerFetch, captureErrorBody } from './diagnostics';
 import type { ReasoningEffort } from '../shared/types';
 import type { ModelAdapter, ProviderConnection, ProviderEvent, ProviderMessage } from './registry';
 
@@ -8,9 +9,9 @@ const headers = (key: string) => ({
   'anthropic-version': '2023-06-01',
   ...(key ? { 'x-api-key': key } : {}),
 });
-async function check(response: Response) {
+async function check(response: Response, connection: ProviderConnection) {
   if (!response.ok) {
-    await response.body?.cancel();
+    await captureErrorBody(response, connection);
     throw new HttpError(
       502,
       `Anthropic 服务返回 HTTP ${response.status}，请检查地址、密钥、模型及思考程度`,
@@ -36,12 +37,12 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
       const url = new URL(endpoint(connection.baseUrl, 'models'));
       url.searchParams.set('limit', '100');
       if (after) url.searchParams.set('after_id', after);
-      const response = await fetch(url, {
+      const response = await providerFetch(connection, url, {
         headers: headers(connection.apiKey),
         signal,
         redirect: 'error',
       });
-      await check(response);
+      await check(response, connection);
       const data = (await response.json()) as {
         data?: { id?: string }[];
         has_more?: boolean;
@@ -66,7 +67,7 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
     signal: AbortSignal,
     effort: ReasoningEffort = 'none',
   ): AsyncIterable<ProviderEvent> {
-    const response = await fetch(endpoint(connection.baseUrl, 'messages'), {
+    const response = await providerFetch(connection, endpoint(connection.baseUrl, 'messages'), {
       method: 'POST',
       headers: headers(connection.apiKey),
       signal,
@@ -92,7 +93,7 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
         })),
       }),
     });
-    await check(response);
+    await check(response, connection);
     if (!response.body) throw new HttpError(502, 'Anthropic 服务未返回流');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

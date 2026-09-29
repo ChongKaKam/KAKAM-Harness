@@ -195,6 +195,33 @@
   margin: 20px 0;
   overflow-wrap: anywhere;
 }
+.models-probe-log {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.models-probe-log summary {
+  cursor: pointer;
+  min-height: 32px;
+}
+.models-probe-log h4 {
+  margin: 14px 0 6px;
+  font-size: var(--font-ui);
+}
+.models-probe-log pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font:
+    var(--font-code)/1.6 ui-monospace,
+    monospace;
+}
 .models-probe p {
   margin: 8px 0;
   line-height: 1.65;

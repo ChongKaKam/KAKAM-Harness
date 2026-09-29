@@ -74,7 +74,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - 密码只要求非空，不设置位数或字符组合策略；注册、登录、账户修改、管理员重置使用同一规则。
 - 新用户提供 email / displayName / password；邮箱去掉首尾空白并转小写，以大小写无关唯一索引保证不重复，显示名称不作为身份标识。`users.email` 追加迁移允许旧账户暂为 NULL；旧 username 仅用于凭原密码绑定邮箱，不伪造地址或修改原用户 ID。更改邮箱需要当前密码并撤销其他会话，管理员变更邮箱会撤销该用户会话。
 - Session 使用随机 256-bit token，数据库只保存 SHA-256 摘要；HttpOnly + SameSite=Strict Cookie，7 天过期。停用 / 改角色 / 管理员重置密码会撤销对应账户 session。
-- API Key 使用 AES-256-GCM 加密，密钥从 `APP_SECRET` 派生。查询响应仅返回 `hasKey`，错误不反射上游凭据。
+- API Key 使用 AES-256-GCM 加密，密钥从 `APP_SECRET` 派生。查询响应仅返回 `hasKey`，错误不反射上游凭据。管理员主动连通性测试可接收经脱敏且限长的输入 / 输出 / 错误诊断，只存在本次响应，不写数据库；普通模型调用不启用捕获。诊断契约见 [功能指南](FEATURES.md#来源探测与模型连通性测试)。
 - 修改 API 要求 JSON 与匹配 Origin（浏览器请求）。登录限速、CSP、HTML 非执行渲染、Mermaid strict 模式作为补充。
 - `providers.api_mode` 追加迁移默认 `chat-completions`。`ModelsService.adapter(apiMode)` 将 Chat Completions / Responses 路由到 OpenAI 兼容 Adapter，将 `anthropic-messages` 路由到独立 Anthropic Adapter；探测、测试和聊天必须统一使用此映射。思考字段只在非 none 时发送。`ui_preferences` 以 user_id 隔离主题和头像。
 - 来源地址只允许管理员配置 HTTP(S)，默认不跟随重定向。支持内网模型是预期能力，因此没有阻止管理员选择私网地址。插件与管理员都属于可信边界，不能用它作为不可信租户任意网络访问的平台。
@@ -180,7 +180,7 @@ const colors = usePatternColors();
 
 `ExtensionsService` 是聊天与能力插件之间唯一的运行入口。chat 注入 extensions，在最终回答前调用 `plan()` / `prepare()`；Search 只向核心注册 `ExtensionDefinition`，不依赖 chat、不挂聊天路由。注册使用 Cordis `ctx.effect`，卸载撤销条目并中止正在执行的该插件调用。没有选中能力（默认 Off）时直接返回原上下文，不增加模型或搜索调用。
 
-`settings` 的 `extension:<id>` 保存管理员能力策略（enabled、strategy、llmModelId、decisionModelId）；`search:config` 保存检索配置，密钥用 ModelsService 的同一 SecretVault / APP_SECRET 加密。用户模式在 `extension_preferences` 按 user_id 保存；聊天请求携带模式快照，后续修改不改变已提交任务。停用保留配置，重新启用重新注册一次。模式语义与使用方法见 [README](../README.md#搜索与自动决策)。
+`settings` 的 `extension:<id>` 保存管理员能力策略（enabled、strategy、llmModelId、decisionModelId）；`search:config` 保存检索配置，密钥用 ModelsService 的同一 SecretVault / APP_SECRET 加密。管理列表默认模式与聊天拓展菜单共用 `extension_preferences`，按 user_id 保存，不是覆盖所有用户的全局开关；单项修改仅合并对应能力，跨标签页通过 BroadcastChannel 通知刷新，账户切换隔离结果；聊天请求携带模式快照，后续修改不改变已提交任务。停用保留配置，重新启用重新注册一次。模式语义与使用方法见 [README](../README.md#搜索与自动决策)。
 
 辅助 LLM 默认跟随本轮聊天模型，也可引用模型管理中的指定 LLM；Jev 引用同一模型表。接受任务前及实际调用前都执行授权检查，不借用管理员身份调用。普通用户无辅助模型权限时返回错误，不能回退到未授权模型。LLM 与 Jev 的类型由来源协议推导：`api_mode=jev` 对应 `Model.kind=jev`，其他为 llm；Jev 为纯文本决策模型，不出现在默认 `/models` 聊天列表中，服务端同样拒绝用其生成聊天。
 

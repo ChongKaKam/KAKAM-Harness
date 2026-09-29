@@ -170,6 +170,14 @@ test('core protection, admin configuration, encrypted Search keys and account-is
   assert.equal((await json('/admin/search')).hasKey, true);
   await json('/extensions/preferences', 'PATCH', { modes: { search: 'auto' } }, member);
   assert.equal((await json('/extensions', 'GET', undefined, member)).modes.search, 'auto');
+  await json('/extensions/preferences', 'PATCH', { id: 'search', mode: 'on' }, member);
+  assert.equal((await json('/extensions', 'GET', undefined, member)).modes.search, 'on');
+  await json('/extensions/preferences', 'PATCH', { id: 'search', mode: 'auto' }, member);
+  assert.equal(
+    (await request('/extensions/preferences', 'PATCH', { id: 'missing', mode: 'on' }, member))
+      .status,
+    404,
+  );
   assert.deepEqual((await json('/extensions')).modes, {});
   await json('/admin/search', 'PATCH', { apiKey: '' });
   assert.equal((await json('/extensions')).capabilities[0].ready, false);
@@ -339,7 +347,12 @@ test('invalid Jev answers retain reported usage; missing usage remains null', as
     const probe = await json(`/admin/models/${id}/test`, 'POST');
     assert.equal(probe.ok, expected);
     assert.equal(probe.usage?.total ?? null, total);
-    if (!expected) assert.ok(!JSON.stringify(probe).includes('secret upstream'));
+    assert.ok(!JSON.stringify(probe).includes('test-jev-key'));
+    if (name === 'jev-error') {
+      assert.equal(probe.diagnostics.response.status, 401);
+      assert.match(probe.diagnostics.response.body, /Invalid API key/);
+      assert.equal((await request(`/admin/models/${id}/test`, 'POST', {}, member)).status, 403);
+    }
   }
 });
 

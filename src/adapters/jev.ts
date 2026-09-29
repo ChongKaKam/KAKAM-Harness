@@ -7,6 +7,7 @@ import type {
   DecisionInput,
 } from './registry';
 import { HttpError } from '../kernel/http';
+import { providerFetch, captureErrorBody } from './diagnostics';
 
 const headers = (c: ProviderConnection) => ({
   'Content-Type': 'application/json',
@@ -18,21 +19,26 @@ const usageSchema = z.object({
   input_tokens: z.number().int().nonnegative(),
   output_tokens: z.number().int().nonnegative(),
 });
-async function check(response: Response) {
+async function check(response: Response, connection: ProviderConnection) {
   if (!response.ok) {
-    await response.body?.cancel();
-    throw new HttpError(502, `Jev 服务返回 HTTP ${response.status}，请检查模型来源配置`);
+    await captureErrorBody(response, connection);
+    throw new HttpError(
+      502,
+      response.status === 401
+        ? 'Jev HTTP 401：鉴权失败，请检查 TypeSafe API Key 是否有效、已撤销或属于其他服务；此错误与输入语言无关。'
+        : `Jev 服务返回 HTTP ${response.status}，请检查模型来源配置和诊断日志`,
+    );
   }
 }
 /** TypeSafe System One is a decision protocol, never a chat-completions wrapper. */
 export class JevAdapter implements ModelAdapter {
   async discover(c: ProviderConnection) {
-    const response = await fetch(endpoint(c, 'models'), {
+    const response = await providerFetch(c, endpoint(c, 'models'), {
       headers: headers(c),
       redirect: 'error',
       signal: AbortSignal.timeout(20_000),
     });
-    await check(response);
+    await check(response, c);
     const result = z
       .object({ models: z.array(z.object({ name: z.string().min(1) })) })
       .safeParse(await response.json());
@@ -48,7 +54,7 @@ export class JevAdapter implements ModelAdapter {
     input: DecisionInput,
     signal: AbortSignal,
   ): AsyncIterable<DecisionEvent> {
-    const response = await fetch(endpoint(c, 'systemone'), {
+    const response = await providerFetch(c, endpoint(c, 'systemone'), {
       method: 'POST',
       headers: headers(c),
       redirect: 'error',
@@ -68,7 +74,7 @@ export class JevAdapter implements ModelAdapter {
         },
       }),
     });
-    await check(response);
+    await check(response, c);
     const body = await response.json();
     const usage = usageSchema.safeParse(body?.usage);
     if (usage.success) {
