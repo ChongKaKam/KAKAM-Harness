@@ -212,3 +212,13 @@ UI 变更至少查看：light / dark（含系统跟随）、自然鲜明 / 柔�
 常用回归位置：`tests/e2e/layout.spec.ts` 检查字号和长内容布局；`shell.spec.ts` 检查 Shell、头像、代码主题和模型选择；`workspace.spec.ts` 检查编辑器、配色持久化和离开恢复。`appearance.test.ts` 检查色系与对比度，`markdown.test.tsx` 检查渲染行为。根据本次影响挑选用例，共享 token 或布局改变时执行完整桌面 / 手机回归。
 
 新增公共组件时更新本页接口表；新增 token 时说明语义与适用范围；更改样式顺序时同时更新上方顺序说明；产品交互变化同步 README。涉及全项目规则时，再同步 [AGENTS.md](../AGENTS.md) 的简要约束。
+
+## 聊天拓展能力
+
+聊天输入栏的 `ExtensionControls` 消费核心 `/extensions` 目录，不导入 Search 实现。每个图标按钮按 Off → On → Auto → Off 循环，文字显示关闭 / 开启 / 自动；`aria-pressed` 分别为 false / true / mixed，键盘 Enter / Space 与点击等效。未配置或管理员关闭的能力禁用，生成和保存模式时同样禁用。模式按账户保存在服务器；发送时提交快照。
+
+管理入口是设置中的“拓展能力”。可选插件通过 `ClientFeature.settingsParent` 将设置页归于该入口，保留自己的 client 页面，不重复加入设置侧栏。核心页展示各托管能力、可用状态、Auto 方式与模型选择；插件停用后显示重新启用入口。
+
+回复的 `ExtensionDetails` 使用原生 details/summary 展示状态、搜索词、编号来源和分阶段 Token；来源标题与摘要以纯文本呈现，外链使用安全 HTTP(S) URL、noopener noreferrer。状态独立使用明暗绿色 / 红色并保留文字。最终回答继续用原有安全 Markdown 管线，回复旁 Token 只表示最终回答调用，拓展消耗在详情和统计中查看。总耗时包含拓展处理。
+
+新增能力 UI 必须检查明暗主题、四档字号、手机触控、焦点与长链接换行，不允许横向撑破聊天栏。

@@ -1,3 +1,4 @@
+import { modesSchema } from '../extensions/server';
 import { Router, type Response } from 'express';
 import type { Context } from 'cordis';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +20,7 @@ const imageSchema = z.object({
 const inputSchema = z
   .object({
     modelId: z.string().uuid(),
+    extensions: modesSchema.default({}),
     requestId: z.string().uuid().optional(),
     reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).default('none'),
     content: z.string().trim().max(100_000).default(''),
@@ -39,12 +41,13 @@ function validateImages(images: Attachment[]) {
   }
 }
 const messageColumns =
-  'm.id,m.role,m.content,m.images,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
+  'm.id,m.role,m.content,m.images,m.extensions,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
 function messages(ctx: Context, id: string): Message[] {
   return ctx.db
     .all<
-      Omit<Message, 'images'> & {
+      Omit<Message, 'images' | 'extensions'> & {
         images: string;
+        extensions: string;
         input: number | null;
         output: number | null;
         total: number | null;
@@ -56,6 +59,7 @@ function messages(ctx: Context, id: string): Message[] {
     .map(({ input, output, total, ...m }) => ({
       ...m,
       images: JSON.parse(m.images),
+      extensions: JSON.parse(m.extensions),
       ...(m.role === 'assistant'
         ? {
             usage:
@@ -72,7 +76,7 @@ interface Generation {
 }
 export const server = {
   name: 'chat',
-  inject: ['db', 'http', 'models', 'kernel'],
+  inject: ['db', 'http', 'models', 'kernel', 'extensions'],
   apply(ctx: Context) {
     const router = Router();
     router.use('/conversations', requireUser);
@@ -93,7 +97,23 @@ export const server = {
       if (!res.destroyed && !res.writableEnded) res.write('data: ' + JSON.stringify(data) + '\n\n');
     };
     // Unexpected process restarts preserve checkpoint text and mark interrupted runs honestly.
-    ctx.db.run("UPDATE messages SET status='error' WHERE status='streaming'");
+    for (const saved of ctx.db.all<{ id: string; extensions: string }>(
+      "SELECT id,extensions FROM messages WHERE status='streaming'",
+    )) {
+      const runs: NonNullable<Message['extensions']> = JSON.parse(saved.extensions);
+      for (const run of runs) {
+        if (run.status === 'deciding' || run.status === 'running') {
+          run.status = 'error';
+          run.error = '服务重启，拓展任务已中断';
+        }
+        for (const call of run.calls) if (call.status === 'streaming') call.status = 'error';
+      }
+      ctx.db.run(
+        "UPDATE messages SET status='error',extensions=? WHERE id=?",
+        JSON.stringify(runs),
+        saved.id,
+      );
+    }
     ctx.db.run("UPDATE usage SET status='error' WHERE status='streaming'");
     router.get('/conversations', (req, res) => {
       const rows = ctx.db.all<{ id: string; title: string; updatedAt: string }>(
@@ -192,7 +212,8 @@ export const server = {
         return;
       }
       validateImages(input.images);
-      const model = ctx.models.authorize(user, input.modelId);
+      const model = ctx.models.authorize(user, input.modelId, 'llm');
+      const extensionPlan = ctx.extensions.plan(user, input.extensions, input.modelId);
       if (active.has(id) || userActive.has(user.id))
         throw new HttpError(409, '已有回复正在生成，请先停止或等待完成');
       const history = messages(ctx, id).filter((message) => message.status === 'complete');
@@ -292,11 +313,29 @@ export const server = {
         let status: Message['status'] = 'complete';
         let checkpoint = Date.now();
         try {
+          const signal = AbortSignal.any([generation.abort.signal, AbortSignal.timeout(180_000)]);
+          const prepared = await ctx.extensions.prepare(
+            user,
+            extensionPlan,
+            context,
+            signal,
+            (extensions) => {
+              generation.message.extensions = extensions;
+              ctx.db.run(
+                'UPDATE messages SET extensions=? WHERE id=?',
+                JSON.stringify(extensions),
+                messageId,
+              );
+              broadcast({ type: 'extensions', messageId, extensions });
+            },
+          );
+          signal.throwIfAborted();
+          ctx.models.authorize(user, input.modelId, 'llm');
           for await (const chunk of adapter.generate(
             connection,
             model.name,
-            context,
-            AbortSignal.any([generation.abort.signal, AbortSignal.timeout(180_000)]),
+            prepared,
+            signal,
             input.reasoningEffort,
           )) {
             if (chunk.type === 'usage') usage = chunk.usage;

@@ -19,18 +19,19 @@
 
 ## 已实现
 
-| 能力                | 行为                                                                                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 账户                | 邮箱 + 显示名称 + 密码注册（首位为管理员），邮箱登录、旧账户绑定邮箱、资料与密码修改、管理用户和角色                                                           |
-| 模型来源            | 仅管理员可见；设置 Base URL / API Key；编辑 / 删除来源；主动探测 `/models`；Chat Completions / Responses / Anthropic Messages 协议；可选平台链接；紧凑来源列表 |
-| 白名单 / 模型注册表 | SQLite `models` 表 + `ModelsService`；手动添加或从探测结果加入；逐模型启停、图片能力标记、逐用户授权；拖动排序与默认模型；逐模型连通性测试                     |
-| 聊天                | 私有会话、历史持久化、搜索标题、重命名、删除、SSE 流式回复、离开后后台生成与重连同步、停止生成；按用户和模型记忆思考等级                                       |
-| 多模态              | 文字 + 图片；PNG/JPEG/WebP，每条最多 4 张、每张 5 MB；需选择支持图片的模型                                                                                     |
-| 内容渲染            | 双方消息支持 Markdown、GFM 表格、代码高亮与一键复制、KaTeX 公式、LaTeX 代码块公式预览、Mermaid 图表、输入框实时富文本编辑                                      |
-| Token 统计          | 回复复制按钮旁可查看本次输入 / 输出 / 总量；日期与用户筛选、每日 / 每周 / 累计活动热力图、调用记录；管理员看全局，普通用户仅看自己                             |
-| 可选插件            | 提示词库：私有收藏、一键用于新对话；管理员可启停，停用移除页面和 API，保留数据                                                                                 |
-| 界面设置            | 白天 / 黑夜 / 跟随系统，Color Pattern 多色色系、对话和卡片选色、头像按账户保存；四档字号在当前设备按用户保存                                                   |
-| 部署                | 多阶段 Dockerfile、Compose 持久化卷、健康检查、`deploy.sh` 一键部署                                                                                            |
+| 能力                | 行为                                                                                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 账户                | 邮箱 + 显示名称 + 密码注册（首位为管理员），邮箱登录、旧账户绑定邮箱、资料与密码修改、管理用户和角色                                                                 |
+| 模型来源            | 仅管理员可见；设置 Base URL / API Key；编辑 / 删除来源；主动探测 `/models`；Chat Completions / Responses / Anthropic Messages / Jev 协议；可选平台链接；紧凑来源列表 |
+| 白名单 / 模型注册表 | SQLite `models` 表 + `ModelsService`；手动添加或从探测结果加入；逐模型启停、图片能力标记、逐用户授权；拖动排序与默认模型；逐模型连通性测试                           |
+| 聊天                | 私有会话、历史持久化、搜索标题、重命名、删除、SSE 流式回复、离开后后台生成与重连同步、停止生成；按用户和模型记忆思考等级                                             |
+| 多模态              | 文字 + 图片；PNG/JPEG/WebP，每条最多 4 张、每张 5 MB；需选择支持图片的模型                                                                                           |
+| 内容渲染            | 双方消息支持 Markdown、GFM 表格、代码高亮与一键复制、KaTeX 公式、LaTeX 代码块公式预览、Mermaid 图表、输入框实时富文本编辑                                            |
+| Token 统计          | 回复复制按钮旁可查看本次输入 / 输出 / 总量；日期与用户筛选、每日 / 每周 / 累计活动热力图、调用记录；管理员看全局，普通用户仅看自己                                   |
+| 拓展能力            | 核心统一托管，聊天图标切换 Auto / On / Off；LLM 或 LLM + Jev 自动决策；独立阶段用量与来源记录                                                                        |
+| 可选插件            | Search：Perplexity 检索与来源引用；提示词库：私有收藏、一键用于新对话；管理员可启停，停用移除页面和 API，保留数据                                                    |
+| 界面设置            | 白天 / 黑夜 / 跟随系统，Color Pattern 多色色系、对话和卡片选色、头像按账户保存；四档字号在当前设备按用户保存                                                         |
+| 部署                | 多阶段 Dockerfile、Compose 持久化卷、健康检查、`deploy.sh` 一键部署                                                                                                  |
 
 没有预置或虚构模型、聊天或 Token 消耗。首次运行后需要管理员接入模型。
 
@@ -249,3 +250,17 @@ npm run test:e2e
 字段依据：[OpenAI Chat Completions 参考](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[迁移到 Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[推理参数](https://developers.openai.com/api/docs/guides/reasoning)、[Responses 流式事件](https://developers.openai.com/api/docs/guides/streaming-responses)。
 
 Anthropic 字段依据：[Messages](https://platform.claude.com/docs/en/api/messages/create)、[流式事件](https://platform.claude.com/docs/en/build-with-claude/streaming)、[思考程度](https://platform.claude.com/docs/en/build-with-claude/effort)、[图片输入](https://platform.claude.com/docs/en/build-with-claude/vision)。
+
+## 搜索与自动决策
+
+1. 管理员进入「设置 → 拓展能力 → Search → 插件设置」，配置 Search Base URL（默认 `https://api.perplexity.ai`）与 Perplexity Search API Key；每轮最多 1–5 个词条、每个词条 1–10 条结果，默认 3 / 5。密钥加密保存，编辑时留空保留。
+2. 回到「拓展能力」，选择辅助 LLM（默认跟随本轮聊天模型）和 Auto 策略。普通 LLM 输出 `{ "enabled": true / false }`；LLM + Jev 先整理英文输入再调用 Jev 作决定。所有模型都来自模型管理，普通用户必须同时拥有相应模型授权。
+3. 使用 Jev 时，在「模型与接入」添加来源：Base URL `https://api.typesafe.ai/v1`，响应模式「Jev 决策」，填写 TypeSafe API Key，探测并添加 `jev-latest` 或供应商支持的精确模型名。Jev 统一在模型管理中排序、授权、启停、测试，分类为决策模型，不参与聊天默认模型选择。
+4. 聊天输入栏的地球图标依次切换 **Off（关闭）→ On（开启）→ Auto（自动）**，初始为 Off。Auto 判断是否需要搜索；On 始终生成搜索词并顺序检索；Off 不增加拓展调用。选择按账户保存，提交后模式固定。
+5. 展开回复上方的 Search 详情可查看判断结果、搜索词、去重来源和各阶段用量。最终回答使用来源编号链接；断网、刷新和离开页面不会中断服务器任务。主动停止会中止拓展和回答生成。管理员停用 Search 会中断当时仍执行的检索，但保留配置与历史来源。
+
+辅助 LLM、Jev 和最终回答的实际 Token 分开记录并汇总到统计；Perplexity Search 不返回 Token usage，检索记录为“未上报”，不估算消耗或价格。没有来源时明确提示；自动判断 JSON 无效或检索失败时本轮标错，不偷偷回退为“已搜索”的回答。
+
+当前利用 Search 返回的摘要归纳，不抓取网页全文，也不保证模型结论绝对真实。每个来源可打开原文核实。辅助模型仅读取最近 6 条文本（每条末尾最多 8000 字符），不接收图片。整个生成任务仍限制 180 秒，不支持跨服务重启续跑。
+
+接口依据：[Perplexity Search API](https://docs.perplexity.ai/api-reference/search-post)、[TypeSafe Jev API](https://docs.typesafe.ai/api)。后续能力的接入规则见 [功能扩展指南](docs/FEATURES.md#注册托管的-llm-能力)。

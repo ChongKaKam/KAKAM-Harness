@@ -86,6 +86,14 @@ export function useConversation(
                     : message,
                 ),
               );
+            } else if (event.type === 'extensions') {
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === event.messageId
+                    ? { ...message, extensions: event.extensions }
+                    : message,
+                ),
+              );
             } else if (event.type === 'done') {
               terminal = true;
               setMessages((previous) =>

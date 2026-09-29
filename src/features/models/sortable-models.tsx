@@ -62,13 +62,15 @@ function ModelCells({
       <td data-label="来源">{model.providerName}</td>
       <td data-label="能力">
         <span className="badge">
-          {model.vision ? (
+          {model.kind === 'jev' ? (
+            'Jev 决策'
+          ) : model.vision ? (
             <>
               <Eye size={12} />
               文字 + 图片
             </>
           ) : (
-            '文字'
+            'LLM · 文字'
           )}
         </span>
       </td>
@@ -179,7 +181,7 @@ export function SortableModels({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const defaultId = items.find((model) => model.enabled)?.id;
+  const defaultId = items.find((model) => model.enabled && model.kind !== 'jev')?.id;
   const rowProps = { disabled: saving, onEdit, onDelete, reducedMotion };
   const label = (id: string | number) => items.find((m) => m.id === id)?.label ?? '模型';
   const announcements: Announcements = {
@@ -222,7 +224,7 @@ export function SortableModels({
       <p className="muted small models-sort-help" role="status">
         {saving
           ? '正在保存排序…'
-          : '拖动左侧手柄调整顺序；首个已启用模型为默认。用户无权使用时顺延，主动选择过的模型保持不变。'}
+          : '拖动左侧手柄调整顺序；首个已启用 LLM 为默认聊天模型。用户无权使用时顺延，主动选择过的模型保持不变。'}
       </p>
       <DndContext
         sensors={sensors}

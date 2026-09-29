@@ -13,6 +13,9 @@ export function TokenUsage({ message }: { message: Message }) {
       content={
         <>
           <strong>本次回复 · Token 消耗</strong>
+          {!!message.extensions?.length && (
+            <p>此处为最终回答用量；辅助模型和检索调用见上方拓展详情，也计入统计。</p>
+          )}
           {usage ? (
             <>
               <dl className="chat-token-counts">

@@ -7,10 +7,13 @@ import { SecretVault } from '../../kernel/crypto';
 import { testModelConnection } from './connection-test';
 import type { Model, User, ApiMode } from '../../shared/types';
 export { manifest } from './manifest';
-const columns =
-  'm.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.enabled';
-const normalize = (m: Model) => ({ ...m, vision: Boolean(m.vision), enabled: Boolean(m.enabled) });
-const baseUrl = z.url().refine((v) => {
+const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.enabled,CASE WHEN p.api_mode='jev' THEN 'jev' ELSE 'llm' END AS kind`;
+const normalize = (m: Model) => ({
+  ...m,
+  vision: m.kind !== 'jev' && Boolean(m.vision),
+  enabled: Boolean(m.enabled),
+});
+export const baseUrl = z.url().refine((v) => {
   let u: URL;
   try {
     u = new URL(v);
@@ -45,7 +48,7 @@ const providerSchema = z.object({
   baseUrl,
   platformUrl,
   apiMode: z
-    .enum(['chat-completions', 'responses', 'anthropic-messages'])
+    .enum(['chat-completions', 'responses', 'anthropic-messages', 'jev'])
     .default('chat-completions'),
   apiKey: z.string().max(4096).default(''),
 });
@@ -70,9 +73,11 @@ export class ModelsService extends Service {
       )
       .map(normalize);
   }
-  authorize(user: User, id: string) {
+  authorize(user: User, id: string, kind?: Model['kind']) {
     const model = this.list(user).find((m) => m.id === id);
     if (!model) throw new HttpError(403, '模型未启用或未向你授权');
+    if (kind && model.kind !== kind)
+      throw new HttpError(400, kind === 'llm' ? '请选择 LLM 模型' : '请选择 Jev 决策模型');
     return model;
   }
   connection(id: string) {
@@ -83,12 +88,19 @@ export class ModelsService extends Service {
     if (!p) throw new HttpError(404, '模型来源不存在');
     return { baseUrl: p.baseUrl, apiKey: this.vault.decrypt(p.key), apiMode: p.apiMode };
   }
+  decrypt(value: string) {
+    return this.vault.decrypt(value);
+  }
   encrypt(value: string) {
     return this.vault.encrypt(value);
   }
   adapter(mode: ApiMode = 'chat-completions') {
     return this.ctx.adapters.get(
-      mode === 'anthropic-messages' ? 'anthropic-messages' : 'openai-compatible',
+      mode === 'jev'
+        ? 'jev'
+        : mode === 'anthropic-messages'
+          ? 'anthropic-messages'
+          : 'openai-compatible',
     );
   }
 }
@@ -100,7 +112,14 @@ export function modelsFeature(secret: string) {
       ctx.plugin(ModelsService, secret);
       ctx.inject(['models', 'db', 'http'], (ctx) => {
         const router = Router();
-        router.get('/models', requireUser, (req, res) => res.json(ctx.models.list(req.user!)));
+        router.get('/models', requireUser, (req, res) => {
+          const { kind } = z
+            .object({ kind: z.enum(['llm', 'jev', 'all']).default('llm') })
+            .parse(req.query);
+          res.json(
+            ctx.models.list(req.user!).filter((model) => kind === 'all' || model.kind === kind),
+          );
+        });
         router.use('/admin/providers', requireAdmin);
         router.use('/admin/models', requireAdmin);
         router.get('/admin/providers', (_req, res) =>
@@ -239,7 +258,7 @@ export function modelsFeature(secret: string) {
             input.providerId,
             input.name,
             input.label,
-            Number(input.vision),
+            Number(input.vision && ctx.models.connection(input.providerId).apiMode !== 'jev'),
           );
           res.status(201).json({ id });
         });
@@ -269,8 +288,11 @@ export function modelsFeature(secret: string) {
             })
             .parse(req.body);
           const id = String(req.params.id);
-          if (!ctx.db.get('SELECT id FROM models WHERE id=?', id))
-            throw new HttpError(404, '模型不存在');
+          const savedModel = ctx.db.get<{ providerId: string }>(
+            'SELECT provider_id AS providerId FROM models WHERE id=?',
+            id,
+          );
+          if (!savedModel) throw new HttpError(404, '模型不存在');
           ctx.db.transaction(() => {
             for (const userId of input.userIds)
               if (!ctx.db.get('SELECT id FROM users WHERE id=?', userId))
@@ -278,7 +300,9 @@ export function modelsFeature(secret: string) {
             ctx.db.run(
               'UPDATE models SET enabled=?,vision=?,label=? WHERE id=?',
               Number(input.enabled),
-              Number(input.vision),
+              Number(
+                input.vision && ctx.models.connection(savedModel.providerId).apiMode !== 'jev',
+              ),
               input.label,
               id,
             );

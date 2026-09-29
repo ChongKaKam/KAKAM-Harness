@@ -1,4 +1,5 @@
 import './context';
+import { JevAdapter } from '../adapters/jev';
 import { Context, ScopeStatus } from 'cordis';
 import type { FeatureManifest } from '../shared/types';
 import { Database } from './database';
@@ -32,6 +33,7 @@ export class KHKernel {
       name: 'adapter.openai-compatible',
       inject: ['adapters'],
       apply(ctx) {
+        ctx.effect(() => ctx.adapters.register('jev', new JevAdapter()));
         ctx.effect(() => ctx.adapters.register('openai-compatible', new OpenAICompatibleAdapter()));
         ctx.effect(() =>
           ctx.adapters.register('anthropic-messages', new AnthropicMessagesAdapter()),

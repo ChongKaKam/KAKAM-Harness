@@ -23,23 +23,39 @@ export async function testModelConnection(
     usage: null,
   };
   try {
-    for await (const chunk of adapter.generate(
-      connection,
-      model,
-      [{ role: 'user', content: 'Reply with only OK.' }],
-      signal,
-      effort,
-    )) {
+    const events =
+      connection.apiMode === 'jev' && adapter.decide
+        ? adapter.decide(
+            connection,
+            model,
+            { state: 'The user asks for current news.', instructions: 'Should we search the web?' },
+            signal,
+          )
+        : adapter.generate(
+            connection,
+            model,
+            [{ role: 'user', content: 'Reply with only OK.' }],
+            signal,
+            effort,
+          );
+    for await (const chunk of events) {
+      if (chunk.type === 'decision') {
+        result.ok = true;
+        continue;
+      }
       if (chunk.type === 'usage') result.usage = chunk.usage;
       else if (chunk.text.length) {
         result.textChunks++;
         if (chunk.text.trim() && result.firstTextMs === null) result.firstTextMs = elapsed();
       }
     }
-    if (result.firstTextMs === null)
+    if (connection.apiMode === 'jev') {
+      if (!result.ok) result.error = '未收到有效的 Jev 决策';
+    } else if (result.firstTextMs === null)
       result.error = '请求已结束，但未收到可显示的文本，请检查来源的流式协议兼容性。';
     else result.ok = true;
   } catch (error) {
+    result.ok = false;
     result.error = signal.aborted
       ? '连接测试超时，请降低思考程度或检查上游响应。'
       : error instanceof HttpError

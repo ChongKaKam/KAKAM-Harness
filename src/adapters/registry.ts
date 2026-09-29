@@ -12,7 +12,19 @@ export interface ProviderMessage {
 }
 export type TokenUsage = MessageUsage;
 export type ProviderEvent = { type: 'text'; text: string } | { type: 'usage'; usage: TokenUsage };
+export interface DecisionInput {
+  state: string;
+  instructions: string;
+}
+export type DecisionEvent =
+  { type: 'decision'; enabled: boolean } | { type: 'usage'; usage: TokenUsage };
 export interface ModelAdapter {
+  decide?(
+    connection: ProviderConnection,
+    model: string,
+    input: DecisionInput,
+    signal: AbortSignal,
+  ): AsyncIterable<DecisionEvent>;
   discover(connection: ProviderConnection): Promise<string[]>;
   generate(
     connection: ProviderConnection,

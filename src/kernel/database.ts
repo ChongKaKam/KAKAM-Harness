@@ -111,6 +111,17 @@ export class Database extends Service {
         'ALTER TABLE messages ADD COLUMN duration_ms INTEGER CHECK(duration_ms IS NULL OR duration_ms >= 0)',
       );
     }
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(messages)').some(
+        (c) => c.name === 'extensions',
+      )
+    ) {
+      this.connection.exec("ALTER TABLE messages ADD COLUMN extensions TEXT NOT NULL DEFAULT '[]'");
+    }
+    this.connection.exec(`CREATE TABLE IF NOT EXISTS extension_preferences (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      modes TEXT NOT NULL DEFAULT '{}'
+    )`);
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

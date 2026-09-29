@@ -290,9 +290,9 @@ interface ModelAdapter {
 
 `ProviderEvent` 是 `{ type: 'text', text }` 或 `{ type: 'usage', usage: { input, output, total } }`；相关类型均从该契约文件导入，`ReasoningEffort` 来自共享 DTO。Adapter 必须处理取消、协议错误、流结束及真实用量，不能将无 usage 伪造成零。
 
-在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible` 和 `anthropic-messages`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `chat-completions` / `responses`，后者处理 `anthropic-messages`。来源表保留 `api_mode`，旧来源迁移默认 Chat Completions。
+在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible`、`anthropic-messages` 和 `jev`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `chat-completions` / `responses`，`anthropic-messages` 处理原生 Messages，`jev` 处理 TypeSafe System One。来源表保留 `api_mode`，旧来源迁移默认 Chat Completions。
 
-新增协议时同步共享 `ApiMode` / `apiModeLabels`、provider Zod、管理表单、ModelsService 映射与注册；已有三个值保持兼容。聊天、连通性测试、探测都传入来源的 apiMode，不在调用点硬编码 Adapter ID。如果未来协议需要独立于来源的 Adapter ID，再设计相应迁移。
+新增协议时同步共享 `ApiMode` / `apiModeLabels`、provider Zod、管理表单、ModelsService 映射与注册；已有协议值保持兼容。聊天、连通性测试、探测都传入来源的 apiMode，不在调用点硬编码 Adapter ID。如果未来协议需要独立于来源的 Adapter ID，再设计相应迁移。
 
 思考档位是 `none / low / medium / high / xhigh`；None 省略上游字段。OpenAI 两种模式分别使用 reasoning_effort / reasoning.effort；Anthropic 当前使用 adaptive thinking / output_config.effort，不支持该字段的模型使用 None。协议转换放在 Adapter 中，聊天页面只提交统一 DTO。不要把 thinking_delta 当最终回复正文，也不要为协议错误自动重复付费调用。
 
@@ -302,8 +302,36 @@ interface ModelAdapter {
 
 - `POST /admin/providers/discover` 接收未保存的 `{ baseUrl, apiMode, apiKey?, id? }`。编辑来源时，省略 apiKey 会沿用 id 对应的已存密钥；显式空字符串表示免鉴权。只调用 Adapter.discover，不写来源、白名单或用量。现有来源也可调用 `POST /admin/providers/:id/discover`。
 - `POST /admin/models/:id/test` 替代旧的 `/admin/providers/test`。仅管理员可调用，body 只允许可选 `reasoningEffort`，默认 none。模型 API 名称、来源与协议从数据库读取，不接受任意临时模型或连接覆盖；停用模型也可在启用前测试，不改变权限。
-- `features/models/connection-test.ts` 调用与聊天相同的 generate 流，单次简短请求，60 秒截止。DTO `ModelConnectionTest` 包含 ok、model、apiMode、reasoningEffort、firstTextMs（未收到则 null）、latencyMs、textChunks、usage 及可选脱敏 error。已有有效用量在后续失败时保留，累计值取最新。
+- `features/models/connection-test.ts` 对 LLM 调用与聊天相同的 generate 流，对 Jev 调用原生 decide，单次简短请求，60 秒截止。DTO `ModelConnectionTest` 包含 ok、model、apiMode、reasoningEffort、firstTextMs（未收到则 null）、latencyMs、textChunks、usage 及可选脱敏 error。已有有效用量在后续失败时保留，累计值取最新。
 - API 校验 / 权限错误仍使用 HTTP 错误码；完成诊断后返回 HTTP 200，客户端必须检查 ok，不能仅凭 HTTP 成功或收到 usage 判定模型连接成功。无可显示文字的流判为失败。每次真正开始生成的测试记录当前管理员的用量，独立于聊天，不保存测试文本。
 - 前端来源表单探测后展示列表，保存成功再打开白名单添加弹窗。输入地址、密钥或协议变化即清除过期结果；取消不能保存配置或自动添加模型。
 
 `tests/streaming-latency.test.ts` 使用受控流在结束帧发送前验证首个文字已转发，同时覆盖拆分 UTF-8 / SSE 边界；它验证本地逐片行为，不代表真实供应商延迟。集成测试覆盖草稿探测不写库、权限、三种协议、失败用量与思考参数。真实来源问题需要用户授权后的独立诊断，不加入付费凭据或生产数据到自动测试。
+
+## 注册托管的 LLM 能力
+
+新增能力仍是普通 feature，manifest 声明 `capability: true`，由 server / client 两个入口显式注册。核心 `extensions` 提供能力目录、用户模式、管理员 Auto 策略与辅助调用记录。能力插件不直接接入 chat；参考 [`search/server.ts`](../src/features/search/server.ts)：
+
+1. 在 server 的 inject 中声明 extensions，以及实际使用的其他服务。
+2. 在 `ctx.effect` 中调用 `ctx.extensions.register(definition)` 并返回 disposer。
+3. definition 提供 id、name、description、icon（globe / puzzle）、settingsId、ready、英文 decisionInstructions 和异步 execute。
+4. execute 接收 `ExtensionScope`，使用 `scope.llm(stage, prompt, zodSchema)` 生成并校验 JSON；使用 `scope.track(stage, modelName, work)` 记录其他上游调用。必须传递 `scope.signal`，不得另配辅助模型凭据或自行绕过授权。通过 `run` 与 `update()` 保存查询、来源及状态，返回追加给最终回答的上下文。
+5. capability 的 client 使用 `placement: 'settings'` 与 `settingsParent: 'extensions'` 注册自己的设置页，由托管页链接访问，不新增 Shell 导航。服务端配置路由必须 requireAdmin。
+
+当前接口：
+
+| API                                 | 权限与内容                                                                                                 |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GET /extensions`                   | 当前用户的模式和活动能力可用性；不返回密钥或管理员模型选择                                                 |
+| `PATCH /extensions/preferences`     | 当前用户的 `{ modes: { [id]: 'auto' / 'on' / 'off' } }`                                                    |
+| `GET /admin/extensions`             | 管理员读取活动托管能力和 policy                                                                            |
+| `PATCH /admin/extensions/:id`       | 管理员写 `{ enabled, strategy: 'llm' / 'llm-jev', llmModelId: UUID / null, decisionModelId: UUID / null }` |
+| `GET /admin/search`                 | 管理员读取 baseUrl、hasKey、maxQueries、maxResults                                                         |
+| `PATCH /admin/search`               | 管理员写检索配置；省略 apiKey 保留，空字符串清除                                                           |
+| `GET /models?kind=all` / `kind=jev` | 在原有已启用、已授权范围内列出全部类型 / 仅 Jev，默认 kind=llm                                             |
+
+`POST /conversations/:id/messages` 新增可选 `extensions` 模式快照，省略等同全部 Off。幂等仍使用 requestId，重复提交不会重复搜索。SSE 新增 `{ type: 'extensions', messageId, extensions: ExtensionRun[] }`，重连必须沿用完整 snapshot 替换，不能把查询或用量重复追加。
+
+`ModelAdapter.decide` 为可选的决策接口，输入 state + instructions，产出 usage 或 `{ type: 'decision', enabled }`。Jev 的 `generate` 明确拒绝聊天；discover 使用 TypeSafe `models[].name`，decide 使用 `/systemone`，管理员连通性测试验证有效决策而非伪造文本片段。协议依据 [TypeSafe API](https://docs.typesafe.ai/api)、[模型列表](https://docs.typesafe.ai/models)；检索依据 [Perplexity Search](https://docs.perplexity.ai/api-reference/search-post)。
+
+检索流程参考 [Open WebUI 的查询生成与搜索预处理](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/utils/middleware.py) 的阶段划分，没有复制其运行时。失败、权限与用量边界见 [架构](ARCHITECTURE.md#llm-拓展能力核心)。

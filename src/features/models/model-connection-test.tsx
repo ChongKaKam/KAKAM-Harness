@@ -50,24 +50,26 @@ export function ModelConnectionProbe({
         使用已保存的来源发送简短请求，最多等待 60 秒；实际用量计入当前管理员。
       </p>
       <div className="models-probe-controls">
-        <label>
-          测试思考程度
-          <select
-            value={effort}
-            disabled={testing || busy}
-            onChange={(e) => {
-              setEffort(e.target.value as ReasoningEffort);
-              setResult(undefined);
-              setError('');
-            }}
-          >
-            <option value="none">None · 使用上游默认</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="xhigh">Extra high</option>
-          </select>
-        </label>
+        {apiMode !== 'jev' && (
+          <label>
+            测试思考程度
+            <select
+              value={effort}
+              disabled={testing || busy}
+              onChange={(e) => {
+                setEffort(e.target.value as ReasoningEffort);
+                setResult(undefined);
+                setError('');
+              }}
+            >
+              <option value="none">None · 使用上游默认</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">Extra high</option>
+            </select>
+          </label>
+        )}
         <button type="button" className="button" onClick={test} disabled={testing || busy}>
           <Radio size={15} />
           {testing ? '正在测试…' : '测试连通性'}
@@ -85,8 +87,16 @@ export function ModelConnectionProbe({
           </strong>
           <dl className="models-probe-metrics">
             <div>
-              <dt>首段文本</dt>
-              <dd>{result.firstTextMs === null ? '未收到' : `${result.firstTextMs} ms`}</dd>
+              <dt>{apiMode === 'jev' ? '决策响应' : '首段文本'}</dt>
+              <dd>
+                {apiMode === 'jev'
+                  ? result.ok
+                    ? '有效 JSON'
+                    : '未收到'
+                  : result.firstTextMs === null
+                    ? '未收到'
+                    : `${result.firstTextMs} ms`}
+              </dd>
             </div>
             <div>
               <dt>总耗时</dt>

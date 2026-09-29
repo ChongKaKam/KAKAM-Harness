@@ -11,6 +11,8 @@ import type { Config } from './config';
 import { authFeature, manifest as auth } from '../features/auth/server';
 import * as users from '../features/users/server';
 import { modelsFeature, manifest as models } from '../features/models/server';
+import * as extensions from '../features/extensions/server';
+import * as search from '../features/search/server';
 import * as chat from '../features/chat/server';
 import * as usage from '../features/usage/server';
 import * as prompts from '../features/prompts/server';
@@ -21,6 +23,8 @@ export async function createApp(config: Config) {
     await kernel.register(auth, authFeature(config));
     await kernel.register(users.manifest, users.server);
     await kernel.register(models, modelsFeature(config.secret));
+    await kernel.register(extensions.manifest, extensions.server);
+    await kernel.register(search.manifest, search.server);
     await kernel.register(chat.manifest, chat.server);
     await kernel.register(usage.manifest, usage.server);
     await kernel.register(prompts.manifest, prompts.server);

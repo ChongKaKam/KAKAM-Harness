@@ -16,12 +16,12 @@ export function SettingsPage({
   const { user, features, refresh, navigate } = useWorkspace();
   const feature = available.find((f) => f.manifest.id === tab);
   const Component = feature?.component;
-  const personal = available.filter((f) => !f.manifest.adminOnly);
-  const admin = available.filter((f) => f.manifest.adminOnly);
+  const personal = available.filter((f) => !f.manifest.adminOnly && !f.settingsParent);
+  const admin = available.filter((f) => f.manifest.adminOnly && !f.settingsParent);
   const link = (id: string, name: string, Icon: ClientFeature['icon']) => (
     <button
       key={id}
-      className={tab === id ? 'active' : ''}
+      className={tab === id || feature?.settingsParent === id ? 'active' : ''}
       aria-current={tab === id ? 'page' : undefined}
       onClick={() => navigate('settings', id)}
     >

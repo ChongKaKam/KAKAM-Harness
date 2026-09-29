@@ -8,6 +8,10 @@ import {
   Settings,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { ExtensionsPage } from '../features/extensions/client';
+import { SearchPage } from '../features/search/client';
+import { manifest as extensions } from '../features/extensions/manifest';
+import { manifest as search } from '../features/search/manifest';
 import { ChatPage } from '../features/chat/client';
 import { UsagePage } from '../features/usage/client';
 import { UsersPage } from '../features/users/client';
@@ -29,9 +33,18 @@ export interface ClientFeature {
   component: ComponentType;
   placement: 'workspace' | 'statistics' | 'settings';
   settingsLabel?: string;
+  settingsParent?: string;
 }
 // Build-time client catalog; runtime availability comes from the authenticated server registry.
 export const clientFeatures: ClientFeature[] = [
+  { placement: 'settings', manifest: extensions, icon: Layers, component: ExtensionsPage },
+  {
+    placement: 'settings',
+    manifest: search,
+    icon: Layers,
+    component: SearchPage,
+    settingsParent: 'extensions',
+  },
   { placement: 'workspace', manifest: chat, icon: MessageSquare, component: ChatPage },
   { placement: 'workspace', manifest: prompts, icon: BookOpen, component: PromptsPage },
   { placement: 'statistics', manifest: usage, icon: ChartNoAxesCombined, component: UsagePage },

@@ -9,8 +9,8 @@ flowchart TD
     Main[server/main.ts] --> App[createApp / composition root]
     App --> Kernel[KH-Kernel]
     Kernel --> Engine[Cordis Context / Service / inject / effect]
-    Engine --> Core[Core: auth users models chat usage preferences]
-    Engine --> Plugins[Plugin: prompts]
+    Engine --> Core[Core: auth users models extensions chat usage preferences]
+    Engine --> Plugins[Plugin: prompts search]
     UI[React Web Shell + Client Registry] --> HTTP[Express /api + 已验证 Request.user]
     HTTP --> Routes[HttpService / 活动 Router 列表]
     Routes --> Core
@@ -29,7 +29,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → chat → usage → prompts → preferences 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和OpenAI 兼容与 Anthropic Messages Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → search → chat → usage → prompts → preferences 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
 每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
@@ -40,6 +40,8 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `auth`        | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像  | 登录页 / 设置中的账户设置      |
 | `users`       | core   | 管理用户、角色、停用、重置与会话撤销              | 管理员设置                     |
 | `models`      | core   | ModelsService、来源、白名单、模型授权、连通性测试 | 管理员设置；聊天可见已授权模型 |
+| `extensions`  | core   | 托管能力注册、Auto 决策、辅助模型用量             | 管理员设置；聊天能力开关       |
+| `search`      | plugin | Perplexity 搜索、查询生成与来源记录               | 拓展能力的子设置页             |
 | `chat`        | core   | 私有对话、后台生成、SSE 订阅与停止                | 工作区                         |
 | `usage`       | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
 | `preferences` | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
@@ -84,7 +86,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - `models.sort_order` 为全局顺序。首次升级按旧的来源名称 / 模型名称排序初始化；后续启动不重排。新模型使用 MAX + 1 追加，列表按 sort_order、id 稳定排序。
 - `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一项为其默认。浏览器已明确选择且仍有权限的模型继续优先。
 - `usage.id = messages.id = requestId`（assistant）。读取历史时 LEFT JOIN 用量，`Message.usage` 为 `{ input, output, total } | null`；用户消息不带此字段。最终 SSE `done.message` 也带相同值，重连 snapshot 与历史一致。查询用量前仍先校验对话所有权；此关联不会让管理员读到其他用户的私人回复。
-- `messages.duration_ms` 是可空非负整数，追加迁移保留旧数据为 null。聊天任务用服务器单调时钟从发起模型请求到结束计时，包含上游等待与生成；完成、失败和主动停止都持久保存。`Message.durationMs` 在 SSE done、历史与重连 snapshot 中一致，浏览器离开或幂等重试不会重置。旧消息及异常进程退出前未记录的用时不推算。
+- `messages.duration_ms` 是可空非负整数，追加迁移保留旧数据为 null。聊天任务用服务器单调时钟从后台任务开始到结束计时，包含拓展调用、上游等待与生成；完成、失败和主动停止都持久保存。`Message.durationMs` 在 SSE done、历史与重连 snapshot 中一致，浏览器离开或幂等重试不会重置。旧消息及异常进程退出前未记录的用时不推算。
 - Anthropic 原生头为 x-api-key / anthropic-version，图片转为 base64 内容块；只向聊天正文转发 text_delta，忽略 thinking/signature 内容。message_start 与 message_delta 的 usage 按字段合并，输出为累计计数。输入加上 cache creation / cache read，message_stop 才代表协议结束；缺失结束、error、max_tokens 等保留已生成文本并报告未完成。None 不发送思考字段；非 None 使用 adaptive + output_config.effort，兼容范围和输出上限见 README。
 
 ### 数据归属
@@ -173,3 +175,19 @@ const colors = usePatternColors();
 ```
 
 对话、提示词库、首页建议、统计卡片和活动图均复用映射。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
+
+## LLM 拓展能力核心
+
+`ExtensionsService` 是聊天与能力插件之间唯一的运行入口。chat 注入 extensions，在最终回答前调用 `plan()` / `prepare()`；Search 只向核心注册 `ExtensionDefinition`，不依赖 chat、不挂聊天路由。注册使用 Cordis `ctx.effect`，卸载撤销条目并中止正在执行的该插件调用。没有选中能力（默认 Off）时直接返回原上下文，不增加模型或搜索调用。
+
+`settings` 的 `extension:<id>` 保存管理员能力策略（enabled、strategy、llmModelId、decisionModelId）；`search:config` 保存检索配置，密钥用 ModelsService 的同一 SecretVault / APP_SECRET 加密。用户模式在 `extension_preferences` 按 user_id 保存；聊天请求携带模式快照，后续修改不改变已提交任务。停用保留配置，重新启用重新注册一次。模式语义与使用方法见 [README](../README.md#搜索与自动决策)。
+
+辅助 LLM 默认跟随本轮聊天模型，也可引用模型管理中的指定 LLM；Jev 引用同一模型表。接受任务前及实际调用前都执行授权检查，不借用管理员身份调用。普通用户无辅助模型权限时返回错误，不能回退到未授权模型。LLM 与 Jev 的类型由来源协议推导：`api_mode=jev` 对应 `Model.kind=jev`，其他为 llm；Jev 为纯文本决策模型，不出现在默认 `/models` 聊天列表中，服务端同样拒绝用其生成聊天。
+
+执行方式：Auto + LLM 读取严格布尔 JSON；Auto + LLM/Jev 先让 LLM 输出英文 state JSON，再通过 Jev 的 choice 问题得到 on/off 并归一化为 `{ enabled: boolean }`。On 跳过决策但仍生成搜索词；Off 跳过该能力。结构或权限无效、检索失败时本轮标错，保留已完成的阶段和来源，不静默声称已联网核实。完整任务继续受原有 180 秒限制，每次检索另设 30 秒超时。
+
+`messages.extensions` 追加 JSON 列记录能力状态、决策、查询、来源和每次辅助调用的 usage ID / 阶段 / 状态 / 用量；旧消息为 `[]`。阶段变化立即检查点保存，通过 `extensions` SSE 事件更新；snapshot、done 与历史返回同一结构。浏览器离开只关闭订阅，主动停止、插件卸载或关机才中止对应工作。异常重启把遗留活动阶段标为 error，不恢复生成。
+
+每个辅助调用独立写 `usage`，`model_name` 含能力和阶段；Token 只取供应商已上报值，累计数据取最新。Jev 的 total 为已上报 input_tokens + output_tokens，缺任一字段则未上报；Search API 没有 Token usage，保留 NULL。回复旁原有用量仍属于最终回答，辅助明细在拓展详情且计入全局统计。聊天任务在接受时预建原有回复用量记录；拓展失败而未发出最终回答请求时，该记录为 error 且 Token 为 NULL。
+
+辅助模型只接收最近 6 条文本消息，每条保留末尾 8000 字符；图片不转发。Search 顺序请求有限数量的词条，按去片段的 HTTP(S) URL 去重，过滤凭据 URL 和不安全协议。检索摘要按不可信证据交给最终模型，保存来源并要求编号链接引用；当前不抓取网页全文，不独立核验事实，也不保证模型每个断言均正确引用。

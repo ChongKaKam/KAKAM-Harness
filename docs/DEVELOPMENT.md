@@ -88,7 +88,7 @@ compose.yaml / Dockerfile       运行和构建契约
 | 全局主题 / 字号规则                | `shared/appearance.ts`、`shared/typography.ts`、公共 CSS | 影响所有页面，需要完整视觉回归                                 |
 | 用户身份、来源校验、全局 HTTP 限制 | `server/app.ts`、auth / users、kernel/http               | 属于全局边界，不能由页面显示状态代替后端鉴权                   |
 
-不要仅因为“以后可能有很多插件”就先建立任意扩展点系统。先明确谁提供能力、谁消费能力，沿用已有 Service / Registry 模式；依赖关系和失败时行为应可描述、可测试。
+不要仅因为“以后可能有很多插件”就先建立任意扩展点系统。LLM 拓展已有 extensions 核心，能力插件统一向它注册；其他场景先明确谁提供能力、谁消费能力，沿用已有 Service / Registry 模式；依赖关系和失败时行为应可描述、可测试。
 
 ## 一个功能进入产品的顺序
 
@@ -172,3 +172,5 @@ git diff --check
 更新通常为 `git pull --ff-only` 后 `./deploy.sh`；先按 README 备份配置和数据。已有 `.env` 不会重建密钥，SQLite 卷会继续使用。生产重启会中断当前模型生成，不能把“浏览器离开不断流”等同于“服务重启也续跑”。具体的备份、部署和限制以 [README](../README.md) 为主。
 
 新增浏览器功能测试可调用 `tests/e2e-session.ts` 的 `useFixtureSession(page)`，复用临时测试服务器首次注册的会话；文件仅保存在系统临时目录且关闭服务器时移除。登录/注册行为仍由原有用例验证，不通过提高生产限流阈值来容纳测试。
+
+拓展能力回归在 `tests/extensions.test.ts` 与 `tests/e2e/extensions.spec.ts`，覆盖 Search、Jev、权限、模式、来源持久化、停止、卸载与重连；mock-provider 提供隔离的原生 Jev 和 Perplexity Search 响应，不需要真实密钥或付费调用。

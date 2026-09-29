@@ -63,7 +63,7 @@ export function UsagePage() {
               { label: '总 Tokens', value: data.totals.total, icon: Hash },
               { label: '输入 Tokens', value: data.totals.input, icon: ArrowUpRight },
               { label: '输出 Tokens', value: data.totals.output, icon: ArrowDownLeft },
-              { label: '模型调用', value: data.totals.requests, icon: Activity },
+              { label: '调用次数', value: data.totals.requests, icon: Activity },
             ].map((s, index) => (
               <div
                 className="panel stat-card pattern-card"
@@ -81,7 +81,7 @@ export function UsagePage() {
           <ActivityChart rows={data.activity} days={Number(days)} />
           <div className="notice">
             统计仅累计模型来源实际上报的 Token 数。所选期间有 {data.totals.unreported}{' '}
-            次调用未上报用量（包括中断或不支持 usage 的来源），实际消耗可能更高。
+            次调用未上报用量（包括 Search 检索、中断或不支持 usage 的来源），实际消耗可能更高。
           </div>
           <div className="section-label usage-recent-heading">
             最近调用<span>最多显示 200 条 · 汇总包含全部记录</span>

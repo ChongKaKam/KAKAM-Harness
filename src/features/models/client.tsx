@@ -393,10 +393,14 @@ export function ModelsPage() {
                   }
                 >
                   <option value="chat-completions">Chat Completions · /chat/completions</option>
+                  <option value="jev">Jev 决策 · /systemone</option>
                   <option value="responses">Responses · /responses</option>
                   <option value="anthropic-messages">Anthropic Messages · /messages</option>
                 </select>
               </label>
+              <p className="small muted">
+                Jev 来源使用 https://api.typesafe.ai/v1，模型会自动归类为决策模型，不用于聊天回复。
+              </p>
               <section className="models-probe" aria-label="模型探测">
                 <h3>模型探测</h3>
                 <p className="muted small">
@@ -463,7 +467,7 @@ export function ModelsPage() {
                     <select name="providerId" required>
                       {data.providers.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name}
+                          {p.name} · {p.apiMode === 'jev' ? 'Jev 决策' : 'LLM'}
                         </option>
                       ))}
                     </select>

@@ -1,3 +1,5 @@
+import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
+import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   ArrowUp,
@@ -54,6 +56,7 @@ export function ChatPage() {
   const {
     user,
     models,
+    features,
     conversations,
     conversationId,
     navigate,
@@ -62,6 +65,7 @@ export function ChatPage() {
     setDraft,
     notify,
   } = useWorkspace();
+  const extensions = useExtensions(user.id, features);
   const [revision, setRevision] = useState(0);
   const {
     messages,
@@ -139,7 +143,15 @@ export function ChatPage() {
     }
   }
   async function send() {
-    if (busy || loading || !modelId || (!draft.trim() && !images.length)) return;
+    if (
+      busy ||
+      loading ||
+      extensions.saving ||
+      extensions.loading ||
+      !modelId ||
+      (!draft.trim() && !images.length)
+    )
+      return;
     const originalDraft = draft;
     const text = draft.trim();
     const attachments = images;
@@ -148,7 +160,13 @@ export function ChatPage() {
     setSubmitting(true);
     setError('');
     let id = startingId;
-    const body = { modelId, content: text, images: attachments, reasoningEffort: effort };
+    const body = {
+      modelId,
+      content: text,
+      images: attachments,
+      reasoningEffort: effort,
+      extensions: extensions.modes,
+    };
     try {
       if (!id) {
         id = (await post<{ id: string }>('/conversations')).id;
@@ -255,6 +273,7 @@ export function ChatPage() {
                       {m.modelName && <span>{m.modelName}</span>}
                     </div>
                     <div className="message-content">
+                      <ExtensionDetails runs={m.extensions} />
                       {m.images.length > 0 && (
                         <div className="message-images">
                           {m.images.map((img, i) => (
@@ -319,7 +338,7 @@ export function ChatPage() {
               <ArrowDown size={20} />
             </button>
           )}
-          <ErrorNote text={error || streamError} />
+          <ErrorNote text={error || streamError || extensions.error} />
           {reconnecting && (
             <p className="chat-connection-note" role="status">
               连接恢复后会自动同步；已提交的回复仍在服务器上继续生成。
@@ -400,6 +419,7 @@ export function ChatPage() {
                   } catch {}
                 }}
               />
+              <ExtensionControls controls={extensions} disabled={busy} />
               <span className="grow" />
               {busy ? (
                 <button
@@ -414,7 +434,13 @@ export function ChatPage() {
                 <button
                   className="send-button"
                   aria-label="发送消息"
-                  disabled={!modelId || (!draft.trim() && !images.length) || loading}
+                  disabled={
+                    !modelId ||
+                    (!draft.trim() && !images.length) ||
+                    loading ||
+                    extensions.saving ||
+                    extensions.loading
+                  }
                   onClick={send}
                 >
                   <ArrowUp size={20} />

@@ -1,10 +1,11 @@
 import type { AccentColor } from './appearance';
 export type Role = 'admin' | 'user';
-export type ApiMode = 'chat-completions' | 'responses' | 'anthropic-messages';
+export type ApiMode = 'chat-completions' | 'responses' | 'anthropic-messages' | 'jev';
 export const apiModeLabels: Record<ApiMode, string> = {
   'chat-completions': 'Chat Completions',
   responses: 'Responses',
   'anthropic-messages': 'Anthropic Messages',
+  jev: 'Jev · 决策模型',
 };
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 export interface UiPreferences {
@@ -29,9 +30,11 @@ export interface FeatureManifest {
   kind: 'core' | 'plugin';
   version: string;
   adminOnly?: boolean;
+  capability?: boolean;
   enabled?: boolean;
 }
 export interface Model {
+  kind: 'llm' | 'jev';
   id: string;
   providerId: string;
   providerName: string;
@@ -65,6 +68,7 @@ export interface Attachment {
   data: string;
 }
 export interface Message {
+  extensions?: ExtensionRun[];
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -74,7 +78,7 @@ export interface Message {
   createdAt: string;
   /** Final, provider-reported usage. Null/absent means not reported, never zero. */
   usage?: MessageUsage | null;
-  /** Server-measured model request duration, including wait and generation. Unknown for old messages. */
+  /** Server-measured generation duration, including extensions, wait and generation. Unknown for old messages. */
   durationMs?: number | null;
 }
 export interface MessageUsage {
@@ -106,7 +110,49 @@ export interface UsageData {
   activity: { day: string; model: string; total: number; requests: number }[];
 }
 export type StreamEvent =
+  | { type: 'extensions'; messageId: string; extensions: ExtensionRun[] }
   | { type: 'snapshot'; messages: Message[] }
   | { type: 'delta'; messageId: string; text: string }
   | { type: 'done'; message: Message }
   | { type: 'error'; message: string };
+
+export type ExtensionMode = 'auto' | 'on' | 'off';
+export interface ExtensionPolicy {
+  enabled: boolean;
+  strategy: 'llm' | 'llm-jev';
+  llmModelId: string | null;
+  decisionModelId: string | null;
+}
+export interface ExtensionInfo {
+  id: string;
+  name: string;
+  description: string;
+  icon: 'globe' | 'puzzle';
+  settingsId: string;
+  ready: boolean;
+  enabled: boolean;
+}
+export interface ExtensionSource {
+  title: string;
+  url: string;
+  snippet: string;
+  date?: string;
+}
+export interface ExtensionCall {
+  id: string;
+  stage: string;
+  modelName: string;
+  status: 'streaming' | 'complete' | 'error' | 'cancelled';
+  usage: MessageUsage | null;
+}
+export interface ExtensionRun {
+  id: string;
+  name: string;
+  mode: ExtensionMode;
+  status: 'deciding' | 'running' | 'complete' | 'skipped' | 'error' | 'cancelled';
+  decision?: { enabled: boolean };
+  queries: string[];
+  sources: ExtensionSource[];
+  calls: ExtensionCall[];
+  error?: string;
+}
