@@ -360,6 +360,7 @@ function SkillPicker({
                   <button
                     className="button"
                     type="button"
+                    aria-label={`预览 ${skill.title}`}
                     aria-expanded={previewId === skill.id}
                     onClick={async () => {
                       if (previewId === skill.id) {
@@ -383,7 +384,7 @@ function SkillPicker({
                       }
                     }}
                   >
-                    预览 {skill.title}
+                    预览
                   </button>
                   {current && current.version !== skill.version && (
                     <button

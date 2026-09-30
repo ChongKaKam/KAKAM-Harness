@@ -69,12 +69,13 @@
 :root .modal.skills-picker-modal {
   display: flex;
   flex-direction: column;
-  width: min(740px, calc(100vw - 32px));
-  max-height: min(720px, calc(100dvh - 32px));
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(640px, calc(100dvh - 32px));
   overflow: hidden;
 }
 .skills-picker-modal .modal-heading {
   flex-shrink: 0;
+  margin-bottom: 4px;
 }
 .skills-picker {
   display: flex;
@@ -87,49 +88,63 @@
   line-height: 1.5;
 }
 .skills-picker-intro {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
 }
 .skills-picker-controls {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(150px, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 148px;
+  gap: 8px;
   flex-shrink: 0;
 }
 .skills-picker-controls label {
   min-width: 0;
-  margin: 4px 0 8px;
+  margin: 0;
+  gap: 4px;
 }
-.skills-picker-count {
-  margin: 4px 0 8px;
+.skills-picker-controls input,
+.skills-picker-controls select {
+  padding: 8px 12px;
+  font-size: var(--font-ui);
+}
+.skills-picker > .skills-picker-count {
+  margin: 8px 0 4px;
   color: var(--muted);
-  font-size: var(--font-caption) !important;
+  font-size: var(--font-caption);
 }
 .skills-picker-list {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 0;
   flex: 0 1 auto;
   min-height: 0;
-  max-height: min(480px, 50dvh);
+  max-height: min(420px, 50dvh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 2px 4px 4px 0;
+  border-top: 1px solid var(--line);
+  padding: 0 4px 0 0;
 }
-.skills-picker-item {
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+:root .skills-picker-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 12px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   min-width: 0;
 }
 .skills-picker-item.is-selected {
   background: var(--selection);
-  border-color: var(--ink);
 }
 .skills-picker-item .check-row {
+  grid-column: 1;
+  grid-row: 1;
   margin: 0;
   font-size: var(--font-ui);
   cursor: pointer;
-  min-height: 36px;
+  min-height: 32px;
 }
 .skills-picker-item .check-row input {
   width: 20px;
@@ -148,45 +163,64 @@
   font-size: var(--font-caption);
   color: var(--muted);
   font-weight: 400;
-  margin-top: 2px;
+  margin-top: 0;
 }
 .skills-picker-item > p {
-  margin: 6px 0;
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0 0 0 32px;
   color: var(--muted);
   font-size: var(--font-caption);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.45;
 }
 .skills-picker-tags {
   display: flex;
-  flex-wrap: wrap;
+  grid-column: 1;
+  grid-row: 3;
+  flex-wrap: nowrap;
+  overflow: hidden;
   gap: 4px;
-  margin: 6px 0;
+  margin: 0 0 0 32px;
 }
 .skills-picker-tags span {
   max-width: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-hover);
   background: var(--surface-alt);
-  padding: 2px 7px;
+  padding: 2px 6px;
   color: var(--muted);
   font-size: var(--font-caption);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 .skills-picker-actions {
   display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
 }
-.skills-picker-actions .button {
-  min-height: 36px;
+:root .skills-picker-actions .button {
+  min-height: 32px;
   max-width: 100%;
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.skills-picker-actions .button:hover {
+  background: var(--soft);
+  color: var(--ink);
 }
 .skills-preview {
-  margin-top: 10px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -206,8 +240,8 @@
   flex-shrink: 0;
   justify-content: space-between;
   border-top: 1px solid var(--line);
-  padding-top: 12px;
-  margin-top: 10px;
+  padding-top: 8px;
+  margin-top: 8px;
 }
 .skills-picker-footer .button {
   min-height: 40px;
@@ -287,24 +321,28 @@
 }
 @media (max-width: 760px) {
   :root .modal.skills-picker-modal {
+    display: block;
     width: 100%;
     max-width: 100%;
-    height: 90dvh;
-    max-height: 94dvh;
+    height: fit-content;
+    max-height: calc(100dvh - 8px);
     margin: auto 0 0;
-    padding: 18px 16px max(14px, env(safe-area-inset-bottom));
-    border-radius: 18px 18px 0 0;
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+    border-radius: var(--radius-floating) var(--radius-floating) 0 0;
+  }
+  .skills-picker {
+    display: block;
   }
   .skills-picker-controls {
     grid-template-columns: minmax(0, 1fr);
-    gap: 0;
+    gap: 8px;
   }
   .skills-picker-controls label {
-    margin: 2px 0 6px;
+    margin: 0;
   }
   .skills-picker-list {
-    flex: 1;
-    max-height: none;
+    flex: 0 1 auto;
+    max-height: min(48dvh, 420px);
     padding-right: 0;
   }
   .skills-picker-footer {
