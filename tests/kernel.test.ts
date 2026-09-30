@@ -345,7 +345,7 @@ test('legacy prompts migrate once into versioned skills with ownership, color an
     });
     assert.deepEqual(
       {
-        ...kernel.ctx.db.get(
+        ...kernel.ctx.db.get<{ user_id: string; color_slot: number; current_version: number }>(
           "SELECT user_id,color_slot,current_version FROM skills WHERE id='legacy-skill'",
         ),
       },
