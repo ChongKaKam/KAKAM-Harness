@@ -1,6 +1,6 @@
 import type { Skill, SkillFile } from '../skills/types';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Plus, Sparkles, X, LoaderCircle } from 'lucide-react';
+import { Plus, Sparkles, X, LoaderCircle, ChevronDown } from 'lucide-react';
 import { api, patch, post } from '../../client/api';
 import { ErrorNote, Modal } from '../../client/components';
 import { normalizeTags, promptLimits, type PromptPreferences } from './types';
@@ -103,6 +103,7 @@ export function PromptEditor({
   return (
     <Modal
       title={card ? '编辑Skill' : '新建Skill'}
+      className="prompts-editor-modal"
       close={() => {
         if (!busy) {
           request.current?.abort();
@@ -246,60 +247,68 @@ export function PromptEditor({
               ))}
           </div>
         )}
-        <fieldset className="skills-files" disabled={busy || generating}>
-          <legend>参考文档与模板</legend>
-          <p className="prompts-editor-hint">
-            在主指令中引用文件路径，模型会在需要时读取。支持 references/ 和 assets/ 下的文本文件。
-          </p>
-          {files.map((file, index) => (
-            <div className="skills-file" key={index}>
-              <label>
-                文件路径
-                <input
-                  aria-label={`文件路径 ${index + 1}`}
-                  value={file.path}
-                  maxLength={160}
-                  placeholder="references/style.md"
-                  required
-                  onChange={(e) =>
-                    setFiles(
-                      files.map((f, i) => (i === index ? { ...f, path: e.target.value } : f)),
-                    )
-                  }
-                />
-              </label>
-              <label>
-                文件内容
-                <textarea
-                  aria-label={`文件内容 ${index + 1}`}
-                  rows={5}
-                  maxLength={40000}
-                  value={file.content}
-                  onChange={(e) =>
-                    setFiles(
-                      files.map((f, i) => (i === index ? { ...f, content: e.target.value } : f)),
-                    )
-                  }
-                />
-              </label>
-              <button
-                type="button"
-                className="button"
-                onClick={() => setFiles(files.filter((_, i) => i !== index))}
-              >
-                移除文件 {index + 1}
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="button"
-            disabled={files.length >= 16}
-            onClick={() => setFiles([...files, { path: '', content: '' }])}
-          >
-            添加参考文件
-          </button>
-        </fieldset>
+        <details className="skills-files" open={!!card?.files.length}>
+          <summary>
+            参考文档与模板
+            <span>
+              {files.length} 个文件
+              <ChevronDown size={16} aria-hidden="true" />
+            </span>
+          </summary>
+          <fieldset disabled={busy || generating}>
+            <p className="prompts-editor-hint">
+              在主指令中引用文件路径，模型会在需要时读取。支持 references/ 和 assets/ 下的文本文件。
+            </p>
+            {files.map((file, index) => (
+              <div className="skills-file" key={index}>
+                <label>
+                  文件路径
+                  <input
+                    aria-label={`文件路径 ${index + 1}`}
+                    value={file.path}
+                    maxLength={160}
+                    placeholder="references/style.md"
+                    required
+                    onChange={(e) =>
+                      setFiles(
+                        files.map((f, i) => (i === index ? { ...f, path: e.target.value } : f)),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  文件内容
+                  <textarea
+                    aria-label={`文件内容 ${index + 1}`}
+                    rows={5}
+                    maxLength={40000}
+                    value={file.content}
+                    onChange={(e) =>
+                      setFiles(
+                        files.map((f, i) => (i === index ? { ...f, content: e.target.value } : f)),
+                      )
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => setFiles(files.filter((_, i) => i !== index))}
+                >
+                  移除文件 {index + 1}
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="button"
+              disabled={files.length >= 16}
+              onClick={() => setFiles([...files, { path: '', content: '' }])}
+            >
+              添加参考文件
+            </button>
+          </fieldset>
+        </details>
         <ErrorNote text={error} />
         <div className="modal-actions">
           <button

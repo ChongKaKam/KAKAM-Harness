@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from 'react';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
 import {
   Plus,
   Radio,
@@ -29,6 +29,11 @@ export function ModelsPage() {
     ]);
     return { providers, models, users };
   });
+  useEffect(() => {
+    if (tab !== 'sources') return;
+    const timer = setInterval(reload, 30_000);
+    return () => clearInterval(timer);
+  }, [tab]);
   const [providerModal, setProviderModal] = useState<Provider | 'new'>();
   const [modelModal, setModelModal] = useState<ManagedModel | 'new'>();
   const [discovery, setDiscovery] = useState<{
@@ -241,6 +246,23 @@ export function ModelsPage() {
                   <div className="models-provider-title">
                     <h3>{p.name}</h3>
                     <span className="badge">{apiModeLabels[p.apiMode]}</span>
+                    <span
+                      className={`models-provider-health is-${p.health.state}`}
+                      title={
+                        p.health.checkedAt
+                          ? `模型列表接口上次检查：${new Date(p.health.checkedAt).toLocaleString()}`
+                          : '尚未完成检查'
+                      }
+                    >
+                      <span className="models-provider-health-light" aria-hidden="true" />
+                      {p.health.state === 'ok'
+                        ? '模型列表正常'
+                        : p.health.state === 'error'
+                          ? '模型列表异常'
+                          : p.health.state === 'checking'
+                            ? '检查中'
+                            : '待检查'}
+                    </span>
                   </div>
                   <p className="models-provider-url">{p.baseUrl}</p>
                   <div className="models-provider-meta small muted">

@@ -22,12 +22,14 @@ export function ColorPickerButton({
   colorKey,
   onChange,
   className = 'icon-button',
+  text,
 }: {
   label: string;
   value: number | null;
   colorKey: string;
   onChange: (value: number | null) => Promise<void>;
   className?: string;
+  text?: string;
 }) {
   const colors = usePatternColors();
   const [open, setOpen] = useState(false);
@@ -56,7 +58,8 @@ export function ColorPickerButton({
           setOpen(true);
         }}
       >
-        <Palette size={14} />
+        <Palette size={14} aria-hidden="true" />
+        {text && <span>{text}</span>}
       </button>
       {open && (
         <Modal title="选择颜色" close={() => !busy && setOpen(false)}>

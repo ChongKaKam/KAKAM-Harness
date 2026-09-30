@@ -140,11 +140,13 @@ Shell 的现有 refresh 同时读取分组与对话，并在账户变化后丢�
 
 `POST /conversations/:id/messages` 事务保存用户消息、streaming 回复和用量记录后返回 202，后台任务持有上游请求的 AbortController。提交 UUID 同时作为回复 ID，重试相同提交仅返回原任务，防止重复调用。
 
+修改最后一次提问或重试其失败 / 已停止回复时，提交相同路由并附 `replaceLastMessageId`（最后一个 user 消息 UUID）和新的 `requestId`。服务端要求最近两条恰为该 user 与已结束的 assistant，且对话归当前用户；事务中更新提问、替换末条回复并新建生成任务。旧回答的用量记录独立保留在统计中，续接上下文排除被替换的问答。传回同一 `requestId` 仍只确认原任务。
+
 `GET /conversations/:id/events` 是可替换的 SSE 订阅：先发送完整 snapshot，再发送带 messageId 的 delta 和最终 done。活动任务保留最新文本并每 1.5 秒写入检查点，结束时提交完整回复与用量。订阅断开仅清理监听器和心跳，不中止上游。所有订阅、查询和停止操作均校验会话归属。
 
 前端在可见性恢复、focus、pageshow 或 online 时重新订阅；连接错误时退避重试。snapshot 替换本地消息，避免重连重复追加文字。客户端卸载、隐藏或离线仅销毁订阅，不发送停止请求；`POST /conversations/:id/stop` 才显式取消当前生成。
 
-KH-Kernel 的 shutdown hook 在 Cordis 关闭数据库前取消并等待活动任务保存结束状态。异常重启则将遗留 streaming 记录标记 error。该实现不跨进程恢复上游生成，保留单进程、每用户一个活动任务和 180 秒超时的限制。
+KH-Kernel 的 shutdown hook 在 Cordis 关闭数据库前取消并等待活动任务保存结束状态。异常重启则将遗留 streaming 记录标记 error。生成任务现在按进度刷新 5 分钟空闲时限，且有 15 分钟总时限；正常长流不会在 180 秒被切断。失败原因写入 `messages.error`，历史和重连均显示同一安全提示。该实现不跨进程恢复上游生成，仍为单进程、每用户一个活动任务。
 
 ## 字号与聊天阅读位置
 
@@ -192,7 +194,7 @@ const colors = usePatternColors();
 
 辅助 LLM 默认跟随本轮聊天模型，也可引用模型管理中的指定 LLM；Jev 引用同一模型表。接受任务前及实际调用前都执行授权检查，不借用管理员身份调用。普通用户无辅助模型权限时返回错误，不能回退到未授权模型。LLM 与 Jev 的类型由来源协议推导：`api_mode=jev` 对应 `Model.kind=jev`，其他为 llm；Jev 为纯文本决策模型，不出现在默认 `/models` 聊天列表中，服务端同样拒绝用其生成聊天。
 
-执行方式：Auto + LLM 读取严格布尔 JSON；Auto + LLM/Jev 先让 LLM 输出英文 state JSON，再通过 Jev 的 choice 问题得到 on/off 并归一化为 `{ enabled: boolean }`。On 跳过决策但仍生成搜索词；Off 跳过该能力。结构或权限无效、检索失败时本轮标错，保留已完成的阶段和来源，不静默声称已联网核实。完整任务继续受原有 180 秒限制，每次检索另设 30 秒超时。
+执行方式：Auto + LLM 读取严格布尔 JSON；Auto + LLM/Jev 先让 LLM 输出英文 state JSON，再通过 Jev 的 choice 问题得到 on/off 并归一化为 `{ enabled: boolean }`。On 跳过决策但仍生成搜索词；Off 跳过该能力。结构或权限无效、检索失败时本轮标错，保留已完成的阶段和来源，不静默声称已联网核实。完整任务受聊天生成时限限制，每次检索另设 30 秒超时。
 
 `messages.extensions` 追加 JSON 列记录能力状态、决策、查询、来源和每次辅助调用的 usage ID / 阶段 / 状态 / 用量；旧消息为 `[]`。阶段变化立即检查点保存，通过 `extensions` SSE 事件更新；snapshot、done 与历史返回同一结构。浏览器离开只关闭订阅，主动停止、插件卸载或关机才中止对应工作。异常重启把遗留活动阶段标为 error，不恢复生成。
 
@@ -212,7 +214,7 @@ Skill 插件通过 `ctx.effect(() => ctx.extensions.registerSkills(provider))` �
 
 明确选择的主文档作为用户级上下文载入；文件目录只有路径和长度。唯一读工具 `skills_read` 根据本轮白名单访问固定版本，不接受服务器文件路径，不联网、不执行脚本。下轮重新组成主文档上下文，引用文件按需重读；不会把过去的“已读取”标记当作仍拥有文档正文。未选择技能时不提供该工具。
 
-chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可选 generateTurn 接口。Chat Completions 保留工具调用 ID，Responses 保留完整 output items（含不透明 reasoning）并维持 store:false，Anthropic 保留 tool_use 与 thinking/signature 块；这些协议续接数据只留在本轮服务端内存，不当作聊天正文或发给其他模型。停止、超时、插件停用和关机共用本轮取消信号；总时限仍是 180 秒，服务重启不续跑。
+chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可选 generateTurn 接口。Chat Completions 保留工具调用 ID，Responses 保留完整 output items（含不透明 reasoning）并维持 store:false，Anthropic 保留 tool_use 与 thinking/signature 块；这些协议续接数据只留在本轮服务端内存，不当作聊天正文或发给其他模型。停止、超时、插件停用和关机共用本轮取消信号；空闲 5 分钟或总计 15 分钟结束，服务重启不续跑。
 
 本轮固定模型来源、协议与 Adapter，避免不透明续接数据跨供应商；每次请求前重新执行 ModelsService.authorize。`models.tool_calling` 默认关闭，管理员按具体模型启用；单文件手动载入不需要工具调用，含参考文件时必须启用。对非法工具、路径、参数、重复片段及预算超限直接终止并保留已完成内容，不静默宣称参考文件已读取。预算见 [API 与限制](FEATURES.md#skill-库-api)。
 

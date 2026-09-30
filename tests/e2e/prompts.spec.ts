@@ -71,6 +71,8 @@ test('prompt editing, descriptions, tags and search work with readable responsiv
   await expect(page.locator('.prompt-card')).toHaveCount(1);
   await page.getByRole('searchbox', { name: '搜索Skill' }).fill('条理清晰');
   await expect(card).toBeVisible();
+  await page.getByRole('searchbox', { name: '搜索Skill' }).fill('完全不存在的技能关键词');
+  await expect(page.getByText('没有找到匹配的Skill')).toBeVisible();
   await page.getByRole('button', { name: '清空搜索', exact: true }).click();
   const filters = page.getByRole('group', { name: '按标签筛选' });
   await filters.getByRole('button', { name: '写作', exact: true }).click();
@@ -122,6 +124,8 @@ test('prompt editing, descriptions, tags and search work with readable responsiv
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeEmpty();
   await expect(page.getByLabel('已选 Skill')).toContainText(title);
   await page.goto('/#/prompts');
+  await card.getByRole('button', { name: `更多操作 ${title}` }).click();
+  await expect(card.getByRole('button', { name: `设置颜色 ${title}` })).toBeVisible();
   await card.getByRole('button', { name: `删除 ${title}`, exact: true }).click();
   await dialog.getByRole('button', { name: '确认删除', exact: true }).click();
   await expect(card).toHaveCount(0);

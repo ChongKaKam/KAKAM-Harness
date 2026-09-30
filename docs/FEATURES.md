@@ -300,6 +300,7 @@ interface ModelAdapter {
 
 ## 来源探测与模型连通性测试
 
+- 已保存来源会在服务启动、添加或编辑时即时检查。周期检测使用 `nextSourceProbeDelay` 按中国时间（UTC+8）每天 08:00、10:00、12:00、14:00、16:00、18:00 调用 `ModelsService.adapter(apiMode).discover`，夜间暂停；按固定时刻调度，与服务器本地时区及重启时间无关。管理员来源页每 30 秒刷新绿 / 红状态和检查时间。该后台检查不发送聊天请求、不产生 Token 用量，也不保存模型列表；红灯表示来源的模型列表接口不可用，不能代替具体模型的生成测试。服务重启后先显示待检查 / 检查中，状态仅存进程内；更换配置时忽略旧检查的迟到结果。
 - `POST /admin/providers/discover` 接收未保存的 `{ baseUrl, apiMode, apiKey?, id? }`。编辑来源时，省略 apiKey 会沿用 id 对应的已存密钥；显式空字符串表示免鉴权。只调用 Adapter.discover，不写来源、白名单或用量。现有来源也可调用 `POST /admin/providers/:id/discover`。
 - `POST /admin/models/:id/test` 替代旧的 `/admin/providers/test`。仅管理员可调用，body 只允许可选 `reasoningEffort`，默认 none。模型 API 名称、来源与协议从数据库读取，不接受任意临时模型或连接覆盖；停用模型也可在启用前测试，不改变权限。
 - `features/models/connection-test.ts` 对 LLM 调用与聊天相同的 generate 流，对 Jev 调用原生 decide，单次简短请求，60 秒截止。DTO `ModelConnectionTest` 包含 ok、model、apiMode、reasoningEffort、firstTextMs（未收到则 null）、latencyMs、textChunks、usage、可选脱敏 error 与 diagnostics（请求、HTTP 响应、模型输出、错误、截断标志）。已有有效用量在后续失败时保留，累计值取最新。

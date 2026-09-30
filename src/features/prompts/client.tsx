@@ -1,6 +1,16 @@
 import type { Skill, SkillSummary } from '../skills/types';
-import { useRef, useState } from 'react';
-import { Plus, ArrowUpRight, Trash2, BookOpen, Pencil, Search, X, Tag } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Plus,
+  ArrowUpRight,
+  Trash2,
+  BookOpen,
+  Pencil,
+  Search,
+  X,
+  Tag,
+  Ellipsis,
+} from 'lucide-react';
 import { api, patch, remove } from '../../client/api';
 import { ColorPickerButton, usePatternColors } from '../../client/color-pattern';
 import { useWorkspace } from '../../client/context';
@@ -13,7 +23,12 @@ import '../skills/skills.css';
 export function PromptsPage() {
   const colors = usePatternColors();
   const { navigate, setDraftSkills, notify, user } = useWorkspace();
+  const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
   const [actionError, setActionError] = useState('');
   const { data, error, reload } = useLoad(async () => {
     const [cards, preferences] = await Promise.all([
@@ -27,11 +42,13 @@ export function PromptsPage() {
   const [deleteError, setDeleteError] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [actionsFor, setActionsFor] = useState<string>();
+  const [openingId, setOpeningId] = useState<string>();
   const returnFocus = useRef<HTMLElement | null>(null);
   const createButton = useRef<HTMLButtonElement>(null);
   const cards = data?.cards ?? [];
-  const tags = normalizeTags(cards.flatMap((card) => card.tags)).sort((a, b) =>
-    a.localeCompare(b, 'zh-CN'),
+  const tags = normalizeTags([...cards.flatMap((card) => card.tags), ...selectedTags]).sort(
+    (a, b) => a.localeCompare(b, 'zh-CN'),
   );
 
   const visible = cards.filter((card) => {
@@ -56,6 +73,19 @@ export function PromptsPage() {
         ? previous.filter((value) => value.toLocaleLowerCase() !== tag.toLocaleLowerCase())
         : [...previous, tag],
     );
+  }
+  async function openEditor(card: SkillSummary) {
+    rememberFocus();
+    setActionError('');
+    setOpeningId(card.id);
+    try {
+      setEditing(await api<Skill>(`/skills/${card.id}`));
+      setActionsFor(undefined);
+    } catch (e) {
+      setActionError((e as Error).message);
+    } finally {
+      setOpeningId(undefined);
+    }
   }
   return (
     <div className="page prompts-page">
@@ -89,7 +119,7 @@ export function PromptsPage() {
         !error && <Spinner />
       ) : (
         <>
-          {!!cards.length && (
+          {(!!cards.length || !!query || !!selectedTags.length) && (
             <div className="prompts-tools">
               <div className="prompts-search-row">
                 <div className="prompts-search">
@@ -98,22 +128,25 @@ export function PromptsPage() {
                     type="search"
                     aria-label="搜索Skill"
                     placeholder="搜索标题、简介、正文或标签"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
                   />
-                  {search && (
+                  {query && (
                     <button
                       type="button"
                       className="icon-button"
                       aria-label="清空搜索"
-                      onClick={() => setSearch('')}
+                      onClick={() => {
+                        setQuery('');
+                        setSearch('');
+                      }}
                     >
                       <X size={16} />
                     </button>
                   )}
                 </div>
                 <span className="prompts-result-count" role="status">
-                  {visible.length} / {cards.length} 个Skill
+                  {query !== search ? '搜索中…' : `${visible.length} 个结果`}
                 </span>
               </div>
               {!!tags.length && (
@@ -152,7 +185,7 @@ export function PromptsPage() {
               )}
             </div>
           )}
-          {!cards.length ? (
+          {!cards.length && !query && !selectedTags.length ? (
             <Empty title="收藏你的第一个Skill">
               为经常做的事情存一个好开头，例如润色文章、阅读代码或规划学习。
             </Empty>
@@ -163,6 +196,7 @@ export function PromptsPage() {
                 type="button"
                 className="prompts-reset"
                 onClick={() => {
+                  setQuery('');
                   setSearch('');
                   setSelectedTags([]);
                 }}
@@ -184,28 +218,30 @@ export function PromptsPage() {
                     <span className="prompts-card-mark">
                       <BookOpen size={17} aria-hidden="true" />
                     </span>
-                    <span className="grow" />
-                    <div className="prompts-card-actions">
-                      <button
-                        type="button"
-                        className="icon-button"
-                        title="编辑Skill"
-                        aria-label={`编辑 ${card.title}`}
-                        onClick={async () => {
-                          rememberFocus();
-                          try {
-                            setEditing(await api<Skill>(`/skills/${card.id}`));
-                          } catch (e) {
-                            setActionError((e as Error).message);
-                          }
-                        }}
-                      >
-                        <Pencil size={16} aria-hidden="true" />
-                      </button>
+                    <div className="prompts-card-heading">
+                      <h2 className="prompts-card-title">{card.title}</h2>
+                      <span className="prompts-card-meta">
+                        v{card.version} · {card.fileCount} 个参考文件
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="icon-button prompts-more-button"
+                      aria-label={`更多操作 ${card.title}`}
+                      aria-expanded={actionsFor === card.id}
+                      onClick={() => setActionsFor(actionsFor === card.id ? undefined : card.id)}
+                    >
+                      <Ellipsis size={19} aria-hidden="true" />
+                    </button>
+                  </div>
+                  {actionsFor === card.id && (
+                    <div className="prompts-card-actions" aria-label={`${card.title} 的更多操作`}>
                       <ColorPickerButton
                         label={card.title}
                         value={card.colorSlot}
                         colorKey={card.id}
+                        className="prompts-card-action"
+                        text="设置颜色"
                         onChange={async (colorSlot) => {
                           await patch(`/skills/${card.id}/color`, { colorSlot });
                           reload();
@@ -213,20 +249,21 @@ export function PromptsPage() {
                       />
                       <button
                         type="button"
-                        className="icon-button"
+                        className="prompts-card-action prompts-delete-action"
                         title="删除Skill"
                         aria-label={`删除 ${card.title}`}
                         onClick={() => {
                           rememberFocus();
+                          setActionsFor(undefined);
                           setDeleteError('');
                           setDeleting(card);
                         }}
                       >
                         <Trash2 size={15} aria-hidden="true" />
+                        删除
                       </button>
                     </div>
-                  </div>
-                  <h2 className="prompts-card-title">{card.title}</h2>
+                  )}
                   <p className="prompts-card-description">
                     {card.description || '暂无简介，可编辑补充适用场景。'}
                   </p>
@@ -249,7 +286,17 @@ export function PromptsPage() {
                   <div className="prompts-card-footer">
                     <button
                       type="button"
-                      className="button"
+                      className="button prompts-edit-button"
+                      aria-label={`编辑 ${card.title}`}
+                      disabled={openingId === card.id}
+                      onClick={() => void openEditor(card)}
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                      {openingId === card.id ? '载入中…' : '编辑'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button prompts-start-button"
                       onClick={() => {
                         setDraftSkills([
                           {

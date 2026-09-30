@@ -4,7 +4,14 @@ import { fontSizes } from '../../src/shared/typography';
 
 async function openNavigation(page: Page) {
   const menu = page.getByRole('button', { name: '打开导航', exact: true });
-  if (await menu.isVisible()) await menu.click();
+  const sidebar = page.locator('.sidebar');
+  if (
+    (await menu.isVisible()) &&
+    !(await sidebar.evaluate((element) => element.classList.contains('open')))
+  ) {
+    await menu.click();
+    await expect(sidebar).toHaveClass(/open/);
+  }
 }
 
 test('groups organize conversations, preserve gray rows, and work across themes, sizes and touch', async ({
@@ -115,6 +122,8 @@ test('groups organize conversations, preserve gray rows, and work across themes,
       path: `test-results/groups-sidebar-${theme}-${info.project.name}.png`,
     });
   }
+  await openNavigation(page);
+  await page.locator('.side-scroll').evaluate((element) => (element.scrollTop = 0));
   await group.getByRole('button', { name: `在 ${groupName} 中新建对话`, exact: true }).click();
   await expect(page).toHaveURL(/#\/chat\/.+/);
   const newId = page.url().split('/').at(-1)!;

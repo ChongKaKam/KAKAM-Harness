@@ -13,6 +13,8 @@ import {
   Copy,
   Check,
   PenLine,
+  Pencil,
+  RefreshCw,
   Code2,
   Compass,
 } from 'lucide-react';
@@ -87,6 +89,11 @@ export function ChatPage() {
     );
   }, [user.id, modelId]);
   const [images, setImages] = useState<Attachment[]>([]);
+  const [editing, setEditing] = useState<{
+    id: string;
+    previousDraft: string;
+    previousImages: Attachment[];
+  }>();
   const [submitting, setSubmitting] = useState(false);
   const busy = submitting || messages.some((message) => message.status === 'streaming');
   const [error, setError] = useState('');
@@ -105,6 +112,7 @@ export function ChatPage() {
   useEffect(() => {
     setError('');
     setImages([]);
+    setEditing(undefined);
   }, [conversationId]);
   useEffect(() => {
     mounted.current = true;
@@ -144,7 +152,7 @@ export function ChatPage() {
       setError((e as Error).message);
     }
   }
-  async function send() {
+  async function send(retry?: { id: string; content: string; images: Attachment[] }) {
     if (
       busy ||
       loading ||
@@ -153,12 +161,12 @@ export function ChatPage() {
       skills.loading ||
       !!skills.error ||
       !modelId ||
-      (!draft.trim() && !images.length)
+      (!retry && !draft.trim() && !images.length)
     )
       return;
     const originalDraft = draft;
-    const text = draft.trim();
-    const attachments = images;
+    const text = retry ? retry.content : draft.trim();
+    const attachments = retry ? retry.images : images;
     const selectedSkills = skills.selected;
     const startingId = conversationId;
     scroll.latest();
@@ -169,6 +177,7 @@ export function ChatPage() {
       modelId,
       content: text,
       images: attachments,
+      ...(retry || editing ? { replaceLastMessageId: retry?.id ?? editing?.id } : {}),
       reasoningEffort: effort,
       extensions: extensions.modes,
       skills: skills.selected.map(({ id, version, scope }) => ({ id, version, scope })),
@@ -188,17 +197,20 @@ export function ChatPage() {
       await post(`/conversations/${id}/messages`, { ...body, requestId });
       pending.current = undefined;
 
-      setDraft((current) => (current === originalDraft ? '' : current));
+      if (!retry) {
+        setDraft((current) => (current === originalDraft ? '' : current));
+        setEditing(undefined);
+      }
       if (mounted.current && (viewId.current === id || viewId.current === startingId)) {
         scroll.latest();
         skills.accepted(selectedSkills);
-        setImages([]);
+        if (!retry) setImages([]);
         setRevision((value) => value + 1);
       }
     } catch (error) {
       if (mounted.current && (viewId.current === id || viewId.current === startingId)) {
         setError((error as Error).message);
-        setImages(attachments);
+        if (!retry) setImages(attachments);
         skills.restore(selectedSkills);
         // A lost acknowledgement may still represent an accepted job; resubscribe, never auto-resend.
         setRevision((value) => value + 1);
@@ -219,6 +231,21 @@ export function ChatPage() {
   }
   const selected = models.find((m) => m.id === modelId);
   const empty = !conversationId && !messages.length;
+  const lastUser = messages.at(-2)?.role === 'user' ? messages.at(-2) : undefined;
+  const lastAssistant = messages.at(-1)?.role === 'assistant' ? messages.at(-1) : undefined;
+  function editLastQuestion() {
+    if (!lastUser || busy) return;
+    setEditing({ id: lastUser.id, previousDraft: draft, previousImages: images });
+    setDraft(lastUser.content);
+    setImages(lastUser.images);
+    input.current?.focus();
+  }
+  function cancelEdit() {
+    if (!editing) return;
+    setDraft(editing.previousDraft);
+    setImages(editing.previousImages);
+    setEditing(undefined);
+  }
   return (
     <div className={`chat-page ${empty ? 'is-home' : ''}`}>
       {!empty && (
@@ -300,9 +327,18 @@ export function ChatPage() {
                           {m.status === 'cancelled' ? '已停止生成' : '未收到回复'}
                         </span>
                       )}
-                      {m.status === 'error' && <small className="message-status">回复未完成</small>}
+                      {m.status === 'error' && (
+                        <small className="message-status">{m.error ?? '回复未完成'}</small>
+                      )}
                       {m.status === 'cancelled' && m.content && (
                         <small className="message-status">已停止生成</small>
+                      )}
+                      {m.role === 'user' && m.id === lastUser?.id && !busy && !editing && (
+                        <div className="chat-message-actions">
+                          <button className="copy-button" onClick={editLastQuestion}>
+                            <Pencil size={14} /> 编辑提问
+                          </button>
+                        </div>
                       )}
                       {m.role === 'assistant' && m.status !== 'streaming' && (
                         <div className="chat-message-actions">
@@ -326,6 +362,24 @@ export function ChatPage() {
                           )}
                           <TokenUsage message={m} />
                           <GenerationTime message={m} />
+                          {!editing &&
+                            m.id === lastAssistant?.id &&
+                            lastUser &&
+                            (m.status === 'error' || m.status === 'cancelled') && (
+                              <button
+                                className="copy-button"
+                                disabled={busy || !modelId}
+                                onClick={() =>
+                                  void send({
+                                    id: lastUser.id,
+                                    content: lastUser.content,
+                                    images: lastUser.images,
+                                  })
+                                }
+                              >
+                                <RefreshCw size={14} /> 重新输出
+                              </button>
+                            )}
                         </div>
                       )}
                     </div>
@@ -372,12 +426,20 @@ export function ChatPage() {
             </div>
           )}
           <div className="composer">
+            {editing && (
+              <div className="chat-editing-note">
+                <span>正在修改最后一次提问 · 发送后将替换原提问和回复</span>
+                <button type="button" onClick={cancelEdit} aria-label="取消编辑提问">
+                  <X size={14} /> 取消
+                </button>
+              </div>
+            )}
             <SkillChips controls={skills} disabled={busy || skills.loading} />
             <LiveComposer
               ref={input}
               value={draft}
               onChange={setDraft}
-              onSend={send}
+              onSend={() => void send()}
               disabled={busy}
             />
             {images.length > 0 && (
@@ -452,7 +514,7 @@ export function ChatPage() {
                     skills.loading ||
                     !!skills.error
                   }
-                  onClick={send}
+                  onClick={() => void send()}
                 >
                   <ArrowUp size={20} />
                 </button>

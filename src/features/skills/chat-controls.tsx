@@ -262,7 +262,7 @@ function SkillPicker({
       (!tag || skill.tags.includes(tag)),
   );
   return (
-    <Modal title="Skill 库" close={close}>
+    <Modal title="Skill 库" close={close} className="skills-picker-modal">
       <div
         className="skills-picker"
         onKeyDown={(event) => {
@@ -273,28 +273,30 @@ function SkillPicker({
           }
         }}
       >
-        <p className="muted">
-          选择后随下一条消息载入；默认在本对话持续生效，版本固定，可在输入栏移除。
+        <p className="muted skills-picker-intro">
+          选择后随下一条消息载入，可在输入栏调整生效范围。
         </p>
-        <label>
-          搜索 Skill
-          <input
-            type="search"
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="名称、简介或标签"
-          />
-        </label>
-        <label>
-          标签
-          <select value={tag} onChange={(e) => setTag(e.target.value)}>
-            <option value="">全部标签</option>
-            {[...new Set(data?.flatMap((s) => s.tags))].map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-        </label>
+        <div className="skills-picker-controls">
+          <label>
+            搜索 Skill
+            <input
+              type="search"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="名称、简介或标签"
+            />
+          </label>
+          <label>
+            标签
+            <select value={tag} onChange={(e) => setTag(e.target.value)}>
+              <option value="">全部标签</option>
+              {[...new Set(data?.flatMap((s) => s.tags))].map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         <ErrorNote text={error || previewError} />
         {error && (
           <button className="button" onClick={reload}>
@@ -303,19 +305,27 @@ function SkillPicker({
         )}
         {!data && !error && <Spinner />}
         {data && !visible?.length && (
-          <Empty title="没有找到 Skill">可以先在工作区的 Skill 库中新建。</Empty>
+          <Empty title="没有找到 Skill">
+            {query || tag ? '试试其他关键词或标签。' : '可以先在工作区的 Skill 库中新建。'}
+          </Empty>
         )}
+        {!!visible?.length && <p className="skills-picker-count">找到 {visible.length} 个 Skill</p>}
         <div className="skills-picker-list">
           {visible?.map((skill) => {
             const current = selected.find((s) => s.id === skill.id);
             return (
-              <div className="skills-picker-item" key={skill.id}>
+              <div className={`skills-picker-item${current ? ' is-selected' : ''}`} key={skill.id}>
                 <label className="check-row">
                   <input
                     type="checkbox"
                     checked={!!current}
                     disabled={!current && selected.length >= skillLimits.selected}
-                    onChange={() =>
+                    onChange={() => {
+                      if (previewId === skill.id) {
+                        previewRequest.current++;
+                        setPreviewId('');
+                        setPreview(undefined);
+                      }
                       change(
                         current
                           ? selected.filter((s) => s.id !== skill.id)
@@ -328,8 +338,8 @@ function SkillPicker({
                                 scope: 'conversation',
                               },
                             ],
-                      )
-                    }
+                      );
+                    }}
                   />
                   <span>
                     {skill.title}
@@ -339,11 +349,25 @@ function SkillPicker({
                   </span>
                 </label>
                 <p>{skill.description || '暂无简介'}</p>
+                {!!skill.tags.length && (
+                  <div className="skills-picker-tags">
+                    {skill.tags.map((value) => (
+                      <span key={value}>{value}</span>
+                    ))}
+                  </div>
+                )}
                 <div className="skills-picker-actions">
                   <button
                     className="button"
                     type="button"
+                    aria-expanded={previewId === skill.id}
                     onClick={async () => {
+                      if (previewId === skill.id) {
+                        previewRequest.current++;
+                        setPreviewId('');
+                        setPreview(undefined);
+                        return;
+                      }
                       const request = ++previewRequest.current;
                       setPreviewId(skill.id);
                       setPreview(undefined);
@@ -365,45 +389,50 @@ function SkillPicker({
                     <button
                       className="button"
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        if (previewId === skill.id) {
+                          previewRequest.current++;
+                          setPreviewId('');
+                          setPreview(undefined);
+                        }
                         change(
                           selected.map((s) =>
                             s.id === skill.id
                               ? { ...s, title: skill.title, version: skill.version }
                               : s,
                           ),
-                        )
-                      }
+                        );
+                      }}
                     >
                       更新到 v{skill.version}
                     </button>
                   )}
                 </div>
+                {previewId === skill.id && (
+                  <section className="skills-preview" aria-label="Skill 预览">
+                    {preview ? (
+                      <>
+                        <strong>
+                          {preview.title} · v{preview.version}
+                        </strong>
+                        <Markdown content={preview.content} />
+                        {preview.files.map((f) => (
+                          <details key={f.path}>
+                            <summary>{f.path}</summary>
+                            <pre>{f.content}</pre>
+                          </details>
+                        ))}
+                      </>
+                    ) : (
+                      !previewError && <Spinner />
+                    )}
+                  </section>
+                )}
               </div>
             );
           })}
         </div>
-        {previewId && (
-          <section className="skills-preview" aria-label="Skill 预览">
-            {preview ? (
-              <>
-                <strong>
-                  {preview.title} · v{preview.version}
-                </strong>
-                <Markdown content={preview.content} />
-                {preview.files.map((f) => (
-                  <details key={f.path}>
-                    <summary>{f.path}</summary>
-                    <pre>{f.content}</pre>
-                  </details>
-                ))}
-              </>
-            ) : (
-              !previewError && <Spinner />
-            )}
-          </section>
-        )}
-        <div className="modal-actions">
+        <div className="modal-actions skills-picker-footer">
           <span className="muted">
             已选 {selected.length} / {skillLimits.selected}
           </span>

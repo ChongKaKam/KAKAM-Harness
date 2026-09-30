@@ -1,6 +1,7 @@
 import { skillSelections } from '../extensions/skill-runtime';
 import type { SelectedSkill, SkillRead } from '../skills/types';
 import { generateReply, aggregateCalls } from './skill-generation';
+import { generationDeadline } from './generation-deadline';
 import type { ExtensionCall } from '../../shared/types';
 import { modesSchema } from '../extensions/server';
 import { Router, type Response } from 'express';
@@ -28,6 +29,7 @@ const inputSchema = z
     skills: skillSelections.optional(),
     extensions: modesSchema.default({}),
     requestId: z.string().uuid().optional(),
+    replaceLastMessageId: z.string().uuid().optional(),
     reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).default('none'),
     content: z.string().trim().max(100_000).default(''),
     images: z.array(imageSchema).max(4).default([]),
@@ -47,7 +49,7 @@ function validateImages(images: Attachment[]) {
   }
 }
 const messageColumns =
-  'm.id,m.role,m.content,m.images,m.extensions,m.skills,m.skill_reads AS skillReads,m.calls,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
+  'm.id,m.role,m.content,m.images,m.extensions,m.skills,m.skill_reads AS skillReads,m.calls,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,m.error,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
 function messages(ctx: Context, id: string): Message[] {
   return ctx.db
     .all<
@@ -146,7 +148,7 @@ export const server = {
         for (const call of run.calls) if (call.status === 'streaming') call.status = 'error';
       }
       ctx.db.run(
-        "UPDATE messages SET status='error',extensions=? WHERE id=?",
+        "UPDATE messages SET status='error',error='服务重启，回复已中断',extensions=? WHERE id=?",
         JSON.stringify(runs),
         saved.id,
       );
@@ -319,7 +321,25 @@ export const server = {
       const extensionPlan = ctx.extensions.plan(user, input.extensions, input.modelId);
       if (active.has(id) || userActive.has(user.id))
         throw new HttpError(409, '已有回复正在生成，请先停止或等待完成');
-      const history = messages(ctx, id).filter((message) => message.status === 'complete');
+      const latest = input.replaceLastMessageId
+        ? ctx.db.all<{ id: string; role: Message['role']; status: Message['status'] }>(
+            'SELECT id,role,status FROM messages WHERE conversation_id=? ORDER BY rowid DESC LIMIT 2',
+            id,
+          )
+        : [];
+      if (
+        input.replaceLastMessageId &&
+        (latest.length !== 2 ||
+          latest[0].role !== 'assistant' ||
+          latest[1].role !== 'user' ||
+          latest[1].id !== input.replaceLastMessageId ||
+          latest[0].status === 'streaming')
+      )
+        throw new HttpError(409, '只能修改最后一次提问，请刷新对话后重试');
+      const history = messages(ctx, id).filter(
+        (message) =>
+          message.status === 'complete' && !latest.some((tail) => tail.id === message.id),
+      );
       if (
         !model.vision &&
         (input.images.length || history.some((message) => message.images.length))
@@ -354,16 +374,28 @@ export const server = {
         },
       };
       ctx.db.transaction(() => {
-        ctx.db.run(
-          'INSERT INTO messages(id,conversation_id,role,content,images,created_at,skills) VALUES(?,?,?,?,?,?,?)',
-          randomUUID(),
-          id,
-          'user',
-          input.content,
-          JSON.stringify(input.images),
-          now,
-          JSON.stringify(skillSnapshot),
-        );
+        if (input.replaceLastMessageId) {
+          ctx.db.run('DELETE FROM messages WHERE id=? AND conversation_id=?', latest[0].id, id);
+          ctx.db.run(
+            'UPDATE messages SET content=?,images=?,skills=? WHERE id=? AND conversation_id=?',
+            input.content,
+            JSON.stringify(input.images),
+            JSON.stringify(skillSnapshot),
+            input.replaceLastMessageId,
+            id,
+          );
+        } else {
+          ctx.db.run(
+            'INSERT INTO messages(id,conversation_id,role,content,images,created_at,skills) VALUES(?,?,?,?,?,?,?)',
+            randomUUID(),
+            id,
+            'user',
+            input.content,
+            JSON.stringify(input.images),
+            now,
+            JSON.stringify(skillSnapshot),
+          );
+        }
         ctx.db.run(
           'INSERT INTO messages(id,conversation_id,role,content,model_name,status,created_at) VALUES(?,?,?,?,?,?,?)',
           messageId,
@@ -428,18 +460,16 @@ export const server = {
 
         let status: Message['status'] = 'complete';
         let checkpoint = Date.now();
+        const deadline = generationDeadline(generation.abort.signal, skillPlan?.signal);
         try {
-          const signal = AbortSignal.any([
-            generation.abort.signal,
-            AbortSignal.timeout(180_000),
-            ...(skillPlan ? [skillPlan.signal] : []),
-          ]);
+          const signal = deadline.signal;
           const prepared = await ctx.extensions.prepare(
             user,
             extensionPlan,
             context,
             signal,
             (extensions) => {
+              deadline.touch();
               generation.message.extensions = extensions;
               ctx.db.run(
                 'UPDATE messages SET extensions=? WHERE id=?',
@@ -465,6 +495,7 @@ export const server = {
             effort: input.reasoningEffort,
             calls: generation.message.calls!,
             progress: (skillReads: SkillRead[], calls: ExtensionCall[]) => {
+              deadline.touch();
               generation.message.skillReads = [...skillReads];
               ctx.db.run(
                 'UPDATE messages SET skill_reads=?,calls=? WHERE id=?',
@@ -475,6 +506,7 @@ export const server = {
               broadcast({ type: 'skill-progress', messageId, skillReads, calls });
             },
             text: (text) => {
+              deadline.touch();
               generation.message.content += text;
               if (generation.message.content.length > 2_000_000)
                 throw new HttpError(502, '回复过长，已停止生成');
@@ -491,15 +523,20 @@ export const server = {
           });
         } catch (error) {
           status = generation.abort.signal.aborted ? 'cancelled' : 'error';
-          if (status === 'error')
+          if (status === 'error') {
+            generation.message.error =
+              deadline.signal.reason instanceof HttpError
+                ? deadline.signal.reason.message
+                : error instanceof HttpError
+                  ? error.message
+                  : '模型连接失败，请检查来源配置后重试';
             broadcast({
               type: 'error',
-              message:
-                error instanceof HttpError
-                  ? error.message
-                  : '模型连接失败或超时，请检查来源配置后重试',
+              message: generation.message.error,
             });
+          }
         } finally {
+          deadline.close();
           generation.message.status = status;
           generation.message.usage = aggregateCalls(generation.message.calls ?? []);
           const durationMs = Math.round(performance.now() - started);
@@ -507,10 +544,11 @@ export const server = {
           try {
             ctx.db.transaction(() => {
               ctx.db.run(
-                'UPDATE messages SET content=?,status=?,duration_ms=? WHERE id=?',
+                'UPDATE messages SET content=?,status=?,duration_ms=?,error=? WHERE id=?',
                 generation.message.content,
                 status,
                 durationMs,
+                generation.message.error ?? null,
                 messageId,
               );
               if (!generation.message.calls?.length)

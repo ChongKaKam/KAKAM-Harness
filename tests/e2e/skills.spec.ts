@@ -53,6 +53,9 @@ test('Skill attachments remain available to text models, stream reference reads 
   await expect(picker.getByRole('region', { name: 'Skill 预览' })).toContainText(
     'references/style.md',
   );
+  await expect(
+    picker.locator('.skills-picker-item').getByRole('region', { name: 'Skill 预览' }),
+  ).toBeVisible();
   await picker.getByRole('checkbox', { name: new RegExp(skill.title) }).check();
   await picker.getByRole('button', { name: '完成选择' }).click();
   await expect(page.getByRole('button', { name: '附件', exact: true })).toBeFocused();
@@ -145,4 +148,54 @@ test('Skill menu and picker fit themes, four font sizes and mobile with Escape f
   }
   await request.delete(`/api/skills/${skill.id}`);
   await request.patch('/api/preferences', { data: original });
+});
+
+test('long Skill lists keep selection and preview usable while scrolling', async ({
+  page,
+}, info) => {
+  await useFixtureSession(page);
+  const request = page.context().request;
+  const created: string[] = [];
+  const listTag = `长列表-${info.project.name}`;
+  try {
+    for (let index = 0; index < 12; index++) {
+      const skill = await (
+        await request.post('/api/skills', {
+          data: {
+            title: `长列表技能 ${String(index).padStart(2, '0')} ${info.project.name}`,
+            content: `第 ${index} 项技能的主指令`,
+            description: '用于检查长列表在窄屏中的选择、预览与固定完成操作。',
+            tags: [listTag],
+          },
+        })
+      ).json();
+      created.push(skill.id);
+    }
+    await page.goto('/#/chat');
+    await page.getByRole('button', { name: '附件', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: '添加附件' })
+      .getByRole('button', { name: 'Skill 库 插件' })
+      .click();
+    const picker = page.getByRole('dialog', { name: 'Skill 库' });
+    await picker.getByRole('combobox', { name: '标签' }).selectOption(listTag);
+    const list = picker.locator('.skills-picker-list');
+    await expect(list.locator('.skills-picker-item')).toHaveCount(12);
+    expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+      true,
+    );
+    const last = list.locator('.skills-picker-item').last();
+    await last.getByRole('checkbox').check();
+    await expect(picker.locator('.skills-picker-footer')).toContainText('已选 1 / 8');
+    await last.getByRole('button', { name: /预览 长列表技能 00/ }).click();
+    await expect(last.getByRole('region', { name: 'Skill 预览' })).toContainText('第 0 项技能');
+    await expect(picker.getByRole('button', { name: '完成选择' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await picker.getByRole('button', { name: '完成选择' }).click();
+    await expect(page.getByLabel('已选 Skill')).toContainText('长列表技能 00');
+  } finally {
+    for (const id of created) await request.delete(`/api/skills/${id}`);
+  }
 });

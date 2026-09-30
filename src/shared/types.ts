@@ -52,6 +52,7 @@ export interface Provider {
   hasKey: boolean;
   apiMode: ApiMode;
   platformUrl: string | null;
+  health: { state: 'unknown' | 'checking' | 'ok' | 'error'; checkedAt: string | null };
 }
 export interface ModelConnectionTest {
   ok: boolean;
@@ -94,6 +95,8 @@ export interface Message {
   usage?: MessageUsage | null;
   /** Server-measured generation duration, including extensions, wait and generation. Unknown for old messages. */
   durationMs?: number | null;
+  /** Safe, persisted reason for an incomplete assistant reply. */
+  error?: string | null;
 }
 export interface MessageUsage {
   input: number;

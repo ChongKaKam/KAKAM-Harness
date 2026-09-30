@@ -148,8 +148,9 @@ test('compact combined picker supports model search, keyboard effort and per-mod
         path: `test-results/model-list-${info.project.name}.png`,
         fullPage: true,
       });
-    // The anchored popover may cover the editor; use an unobscured shell corner for light dismiss.
-    await page.locator('.topbar').click({ position: { x: 4, y: 4 } });
+    // The anchored popover may cover the editor and heading; sidebar brand stays outside it.
+    if (info.project.name === 'desktop') await page.locator('.sidebar .brand').click();
+    else await page.locator('.topbar').click({ position: { x: 4, y: 4 } });
     await expect(panel).toHaveCount(0);
   }
   await page.goto('/#/settings/preferences');

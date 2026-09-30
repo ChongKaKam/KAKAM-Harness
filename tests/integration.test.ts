@@ -168,6 +168,30 @@ test('create users, enforce admin APIs and keep provider keys encrypted', async 
   )!;
   assert.ok(!persisted.encrypted_key.includes('secret-test-provider-key'));
 });
+test('source health checks run automatically without making paid model requests', async () => {
+  const badId = (
+    await json('/admin/providers', admin, 'POST', {
+      name: 'Unavailable source',
+      baseUrl: mock.url.replace(/\/v1$/, '/unavailable'),
+      apiKey: 'fixture',
+    })
+  ).id;
+  let providers: { id: string; health: { state: string; checkedAt: string | null } }[] = [];
+  for (let attempt = 0; attempt < 30; attempt++) {
+    providers = await json('/admin/providers', admin);
+    if (
+      providers.find((p) => p.id === providerId)?.health.state === 'ok' &&
+      providers.find((p) => p.id === badId)?.health.state === 'error'
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.equal(providers.find((p) => p.id === providerId)?.health.state, 'ok');
+  assert.equal(providers.find((p) => p.id === badId)?.health.state, 'error');
+  assert.ok(providers.find((p) => p.id === badId)?.health.checkedAt);
+  assert.equal(mock.requests.length, 0);
+  await json(`/admin/providers/${badId}`, admin, 'DELETE');
+});
 test('discovery is not authorization; whitelist and per-user grants govern access', async () => {
   const found = await json(`/admin/providers/${providerId}/discover`, admin, 'POST');
   assert.ok(found.models.includes('test-vision'));
@@ -763,6 +787,68 @@ test('private conversation groups validate ownership and preserve messages when 
     'Keep this message',
   );
   assert.equal((await request('/conversations', bob, 'POST', { groupId: group.id })).status, 404);
+});
+
+test('latest question can be edited and failed reply regenerated without duplicating the question', async () => {
+  await json(`/admin/providers/${providerId}`, admin, 'PATCH', {
+    name: 'Local test',
+    baseUrl: mock.url,
+    apiMode: 'chat-completions',
+  });
+  const broken = app.kernel.ctx.db.get<{ id: string }>(
+    "SELECT id FROM models WHERE provider_id=? AND name='broken'",
+    providerId,
+  )!.id;
+  const convo = (await json('/conversations', admin, 'POST')).id;
+  const first = await submitStream(convo, admin, { modelId: broken, content: 'first question' });
+  await first.text();
+  let saved = await json(`/conversations/${convo}`, admin);
+  assert.equal(saved.messages[1].status, 'error');
+  assert.match(saved.messages[1].error, /连接提前结束/);
+  assert.equal((await request(`/conversations/${convo}`, bob)).status, 404);
+  const originalUser = saved.messages[0].id;
+  const priorAssistant = saved.messages[1].id;
+  const retry = await submitStream(convo, admin, {
+    modelId,
+    content: 'first question',
+    replaceLastMessageId: originalUser,
+    requestId: randomUUID(),
+  });
+  await retry.text();
+  saved = await json(`/conversations/${convo}`, admin);
+  assert.equal(saved.messages.length, 2);
+  assert.equal(saved.messages[0].id, originalUser);
+  assert.equal(saved.messages[1].status, 'complete');
+  assert.notEqual(saved.messages[1].id, priorAssistant);
+  const editRequestId = randomUUID();
+  const edit = await submitStream(convo, admin, {
+    modelId,
+    content: 'revised question',
+    replaceLastMessageId: originalUser,
+    requestId: editRequestId,
+  });
+  await edit.text();
+  const duplicate = await request(`/conversations/${convo}/messages`, admin, 'POST', {
+    modelId,
+    content: 'revised question',
+    replaceLastMessageId: originalUser,
+    requestId: editRequestId,
+  });
+  assert.equal(duplicate.status, 202);
+  saved = await json(`/conversations/${convo}`, admin);
+  assert.equal(saved.messages.length, 2);
+  assert.equal(saved.messages[0].content, 'revised question');
+  assert.equal(saved.messages[1].status, 'complete');
+  assert.equal(
+    (
+      await request(`/conversations/${convo}/messages`, admin, 'POST', {
+        modelId,
+        content: 'bad replacement',
+        replaceLastMessageId: randomUUID(),
+      })
+    ).status,
+    409,
+  );
 });
 
 test('kernel shutdown settles detached jobs before closing storage', async () => {

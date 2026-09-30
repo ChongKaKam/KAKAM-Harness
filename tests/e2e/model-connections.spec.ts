@@ -30,6 +30,7 @@ test('compact sources, draft discovery and per-model diagnostics fit themes and 
   try {
     await page.goto('/#/settings/models');
     const card = page.locator('.models-provider-card').filter({ hasText: sourceName });
+    await expect(card.getByText('模型列表正常')).toBeVisible();
     await card.getByRole('button', { name: `编辑 ${sourceName}` }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('button', { name: '测试连通性' })).toHaveCount(0);

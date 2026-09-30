@@ -112,6 +112,11 @@ export class Database extends Service {
       );
     }
     if (
+      !this.all<{ name: string }>('PRAGMA table_info(messages)').some((c) => c.name === 'error')
+    ) {
+      this.connection.exec('ALTER TABLE messages ADD COLUMN error TEXT');
+    }
+    if (
       !this.all<{ name: string }>('PRAGMA table_info(messages)').some(
         (c) => c.name === 'extensions',
       )

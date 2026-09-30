@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { HttpError, requireUser, requireAdmin } from '../../kernel/http';
 import { SecretVault } from '../../kernel/crypto';
 import { testModelConnection } from './connection-test';
+import { nextSourceProbeDelay } from './probe-schedule';
 import type { Model, User, ApiMode } from '../../shared/types';
 export { manifest } from './manifest';
 const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.tool_calling AS toolCalling,m.enabled,CASE WHEN p.api_mode='jev' THEN 'jev' ELSE 'llm' END AS kind`;
@@ -114,6 +115,45 @@ export function modelsFeature(secret: string) {
       ctx.plugin(ModelsService, secret);
       ctx.inject(['models', 'db', 'http'], (ctx) => {
         const router = Router();
+        type Health = { state: 'checking' | 'ok' | 'error'; checkedAt: string | null };
+        const health = new Map<string, Health>();
+        const revisions = new Map<string, number>();
+        let disposed = false;
+        const probe = async (id: string) => {
+          if (disposed) return;
+          const revision = (revisions.get(id) ?? 0) + 1;
+          revisions.set(id, revision);
+          health.set(id, { state: 'checking', checkedAt: health.get(id)?.checkedAt ?? null });
+          let state: Health['state'] = 'ok';
+          try {
+            const connection = ctx.models.connection(id);
+            await ctx.models.adapter(connection.apiMode).discover(connection);
+          } catch {
+            state = 'error';
+          }
+          if (
+            !disposed &&
+            revisions.get(id) === revision &&
+            ctx.db.get('SELECT id FROM providers WHERE id=?', id)
+          )
+            health.set(id, { state, checkedAt: new Date().toISOString() });
+        };
+        const probeAll = () => {
+          if (disposed) return;
+          for (const { id } of ctx.db.all<{ id: string }>('SELECT id FROM providers')) {
+            if (health.get(id)?.state !== 'checking') void probe(id);
+          }
+        };
+        let timer: ReturnType<typeof setTimeout>;
+        const scheduleProbe = () => {
+          timer = setTimeout(() => {
+            probeAll();
+            scheduleProbe();
+          }, nextSourceProbeDelay());
+          timer.unref();
+        };
+        scheduleProbe();
+        queueMicrotask(probeAll);
         router.get('/models', requireUser, (req, res) => {
           const { kind } = z
             .object({ kind: z.enum(['llm', 'jev', 'all']).default('llm') })
@@ -130,7 +170,11 @@ export function modelsFeature(secret: string) {
               .all<{ id: string; name: string; baseUrl: string }>(
                 'SELECT id,name,base_url AS baseUrl,api_mode AS apiMode,platform_url AS platformUrl FROM providers',
               )
-              .map((p) => ({ ...p, hasKey: !!ctx.models.connection(p.id).apiKey })),
+              .map((p) => ({
+                ...p,
+                hasKey: !!ctx.models.connection(p.id).apiKey,
+                health: health.get(p.id) ?? { state: 'unknown', checkedAt: null },
+              })),
           ),
         );
         router.post('/admin/providers', (req, res) => {
@@ -145,6 +189,7 @@ export function modelsFeature(secret: string) {
             input.apiMode,
             input.platformUrl ?? null,
           );
+          void probe(id);
           res.status(201).json({ id });
         });
         router.post('/admin/providers/discover', async (req, res) => {
@@ -215,10 +260,14 @@ export function modelsFeature(secret: string) {
               ctx.models.encrypt(input.apiKey),
               id,
             );
+          void probe(id);
           res.json({ ok: true });
         });
         router.delete('/admin/providers/:id', (req, res) => {
-          ctx.db.run('DELETE FROM providers WHERE id=?', String(req.params.id));
+          const id = String(req.params.id);
+          ctx.db.run('DELETE FROM providers WHERE id=?', id);
+          revisions.set(id, (revisions.get(id) ?? 0) + 1);
+          health.delete(id);
           res.json({ ok: true });
         });
         router.post('/admin/providers/:id/discover', async (req, res) => {
@@ -325,6 +374,10 @@ export function modelsFeature(secret: string) {
           res.json({ ok: true });
         });
         ctx.effect(() => ctx.http.register(router));
+        ctx.effect(() => () => {
+          disposed = true;
+          clearTimeout(timer);
+        });
       });
     },
   };

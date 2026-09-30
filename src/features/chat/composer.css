@@ -2,6 +2,24 @@
 :root .chat-page .composer {
   padding: 10px 14px 8px;
 }
+.chat-editing-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  padding: 2px 2px 8px;
+}
+.chat-editing-note button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--ink);
+  font-size: var(--font-caption);
+}
 :root .composer-format {
   padding-bottom: 4px;
   margin-bottom: 4px;

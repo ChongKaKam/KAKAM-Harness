@@ -447,6 +447,7 @@ test('conversation and prompt colors can be assigned, remapped and reset without
   if (await closeMenu.isVisible()) await closeMenu.click();
   await nav(page, 'Skill 库');
   const card = page.locator('.prompt-card').filter({ hasText: `配色卡片 ${info.project.name}` });
+  await card.getByRole('button', { name: /更多操作/ }).click();
   await card.getByRole('button', { name: /设置颜色/ }).click();
   await page.getByRole('dialog').getByRole('radio', { name: '玫瑰粉', exact: true }).click();
   await expect(
@@ -465,6 +466,7 @@ test('conversation and prompt colors can be assigned, remapped and reset without
   await expect
     .poll(() => card.evaluate((element) => element.style.getPropertyValue('--item-color')))
     .toBe('#f0c9d1');
+  await card.getByRole('button', { name: /更多操作/ }).click();
   await card.getByRole('button', { name: /设置颜色/ }).click();
   await expect(
     page.getByRole('dialog').getByRole('radio', { name: '柔粉', exact: true }),

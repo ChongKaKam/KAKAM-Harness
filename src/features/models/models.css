@@ -158,6 +158,27 @@
 .models-provider-title .badge {
   margin: 0;
 }
+.models-provider-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-caption);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.models-provider-health-light {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.models-provider-health.is-ok .models-provider-health-light {
+  background: #3a9b62;
+}
+.models-provider-health.is-error .models-provider-health-light {
+  background: #d65454;
+}
 .models-provider-url {
   margin: 4px 0 6px;
   color: var(--muted);

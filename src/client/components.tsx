@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { X, LoaderCircle, ArrowUpRight } from 'lucide-react';
 export function Logo({ small = false }: { small?: boolean }) {
   return (
@@ -57,12 +57,15 @@ export function Modal({
   title,
   children,
   close,
+  className,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const headingId = useId();
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
@@ -71,7 +74,8 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={className ? `modal ${className}` : 'modal'}
+      aria-labelledby={headingId}
       onCancel={(e) => {
         e.preventDefault();
         close();
@@ -81,7 +85,7 @@ export function Modal({
       }}
     >
       <div className="modal-heading">
-        <h2>{title}</h2>
+        <h2 id={headingId}>{title}</h2>
         <button className="icon-button" onClick={close} aria-label="关闭">
           <X size={19} />
         </button>
