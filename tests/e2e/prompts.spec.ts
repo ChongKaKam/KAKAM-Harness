@@ -81,7 +81,20 @@ test('prompt editing, descriptions, tags and search work with readable responsiv
   await filters.getByRole('button', { name: '阅读', exact: true }).click();
   await expect(page.getByText('没有找到匹配的Skill')).toBeVisible();
   await page.getByRole('button', { name: '清除搜索与筛选', exact: true }).click();
+  const columns = await page
+    .locator('.prompt-grid')
+    .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(columns).toBe(info.project.name === 'desktop' ? 3 : 1);
+  if (info.project.name === 'desktop') {
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    const wideColumns = await page
+      .locator('.prompt-grid')
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+    expect(wideColumns).toBe(4);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  }
   await card.getByRole('button', { name: `编辑 ${title}`, exact: true }).click();
+  await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(card.getByRole('button', { name: `编辑 ${title}`, exact: true })).toBeFocused();
   for (const theme of ['light', 'dark'] as const) {
@@ -113,6 +126,7 @@ test('prompt editing, descriptions, tags and search work with readable responsiv
         const bounds = (await dialog.boundingBox())!;
         expect(bounds.x).toBeGreaterThanOrEqual(0);
         expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+        if (info.project.name === 'desktop') expect(bounds.width).toBeGreaterThan(900);
         await page.screenshot({
           path: `test-results/prompt-editor-${theme}-${info.project.name}.png`,
         });
@@ -124,8 +138,10 @@ test('prompt editing, descriptions, tags and search work with readable responsiv
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeEmpty();
   await expect(page.getByLabel('已选 Skill')).toContainText(title);
   await page.goto('/#/prompts');
-  await card.getByRole('button', { name: `更多操作 ${title}` }).click();
   await expect(card.getByRole('button', { name: `设置颜色 ${title}` })).toBeVisible();
+  await card.getByRole('button', { name: `设置颜色 ${title}` }).click();
+  await expect(dialog).toContainText('选择颜色');
+  await page.keyboard.press('Escape');
   await card.getByRole('button', { name: `删除 ${title}`, exact: true }).click();
   await dialog.getByRole('button', { name: '确认删除', exact: true }).click();
   await expect(card).toHaveCount(0);

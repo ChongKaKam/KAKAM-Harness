@@ -1,16 +1,6 @@
 import type { Skill, SkillSummary } from '../skills/types';
 import { useEffect, useRef, useState } from 'react';
-import {
-  Plus,
-  ArrowUpRight,
-  Trash2,
-  BookOpen,
-  Pencil,
-  Search,
-  X,
-  Tag,
-  Ellipsis,
-} from 'lucide-react';
+import { Plus, ArrowUpRight, Trash2, BookOpen, Pencil, Search, X, Tag } from 'lucide-react';
 import { api, patch, remove } from '../../client/api';
 import { ColorPickerButton, usePatternColors } from '../../client/color-pattern';
 import { useWorkspace } from '../../client/context';
@@ -42,7 +32,6 @@ export function PromptsPage() {
   const [deleteError, setDeleteError] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [actionsFor, setActionsFor] = useState<string>();
   const [openingId, setOpeningId] = useState<string>();
   const returnFocus = useRef<HTMLElement | null>(null);
   const createButton = useRef<HTMLButtonElement>(null);
@@ -80,7 +69,6 @@ export function PromptsPage() {
     setOpeningId(card.id);
     try {
       setEditing(await api<Skill>(`/skills/${card.id}`));
-      setActionsFor(undefined);
     } catch (e) {
       setActionError((e as Error).message);
     } finally {
@@ -224,24 +212,12 @@ export function PromptsPage() {
                         v{card.version} · {card.fileCount} 个参考文件
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="icon-button prompts-more-button"
-                      aria-label={`更多操作 ${card.title}`}
-                      aria-expanded={actionsFor === card.id}
-                      onClick={() => setActionsFor(actionsFor === card.id ? undefined : card.id)}
-                    >
-                      <Ellipsis size={19} aria-hidden="true" />
-                    </button>
-                  </div>
-                  {actionsFor === card.id && (
-                    <div className="prompts-card-actions" aria-label={`${card.title} 的更多操作`}>
+                    <div className="prompts-card-actions" aria-label={`${card.title} 的操作`}>
                       <ColorPickerButton
                         label={card.title}
                         value={card.colorSlot}
                         colorKey={card.id}
-                        className="prompts-card-action"
-                        text="设置颜色"
+                        className="icon-button prompts-card-action"
                         onChange={async (colorSlot) => {
                           await patch(`/skills/${card.id}/color`, { colorSlot });
                           reload();
@@ -249,21 +225,19 @@ export function PromptsPage() {
                       />
                       <button
                         type="button"
-                        className="prompts-card-action prompts-delete-action"
+                        className="icon-button prompts-card-action prompts-delete-action"
                         title="删除Skill"
                         aria-label={`删除 ${card.title}`}
                         onClick={() => {
                           rememberFocus();
-                          setActionsFor(undefined);
                           setDeleteError('');
                           setDeleting(card);
                         }}
                       >
-                        <Trash2 size={15} aria-hidden="true" />
-                        删除
+                        <Trash2 size={16} aria-hidden="true" />
                       </button>
                     </div>
-                  )}
+                  </div>
                   <p className="prompts-card-description">
                     {card.description || '暂无简介，可编辑补充适用场景。'}
                   </p>
