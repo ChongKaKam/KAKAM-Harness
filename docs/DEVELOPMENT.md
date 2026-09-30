@@ -75,6 +75,8 @@ compose.yaml / Dockerfile       运行和构建契约
 
 `dist/`、`node_modules/`、`test-results/` 是生成目录；数据库与真实 `.env` 是部署状态，均不是功能代码。`output/` 可能包含设计探索产物，不是应用自动加载的资产目录；素材要进入产品必须显式接入、验证体积与使用位置。
 
+Git 与 Docker 构建上下文均排除 `.env` 及 `.env.*` 配置 / 备份，仅允许占位示例 `.env.example`；Docker 构建同时排除 `output/` 设计产物。
+
 ## 应该改哪一层
 
 | 需求                               | 推荐位置                                                 | 注册 / 契约影响                                                |

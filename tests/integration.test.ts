@@ -675,6 +675,96 @@ test('all protocols continue after all viewers disconnect, resume snapshots, ded
   }
 });
 
+test('private conversation groups validate ownership and preserve messages when removed', async () => {
+  const group = await json('/conversation-groups', bob, 'POST', {
+    name: '  研究笔记  ',
+    icon: '👩🏽‍💻',
+    colorSlot: 6,
+  });
+  assert.equal(group.name, '研究笔记');
+  const otherGroup = await json('/conversation-groups', admin, 'POST', { name: 'Private' });
+  const chat = await json('/conversations', bob, 'POST', { groupId: group.id });
+  app.kernel.ctx.db.run(
+    "INSERT INTO messages(id,conversation_id,role,content,created_at) VALUES(?,?,'user','Keep this message',?)",
+    randomUUID(),
+    chat.id,
+    new Date().toISOString(),
+  );
+  assert.equal(
+    (await json('/conversation-groups', admin)).some((g: { id: string }) => g.id === group.id),
+    false,
+  );
+  assert.equal((await request('/conversation-groups')).status, 401);
+  assert.equal(
+    (await request('/conversation-groups', undefined, 'POST', { name: 'No' })).status,
+    401,
+  );
+  for (const method of ['PATCH', 'DELETE']) {
+    assert.equal(
+      (await request(`/conversation-groups/${group.id}`, admin, method, { name: 'No' })).status,
+      404,
+    );
+    assert.equal(
+      (await request(`/conversation-groups/${group.id}`, undefined, method, { name: 'No' })).status,
+      401,
+    );
+  }
+  assert.equal((await request('/conversations', admin, 'POST', { groupId: group.id })).status, 404);
+  assert.equal(
+    (await request(`/conversations/${chat.id}`, admin, 'PATCH', { groupId: otherGroup.id })).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/conversations/${chat.id}`, bob, 'PATCH', {
+        title: 'Do not save',
+        groupId: otherGroup.id,
+      })
+    ).status,
+    404,
+  );
+  let saved = (await json('/conversations', bob)).find((c: { id: string }) => c.id === chat.id);
+  assert.equal(saved.title, '新对话');
+  assert.equal(saved.groupId, group.id);
+  for (const body of [
+    { name: '' },
+    { name: 'a'.repeat(61) },
+    { icon: 'ab' },
+    { icon: '💡💡' },
+    { icon: '<script>' },
+    { colorSlot: 64 },
+    { colorSlot: -1 },
+    { colorSlot: 0.5 },
+  ])
+    assert.equal(
+      (await request(`/conversation-groups/${group.id}`, bob, 'PATCH', body)).status,
+      400,
+    );
+  for (const icon of ['🇨🇳', '1️⃣', '👨‍👩‍👧‍👦', 'code'])
+    await json(`/conversation-groups/${group.id}`, bob, 'PATCH', { icon });
+  await json(`/conversation-groups/${group.id}`, bob, 'PATCH', {
+    name: '重命名',
+    icon: '🌱',
+    colorSlot: null,
+  });
+  assert.deepEqual(
+    (await json('/conversation-groups', bob)).find((g: { id: string }) => g.id === group.id),
+    { id: group.id, name: '重命名', icon: '🌱', colorSlot: null },
+  );
+  await json(`/conversations/${chat.id}`, bob, 'PATCH', { groupId: null });
+  saved = (await json('/conversations', bob)).find((c: { id: string }) => c.id === chat.id);
+  assert.equal(saved.groupId, null);
+  await json(`/conversations/${chat.id}`, bob, 'PATCH', { groupId: group.id });
+  await json(`/conversation-groups/${group.id}`, bob, 'DELETE');
+  saved = (await json('/conversations', bob)).find((c: { id: string }) => c.id === chat.id);
+  assert.equal(saved.groupId, null);
+  assert.equal(
+    (await json(`/conversations/${chat.id}`, bob)).messages[0].content,
+    'Keep this message',
+  );
+  assert.equal((await request('/conversations', bob, 'POST', { groupId: group.id })).status, 404);
+});
+
 test('kernel shutdown settles detached jobs before closing storage', async () => {
   const slow = (await json('/admin/models', admin)).find(
     (model: { name: string }) => model.name === 'slow',

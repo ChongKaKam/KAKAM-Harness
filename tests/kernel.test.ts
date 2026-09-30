@@ -203,3 +203,57 @@ test('message duration migration leaves legacy timings unknown and preserves rec
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('conversation groups migrate old chats, persist across restart and detach without deleting messages', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kh-group-migration-'));
+  let kernel = new KHKernel(dir);
+  try {
+    kernel.ctx.db.run(
+      "INSERT INTO users(id,username,display_name,password_hash,role) VALUES('owner','owner','Owner','hash','admin')",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO conversations(id,user_id,title,updated_at,color_slot) VALUES('chat','owner','Old chat','2026-01-01',6)",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO messages(id,conversation_id,role,content,created_at) VALUES('message','chat','user','Keep me','2026-01-01')",
+    );
+    kernel.ctx.db.connection.exec(
+      'DROP INDEX idx_conversations_group; ALTER TABLE conversations DROP COLUMN group_id; DROP TABLE conversation_groups',
+    );
+    await kernel.stop();
+    for (let restart = 0; restart < 2; restart++) {
+      kernel = new KHKernel(dir);
+      assert.deepEqual(
+        kernel.ctx.db
+          .all('SELECT title,color_slot,group_id FROM conversations')
+          .map((r) => ({ ...(r as object) })),
+        [{ title: 'Old chat', color_slot: 6, group_id: restart === 0 ? null : 'group' }],
+      );
+      if (restart === 0) {
+        kernel.ctx.db.run(
+          "INSERT INTO conversation_groups(id,user_id,name,icon,color_slot,created_at) VALUES('group','owner','Reading','📚',2,'2026-01-01')",
+        );
+        kernel.ctx.db.run("UPDATE conversations SET group_id='group' WHERE id='chat'");
+      } else {
+        assert.equal(
+          kernel.ctx.db.get<{ icon: string }>('SELECT icon FROM conversation_groups')!.icon,
+          '📚',
+        );
+        kernel.ctx.db.run("DELETE FROM conversation_groups WHERE id='group' AND user_id='owner'");
+        assert.equal(
+          kernel.ctx.db.get<{ group_id: null }>('SELECT group_id FROM conversations')!.group_id,
+          null,
+        );
+        assert.equal(
+          kernel.ctx.db.get<{ content: string }>('SELECT content FROM messages')!.content,
+          'Keep me',
+        );
+      }
+      assert.deepEqual(kernel.ctx.db.all('PRAGMA foreign_key_check'), []);
+      await kernel.stop();
+    }
+  } finally {
+    await kernel.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -95,9 +95,13 @@
     backdrop-filter: blur(2px);
   }
   .shell {
+    border-radius: 0;
+    border-left: 0;
+    box-shadow: none;
     margin-left: 0;
   }
   .topbar {
+    border-radius: 0;
     height: 57px;
     padding: 0 15px;
     gap: 10px;
@@ -174,7 +178,7 @@
   }
   .composer {
     padding: 15px 12px 10px;
-    border-radius: 13px;
+    border-radius: var(--radius-panel);
   }
   .composer textarea {
     font-size: var(--font-body);

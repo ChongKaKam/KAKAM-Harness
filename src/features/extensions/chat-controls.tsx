@@ -80,7 +80,7 @@ export function ExtensionControls({
         aria-controls={id}
         title={active ? `拓展能力 · ${active} 项开启或自动` : '拓展能力 · 全部关闭'}
       >
-        <Puzzle size={18} aria-hidden="true" />
+        <Puzzle size={20} strokeWidth={1.8} aria-hidden="true" />
         {active > 0 && (
           <span className="extensions-count" aria-hidden="true">
             {active}
@@ -98,7 +98,7 @@ export function ExtensionControls({
         onToggle={(event) => setOpen(event.newState === 'open')}
       >
         <header className="extensions-popover-heading">
-          <Puzzle size={18} />
+          <Puzzle size={20} strokeWidth={1.8} aria-hidden="true" />
           <strong>拓展能力</strong>
           <button className="icon-button" aria-label="关闭拓展能力" onClick={close}>
             <X size={16} />

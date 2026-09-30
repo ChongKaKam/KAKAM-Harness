@@ -13,6 +13,11 @@
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   --width: 246px;
+  --radius-control: 12px;
+  --radius-panel: 18px;
+  --radius-floating: 24px;
+  --shadow-surface: 0 2px 8px #00000004, 0 12px 32px #00000005;
+  --shadow-floating: 0 8px 24px #0000000c, 0 28px 80px #0000001a;
 }
 * {
   box-sizing: border-box;
@@ -173,7 +178,7 @@ small,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -280,8 +285,9 @@ small,
 }
 .panel {
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: var(--surface);
+  box-shadow: var(--shadow-surface);
 }
 .page {
   padding: 46px 48px 64px;
@@ -379,12 +385,15 @@ small,
 .app-loading .loading {
   padding: 25px;
 }
+body {
+  background: var(--sidebar);
+}
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--width);
   background: var(--sidebar);
-  border-right: 1px solid var(--line);
+  border-right: 0;
   padding: 27px 14px 12px;
   display: flex;
   flex-direction: column;
@@ -402,7 +411,7 @@ small,
   padding: 10px 12px;
   background: white;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: var(--font-caption);
   box-shadow: 0 2px 3px #00000003;
   color: var(--muted);
@@ -457,7 +466,7 @@ small,
   font-size: var(--font-caption);
   color: var(--muted);
   padding: 10px 12px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   margin: 2px 0;
 }
 .nav-item:hover {
@@ -578,6 +587,10 @@ small,
   margin-left: var(--width);
   min-width: 0;
   min-height: 100dvh;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  border-radius: var(--radius-floating) 0 0 var(--radius-floating);
+  box-shadow: -4px 0 24px #00000004;
 }
 .topbar {
   display: flex;
@@ -591,6 +604,7 @@ small,
   top: 0;
   z-index: 20;
   backdrop-filter: blur(14px);
+  border-radius: var(--radius-floating) 0 0 0;
 }
 .breadcrumb {
   display: flex;
@@ -694,14 +708,14 @@ small,
 }
 .composer {
   border: 1px solid var(--line);
-  border-radius: 15px;
+  border-radius: var(--radius-floating);
   padding: 18px 17px 12px;
-  box-shadow: 0 5px 24px #00000006;
-  background: white;
+  box-shadow: var(--shadow-surface);
+  background: var(--surface);
 }
 .composer:focus-within {
   border-color: var(--line);
-  box-shadow: 0 4px 25px #0000000a;
+  box-shadow: 0 4px 20px #0000000c;
 }
 .composer textarea {
   padding: 0;
@@ -789,7 +803,7 @@ small,
 }
 .idea-card {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   padding: 20px;
   text-align: left;
   position: relative;
@@ -900,7 +914,7 @@ small,
 .message.user .message-content {
   background: var(--soft);
   border: 1px solid var(--line);
-  border-radius: 2px 12px 12px 12px;
+  border-radius: 8px 20px 20px 20px;
   padding: 12px 17px;
   display: flow-root;
 }
@@ -1296,12 +1310,12 @@ td .button {
 }
 .modal {
   border: 1px solid var(--line);
-  border-radius: 15px;
+  border-radius: var(--radius-floating);
   padding: 25px;
   width: 500px;
   max-width: calc(100vw - 32px);
   max-height: 85dvh;
-  box-shadow: 0 20px 90px #00000020;
+  box-shadow: var(--shadow-floating);
   color: var(--ink);
 }
 .modal::backdrop {

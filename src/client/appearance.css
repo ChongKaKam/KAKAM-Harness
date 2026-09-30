@@ -21,6 +21,8 @@
   background: var(--surface);
 }
 :root[data-theme='dark'] {
+  --shadow-surface: 0 2px 8px #00000014, 0 12px 32px #00000018;
+  --shadow-floating: 0 8px 24px #00000030, 0 28px 80px #00000055;
   --ink: #ebebeb;
   --muted: #b8b8b8;
   --faint: #a3a3a3;
@@ -249,32 +251,6 @@
 :root .pattern-card > .button {
   background: var(--surface);
   color: var(--ink);
-}
-:root .pattern-conversation {
-  border-left: 3px solid var(--item-color);
-}
-:root .pattern-conversation.active,
-:root .pattern-conversation:hover {
-  background: var(--item-fill);
-  color: var(--ink);
-}
-:root .pattern-conversation .conversation-open {
-  color: var(--ink);
-}
-:root .pattern-conversation .conversation-open > svg {
-  color: var(--item-color);
-}
-:root .chat-page .message.user .message-content {
-  background: var(--item-soft);
-  border-color: var(--item-line);
-}
-:root .chat-page .assistant-avatar {
-  background: var(--item-fill);
-  border-color: var(--item-line);
-  color: var(--item-color);
-}
-:root .chat-page .outline-track [aria-current] .outline-marker {
-  background: var(--item-color);
 }
 .pattern-tabs {
   display: flex;

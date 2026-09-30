@@ -44,6 +44,7 @@
 - Web Shell 使用纯黑白灰；装饰色来自 Color Pattern 的组件背景、边框、图标与图表。成功 / 失败状态采用独立的绿色 / 红色语义配色，兼容明暗主题并保留文字标签。不要把整个 Shell 染成主题色。
 - 复用 `PageHeader`、`Empty`、`Spinner`、`ErrorNote`、`Modal`、`UserAvatar`、`AssistantAvatar`、`Markdown` 与现有按钮 / 表单类。
 - 字号使用 `--font-chat/input/ui/code/caption/title` 等语义变量。保持四档字号、辅助说明至少 12px；不使用整页 `zoom` 或 `transform: scale`，不随字号放大侧栏宽度。
+- 对话分组使用 Color Pattern；普通对话条目、消息气泡和助手头像保持灰度。分组删除仅解除归属，保留对话与消息。
 - 用 `usePatternColors()` 与稳定 key 分配颜色，手动颜色存 `colorSlot`。不要在 render 中随机配色或自己拼一套色板。
 - 新 CSS 优先放 feature / 组件旁，使用命名空间类和公共 token。不要追加全局 `button`、`p`、`span` 或 `.hljs-*` 覆盖去修局部显示。
 - 保留明暗模式、键盘焦点、中文输入法、手机触控与大字号布局。弹窗复用原生 dialog；轻量浮层可参照 `ModelPicker` 的 Popover，处理 Escape、关闭与焦点恢复。

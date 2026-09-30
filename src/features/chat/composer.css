@@ -66,8 +66,8 @@
   overscroll-behavior: contain;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 12px 40px #00000020;
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-floating);
   background: var(--surface);
   color: var(--ink);
   font-size: var(--font-ui);

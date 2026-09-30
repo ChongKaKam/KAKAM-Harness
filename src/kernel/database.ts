@@ -122,6 +122,27 @@ export class Database extends Service {
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       modes TEXT NOT NULL DEFAULT '{}'
     )`);
+    this.connection.exec(`CREATE TABLE IF NOT EXISTS conversation_groups (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT 'folder',
+      color_slot INTEGER CHECK(color_slot IS NULL OR color_slot BETWEEN 0 AND 63),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversation_groups_user ON conversation_groups(user_id)`);
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(conversations)').some(
+        (c) => c.name === 'group_id',
+      )
+    ) {
+      this.connection.exec(
+        'ALTER TABLE conversations ADD COLUMN group_id TEXT REFERENCES conversation_groups(id) ON DELETE SET NULL',
+      );
+    }
+    this.connection.exec(
+      'CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(group_id)',
+    );
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

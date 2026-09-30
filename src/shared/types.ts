@@ -101,6 +101,13 @@ export interface Conversation {
   updatedAt: string;
   generating: boolean;
   colorSlot: number | null;
+  groupId: string | null;
+}
+export interface ConversationGroup {
+  id: string;
+  name: string;
+  icon: string;
+  colorSlot: number | null;
 }
 export interface UsageRow {
   id: string;

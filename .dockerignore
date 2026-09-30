@@ -2,6 +2,9 @@ node_modules
 dist
 data
 .env
+.env.*
+!.env.example
+output
 .git
 test-results
 playwright-report

@@ -441,18 +441,9 @@ test('conversation and prompt colors can be assigned, remapped and reset without
   const menu = page.getByRole('button', { name: '打开导航' });
   if (await menu.isVisible()) await menu.click();
   const row = page.locator('.conversation-link').filter({ hasText: title });
-  await row.hover();
-  await row.getByRole('button', { name: `设置颜色 ${title}`, exact: true }).click();
-  await page.getByRole('dialog').getByRole('radio', { name: '湖水蓝', exact: true }).click();
-  await expect(
-    page.getByRole('dialog').getByRole('radio', { name: '湖水蓝', exact: true }),
-  ).toBeChecked();
-  await page.getByRole('button', { name: '完成', exact: true }).click();
-  expect(
-    (await (await request.get('/api/conversations')).json()).find(
-      (item: { id: string }) => item.id === conversation.id,
-    ).colorSlot,
-  ).toBe(6);
+  await expect(row.getByRole('button', { name: `管理对话 ${title}` })).toHaveCount(1);
+  await expect(row.getByRole('button', { name: /设置颜色/ })).toHaveCount(0);
+  const neutralRow = await row.evaluate((element) => getComputedStyle(element).color);
   const closeMenu = page.getByRole('button', { name: '收起导航' });
   if (await closeMenu.isVisible()) await closeMenu.click();
   await nav(page, '提示词库');
@@ -489,16 +480,8 @@ test('conversation and prompt colors can be assigned, remapped and reset without
   ).toBe(null);
   if (await menu.isVisible()) await menu.click();
   await expect
-    .poll(() => row.evaluate((element) => element.style.getPropertyValue('--item-color')))
-    .toBe('#98b9ca');
-  await row.hover();
-  await row.getByRole('button', { name: `设置颜色 ${title}`, exact: true }).click();
-  await expect(
-    page.getByRole('dialog').getByRole('radio', { name: '蓝灰', exact: true }),
-  ).toBeChecked();
-  await page.getByRole('button', { name: '恢复自动配色' }).click();
-  await expect(page.getByRole('button', { name: '恢复自动配色' })).toBeDisabled();
-  await page.getByRole('button', { name: '完成', exact: true }).click();
+    .poll(() => row.evaluate((element) => getComputedStyle(element).color))
+    .toBe(neutralRow);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);

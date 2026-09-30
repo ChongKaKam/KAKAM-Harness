@@ -4,6 +4,7 @@ import type { Context } from 'cordis';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { HttpError, requireUser } from '../../kernel/http';
+import { ownGroup, registerGroupRoutes } from './groups-server';
 import type { Message, StreamEvent, Attachment } from '../../shared/types';
 import type { TokenUsage, ProviderMessage } from '../../adapters/registry';
 export { manifest } from './manifest';
@@ -80,6 +81,7 @@ export const server = {
   apply(ctx: Context) {
     const router = Router();
     router.use('/conversations', requireUser);
+    registerGroupRoutes(ctx, router);
     const active = new Map<string, Generation>();
     const userActive = new Set<string>();
     let stopping = false;
@@ -117,19 +119,24 @@ export const server = {
     ctx.db.run("UPDATE usage SET status='error' WHERE status='streaming'");
     router.get('/conversations', (req, res) => {
       const rows = ctx.db.all<{ id: string; title: string; updatedAt: string }>(
-        'SELECT id,title,updated_at AS updatedAt,color_slot AS colorSlot FROM conversations WHERE user_id=? ORDER BY updated_at DESC LIMIT 300',
+        'SELECT id,title,updated_at AS updatedAt,color_slot AS colorSlot,group_id AS groupId FROM conversations WHERE user_id=? ORDER BY updated_at DESC,id',
         req.user!.id,
       );
       res.json(rows.map((row) => ({ ...row, generating: active.has(row.id) })));
     });
     router.post('/conversations', (req, res) => {
+      const { groupId } = z
+        .object({ groupId: z.string().uuid().nullable().default(null) })
+        .parse(req.body ?? {});
+      if (groupId) ownGroup(ctx, groupId, req.user!.id);
       const id = randomUUID();
       ctx.db.run(
-        'INSERT INTO conversations(id,user_id,title,updated_at) VALUES(?,?,?,?)',
+        'INSERT INTO conversations(id,user_id,title,updated_at,group_id) VALUES(?,?,?,?,?)',
         id,
         req.user!.id,
         '新对话',
         new Date().toISOString(),
+        groupId,
       );
       res.status(201).json({ id });
     });
@@ -168,23 +175,50 @@ export const server = {
     router.patch('/conversations/:id', (req, res) => {
       const id = String(req.params.id);
       own(id, req.user!.id);
-      const { title, colorSlot } = z
+      const { title, colorSlot, groupId } = z
         .object({
           title: z.string().trim().min(1).max(100).optional(),
           colorSlot: z.number().int().min(0).max(63).nullable().optional(),
+          groupId: z.string().uuid().nullable().optional(),
         })
-        .refine((value) => value.title !== undefined || value.colorSlot !== undefined)
+        .refine(
+          (value) =>
+            value.title !== undefined ||
+            value.colorSlot !== undefined ||
+            value.groupId !== undefined,
+        )
         .parse(req.body);
-      if (title !== undefined) ctx.db.run('UPDATE conversations SET title=? WHERE id=?', title, id);
-      if (colorSlot !== undefined)
-        ctx.db.run('UPDATE conversations SET color_slot=? WHERE id=?', colorSlot, id);
+      if (groupId) ownGroup(ctx, groupId, req.user!.id);
+      ctx.db.transaction(() => {
+        if (title !== undefined)
+          ctx.db.run(
+            'UPDATE conversations SET title=? WHERE id=? AND user_id=?',
+            title,
+            id,
+            req.user!.id,
+          );
+        if (colorSlot !== undefined)
+          ctx.db.run(
+            'UPDATE conversations SET color_slot=? WHERE id=? AND user_id=?',
+            colorSlot,
+            id,
+            req.user!.id,
+          );
+        if (groupId !== undefined)
+          ctx.db.run(
+            'UPDATE conversations SET group_id=? WHERE id=? AND user_id=?',
+            groupId,
+            id,
+            req.user!.id,
+          );
+      });
       res.json({ ok: true });
     });
     router.delete('/conversations/:id', (req, res) => {
       const id = String(req.params.id);
       own(id, req.user!.id);
       if (active.has(id)) throw new HttpError(409, '请先停止当前回复');
-      ctx.db.run('DELETE FROM conversations WHERE id=?', id);
+      ctx.db.run('DELETE FROM conversations WHERE id=? AND user_id=?', id, req.user!.id);
       res.json({ ok: true });
     });
     router.post('/conversations/:id/stop', (req, res) => {

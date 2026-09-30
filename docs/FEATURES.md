@@ -336,3 +336,19 @@ interface ModelAdapter {
 `ModelAdapter.decide` 为可选的决策接口，输入 state + instructions，产出 usage 或 `{ type: 'decision', enabled }`。Jev 的 `generate` 明确拒绝聊天；discover 使用 TypeSafe `models[].name`，decide 使用 `/systemone`，管理员连通性测试使用英文 state / Choice 验证有效决策而非伪造文本片段。401 明确提示鉴权失败，并在诊断日志中保留脱敏后的上游错误；不把语言支持问题混同为鉴权失败。协议依据 [TypeSafe API](https://docs.typesafe.ai/api)、[模型列表](https://docs.typesafe.ai/models)；检索依据 [Perplexity Search](https://docs.perplexity.ai/api-reference/search-post)。
 
 检索流程参考 [Open WebUI 的查询生成与搜索预处理](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/utils/middleware.py) 的阶段划分，没有复制其运行时。失败、权限与用量边界见 [架构](ARCHITECTURE.md#llm-拓展能力核心)。
+
+## 对话分组 API
+
+分组路由由 chat 的 `groups-server.ts` 注册到现有 router，沿用 `requireUser`、数据库生命周期和统一错误处理，无新增 feature / 全局服务。
+
+| 接口                                  | 输入 / 返回                                                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET /api/conversation-groups`        | 返回当前账户的 `{ id, name, icon, colorSlot }[]`                                                     |
+| `POST /api/conversation-groups`       | `name` 必填（trim 后 1–60 字符）；`icon` 默认 `folder`；`colorSlot` 默认 null，返回创建的分组（201） |
+| `PATCH /api/conversation-groups/:id`  | 部分修改 `name`、`icon`、`colorSlot`，至少一个字段                                                   |
+| `DELETE /api/conversation-groups/:id` | 仅删除当前账户的分组，将原成员的 `groupId` 置 null，保留对话 / 消息                                  |
+| `POST /api/conversations`             | 增加可选 `groupId: UUID \| null`，省略为 null；传入时验证当前账户拥有目标分组                        |
+| `PATCH /api/conversations/:id`        | 增加可选 `groupId`，null 移出分组，可与 title 同时修改；保留旧 colorSlot 输入兼容                    |
+| `GET /api/conversations`              | 每项增加 `groupId: string \| null`；按更新时间降序返回全部私人对话                                   |
+
+`icon` 为 `folder / book / code / briefcase / sparkles` 或一个 emoji 字素（最长 32 个 UTF-16 code units，支持肤色、旗帜与 ZWJ 组合），以共享 `groups.ts` 验证；`colorSlot` 为 null 或 0–63 整数。跨账户分组 / 对话返回 404，未登录返回 401，输入错误返回 400。分组仅整理已有对话，不建立共享上下文或影响模型请求。

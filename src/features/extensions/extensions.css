@@ -41,19 +41,84 @@
   padding: 10px 12px;
   margin: 8px 0;
   overflow-wrap: anywhere;
+  min-width: 0;
 }
-.extensions-result summary {
+.extensions-result-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   cursor: pointer;
-  min-height: 24px;
+  min-height: 32px;
+  list-style: none;
 }
-.extensions-result summary span {
-  margin-right: 10px;
+.extensions-result-summary::-webkit-details-marker {
+  display: none;
+}
+.extensions-result-summary:focus-visible,
+.extensions-result-body:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.extensions-summary-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.extensions-result-icon,
+.extensions-result-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.extensions-source-count {
+  color: var(--muted);
+}
+.extensions-result-chevron {
+  transition: transform 180ms ease-out;
+}
+.extensions-result[open] > summary .extensions-result-chevron {
+  transform: rotate(180deg);
+}
+.extensions-result-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  max-height: min(360px, 45dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding: 14px 6px 2px 0;
 }
 .extensions-result ol {
   padding-left: 22px;
 }
 .extensions-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
+}
+.extensions-activity {
+  flex-shrink: 0;
+  animation: extensions-activity-spin 1s linear infinite;
+}
+@keyframes extensions-activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .extensions-activity {
+    animation: none;
+  }
+  .extensions-result-chevron {
+    transition: none;
+  }
 }
 .extensions-status[data-status='complete'] {
   color: var(--extensions-success);
@@ -86,6 +151,12 @@
   border-bottom: 1px solid var(--line);
 }
 @media (max-width: 600px) {
+  .extensions-result-summary {
+    min-height: 40px;
+  }
+  .extensions-result-body {
+    max-height: min(300px, 40dvh);
+  }
   .extensions-card {
     padding: 16px;
   }

@@ -6,23 +6,27 @@ import {
   LogOut,
   Settings,
   X,
-  MessageSquare,
-  Trash2,
   Pencil,
   PanelLeftClose,
   Check,
 } from 'lucide-react';
 import { SettingsPage } from './settings';
 import { APP_VERSION } from '../shared/version';
-import { api, patch, post, remove } from './api';
+import { api, post } from './api';
 import { useUi } from './ui-preferences';
-import { ColorPickerButton, usePatternColors } from './color-pattern';
+import { ConversationList } from '../features/chat/conversation-list';
 import { Workspace } from './context';
 import { clientFeatures } from './registry';
 import { Logo, Spinner, PageHeader, ErrorNote } from './components';
 import { UserAvatar } from './user-avatar';
 import { Login } from '../features/auth/client';
-import type { Conversation, FeatureManifest, Model, User } from '../shared/types';
+import type {
+  Conversation,
+  ConversationGroup,
+  FeatureManifest,
+  Model,
+  User,
+} from '../shared/types';
 const settingsRoutes = new Set(['preferences', 'auth', 'models', 'users', 'features']);
 function destination(page: string, id?: string) {
   return settingsRoutes.has(page) ? { page: 'settings', id: page } : { page, id };
@@ -33,12 +37,12 @@ function readRoute() {
 }
 export default function App() {
   const { activate } = useUi();
-  const colors = usePatternColors();
   const [user, setUser] = useState<User>();
   const [checking, setChecking] = useState(true);
   const [models, setModels] = useState<Model[]>([]);
   const [features, setFeatures] = useState<FeatureManifest[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [groups, setGroups] = useState<ConversationGroup[]>([]);
   const [route, setRoute] = useState(readRoute);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -60,16 +64,18 @@ export default function App() {
   useEffect(() => activate(user?.id), [user?.id, activate]);
   const refresh = useCallback(async () => {
     if (!user) return;
-    const [m, f, c] = await Promise.all([
+    const [m, f, c, g] = await Promise.all([
       api<Model[]>('/models'),
       api<FeatureManifest[]>('/features'),
       api<Conversation[]>('/conversations'),
+      api<ConversationGroup[]>('/conversation-groups'),
     ]);
     // Ignore responses started under a previous account after logout / account switching.
     if (activeUserId.current !== user.id) return;
     setModels(m);
     setFeatures(f);
     setConversations(c);
+    setGroups(g);
     setLoadError('');
   }, [user]);
   useEffect(() => {
@@ -133,6 +139,8 @@ export default function App() {
           setUser(u);
           setFeatures([]);
           setConversations([]);
+          setGroups([]);
+          setSearch('');
           setModels([]);
           setDraft('');
           navigate('chat');
@@ -152,6 +160,8 @@ export default function App() {
       setUser(undefined);
       setDraft('');
       setConversations([]);
+      setGroups([]);
+      setSearch('');
       setModels([]);
     } catch (e) {
       setToast((e as Error).message);
@@ -236,83 +246,12 @@ export default function App() {
                   </button>
                 ))}
             </nav>
-            <div className="nav-label">
-              最近对话 <span>{conversations.length || ''}</span>
-            </div>
-            <div className="conversation-list">
-              {conversations
-                .filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
-                .map((c) => (
-                  <div
-                    className={`conversation-link pattern-conversation ${route.id === c.id ? 'active' : ''}`}
-                    style={colors.style({ key: c.id, slot: c.colorSlot })}
-                    key={c.id}
-                  >
-                    <button
-                      className="conversation-open"
-                      onClick={() => navigate('chat', c.id)}
-                      title={c.title}
-                    >
-                      <MessageSquare size={14} />
-                      <span>{c.title}</span>
-                      {c.generating && (
-                        <span className="conversation-generating" aria-label="回复生成中">
-                          ···
-                        </span>
-                      )}
-                    </button>
-                    <ColorPickerButton
-                      className="conversation-action"
-                      label={c.title}
-                      value={c.colorSlot}
-                      colorKey={c.id}
-                      onChange={async (colorSlot) => {
-                        await patch(`/conversations/${c.id}`, { colorSlot });
-                        await refresh();
-                      }}
-                    />
-                    <button
-                      className="conversation-action"
-                      aria-label={`重命名 ${c.title}`}
-                      onClick={async () => {
-                        const title = prompt('对话名称', c.title);
-                        if (!title?.trim()) return;
-                        try {
-                          await patch(`/conversations/${c.id}`, { title });
-                          await refresh();
-                        } catch (e) {
-                          setToast((e as Error).message);
-                        }
-                      }}
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      className="conversation-action"
-                      aria-label={`删除对话 ${c.title}`}
-                      onClick={async () => {
-                        if (!confirm('删除此对话及其中的消息？此操作无法撤销。')) return;
-                        try {
-                          await remove(`/conversations/${c.id}`);
-                          if (route.id === c.id) navigate('chat');
-                          await refresh();
-                        } catch (e) {
-                          setToast((e as Error).message);
-                        }
-                      }}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
-              {!conversations.length && (
-                <p className="sidebar-empty">你的想法，会在这里慢慢积累。</p>
-              )}
-              {search &&
-                !conversations.some((c) =>
-                  c.title.toLowerCase().includes(search.toLowerCase()),
-                ) && <p className="sidebar-empty">没有找到相关对话</p>}
-            </div>
+            <ConversationList
+              key={user.id}
+              groups={groups}
+              search={search}
+              activeId={route.page === 'chat' ? route.id : undefined}
+            />
             {available.some((f) => f.placement === 'statistics') && (
               <>
                 <div className="nav-label">统计</div>

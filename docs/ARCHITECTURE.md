@@ -42,7 +42,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `models`      | core   | ModelsService、来源、白名单、模型授权、连通性测试 | 管理员设置；聊天可见已授权模型 |
 | `extensions`  | core   | 托管能力注册、Auto 决策、辅助模型用量             | 管理员设置；聊天能力开关       |
 | `search`      | plugin | Perplexity 搜索、查询生成与来源记录               | 拓展能力的子设置页             |
-| `chat`        | core   | 私有对话、后台生成、SSE 订阅与停止                | 工作区                         |
+| `chat`        | core   | 私有对话与分组、后台生成、SSE 订阅与停止          | 工作区                         |
 | `usage`       | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
 | `preferences` | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
 | `prompts`     | plugin | 私人提示词、配色、带草稿进入对话                  | 工作区                         |
@@ -91,16 +91,16 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 ### 数据归属
 
-| 数据                           | 当前持久化位置                                 | 边界                                                           |
-| ------------------------------ | ---------------------------------------------- | -------------------------------------------------------------- |
-| 账户 / 头像 / 会话             | `users`、`sessions`                            | 会话只存 token 摘要，客户端持有原 token                        |
-| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`          | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                  |
-| 对话 / 消息 / 图片             | `conversations`、`messages`                    | 图片随消息保存在数据库，访问检查用户归属                       |
-| 用量                           | `usage`                                        | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
-| 插件启停 / 提示词              | `settings`、`prompts`                          | 停用保留数据，重启恢复启停状态                                 |
-| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                               | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
-| 字号                           | localStorage `drift:font-size:<userId>`        | 按账户和当前浏览器保存，不随服务器备份迁移                     |
-| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>` | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
+| 数据                           | 当前持久化位置                                     | 边界                                                           |
+| ------------------------------ | -------------------------------------------------- | -------------------------------------------------------------- |
+| 账户 / 头像 / 会话             | `users`、`sessions`                                | 会话只存 token 摘要，客户端持有原 token                        |
+| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`              | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                  |
+| 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages` | 图片随消息保存在数据库，访问检查用户归属                       |
+| 用量                           | `usage`                                            | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
+| 插件启停 / 提示词              | `settings`、`prompts`                              | 停用保留数据，重启恢复启停状态                                 |
+| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                   | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
+| 字号                           | localStorage `drift:font-size:<userId>`            | 按账户和当前浏览器保存，不随服务器备份迁移                     |
+| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`     | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
 
 表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。当前数据库事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
 
@@ -114,13 +114,21 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 ## 界面偏好
 
-界面偏好由 preferences feature 保存到用户独立的 `ui_preferences`。v0.6 的追加迁移新增 `color_pattern`，从旧 `accent_color` 推导所属色系；后者仅保留旧客户端兼容。Web Shell 使用独立的 `shellTokens(mode)`：纯黑白灰的表面、文字与控件，不受色系切换影响。`conversations.color_slot`、`prompts.color_slot` 以可空整数保存手动选色，null 代表稳定自动配色；更新 API 校验范围和资源所有权。切换色系以序号映射，短色板按模数折返，不删除历史选择。
+界面偏好由 preferences feature 保存到用户独立的 `ui_preferences`。v0.6 的追加迁移新增 `color_pattern`，从旧 `accent_color` 推导所属色系；后者仅保留旧客户端兼容。Web Shell 使用独立的 `shellTokens(mode)`：纯黑白灰的表面、文字与控件，不受色系切换影响。`conversation_groups.color_slot`、`prompts.color_slot` 以可空整数保存手动选色，null 代表稳定自动配色；更新 API 校验范围和资源所有权。切换色系以序号映射，短色板按模数折返，不删除历史选择。
 
 代码语法颜色独立存放在 `syntax-highlighting.css`，按相同的语义 token 集合分别提供明暗色板（基于 highlight.js GitHub 主题），仅作用于 Markdown 代码块。不要用 Shell 文字色覆盖 `.hljs-*`；浏览器回归测试会在不重建消息 DOM 的情况下切换系统主题，检查 Python 关键字、函数名、数字、字符串、内置函数、注释的区分与可读性。
 
 个人头像由 auth feature 的 `PATCH /auth/avatar` 管理，服务端只更新当前会话账户。`users.avatar` 追加可空列，统一 User 响应包含头像；客户端居中裁剪为最长 512 px 的方形栅格，服务端再次校验图片签名与 512 KB 上限，不接受 SVG、外链或目标用户 ID。通用 `UserAvatar` 在加载失败时回退到姓名首字。
 
 色系注册接口可配置 `tint.light` / `tint.dark` 的 fill、soft、line 不透明度，统一映射组件底色、淡底色和边框；仍保留次要文字对比度保护。
+
+## 私人对话分组
+
+分组属于 chat 核心能力。`conversation_groups` 保存 `id`、`user_id`、名称、图标 / emoji、可空 `color_slot` 和创建时间；`conversations.group_id` 通过追加迁移加入，旧对话默认为 NULL。外键采用 `ON DELETE SET NULL`，删除分组不删除消息、不影响后台生成。原有 `conversations.color_slot` 数据和 PATCH 输入仅用于兼容旧客户端，当前 UI 不应用该颜色。
+
+分组列表、修改和删除都限定当前 `req.user.id`；将对话移入分组或在组内新建时，同时校验对话与目标分组归属，跨用户资源返回 404。所有修改只在输入和归属校验后写入，组合修改使用同步事务。分组按创建顺序，组内对话按最近更新时间；列表返回当前用户所有对话，避免以前的 300 条截断让分组内旧对话不可见。暂不分页、嵌套、共享或拖拽排序。
+
+Shell 的现有 refresh 同时读取分组与对话，并在账户变化后丢弃旧账户响应；退出和重新登录清空分组与搜索，列表组件按账户 key 重建。折叠状态仅在本次页面会话中保留。完整 API 见 [功能扩展](FEATURES.md#对话分组-api)。
 
 ## 实时输入
 
@@ -174,7 +182,7 @@ const colors = usePatternColors();
 </article>;
 ```
 
-对话、提示词库、首页建议、统计卡片和活动图均复用映射。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
+对话分组、提示词库、首页建议、统计卡片和活动图均复用映射。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
 
 ## LLM 拓展能力核心
 

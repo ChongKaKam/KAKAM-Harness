@@ -211,13 +211,7 @@ export function ChatPage() {
   const selected = models.find((m) => m.id === modelId);
   const empty = !conversationId && !messages.length;
   return (
-    <div
-      className={`chat-page ${empty ? 'is-home' : ''}`}
-      style={colors.style({
-        key: conversationId ?? 'new-chat',
-        slot: conversations.find((c) => c.id === conversationId)?.colorSlot,
-      })}
-    >
+    <div className={`chat-page ${empty ? 'is-home' : ''}`}>
       {!empty && (
         <ConversationOutline
           conversationId={conversationId}
@@ -284,9 +278,13 @@ export function ChatPage() {
                       {m.content ? (
                         <Markdown content={m.content} streaming={m.status === 'streaming'} />
                       ) : m.status === 'streaming' ? (
-                        <span className="thinking">
-                          正在思考<span>•••</span>
-                        </span>
+                        !m.extensions?.some(
+                          (run) => run.status === 'deciding' || run.status === 'running',
+                        ) && (
+                          <span className="thinking">
+                            正在思考<span>•••</span>
+                          </span>
+                        )
                       ) : (
                         <span className="muted">
                           {m.status === 'cancelled' ? '已停止生成' : '未收到回复'}
