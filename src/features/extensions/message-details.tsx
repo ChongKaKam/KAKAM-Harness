@@ -1,5 +1,6 @@
-import { ChevronDown, LoaderCircle, Puzzle } from 'lucide-react';
+import { ChevronDown, LoaderCircle } from 'lucide-react';
 import type { ExtensionRun } from '../../shared/types';
+import { ExtensionIcon } from './extension-icon';
 import './extensions.css';
 const statuses = {
   deciding: '正在判断',
@@ -42,7 +43,7 @@ export function ExtensionDetails({ runs }: { runs?: ExtensionRun[] }) {
       {runs.map((run) => (
         <details key={run.id} className="extensions-result">
           <summary className="extensions-result-summary">
-            <Puzzle size={20} aria-hidden="true" className="extensions-result-icon" />
+            <ExtensionIcon className="extensions-result-icon" />
             <span className="extensions-summary-copy">
               <strong>{run.name}</strong>
               <span
