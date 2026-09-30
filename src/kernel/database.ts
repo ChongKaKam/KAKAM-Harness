@@ -143,6 +143,80 @@ export class Database extends Service {
     this.connection.exec(
       'CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(group_id)',
     );
+    for (const [name, definition] of [
+      ['description', "TEXT NOT NULL DEFAULT ''"],
+      ['tags', "TEXT NOT NULL DEFAULT '[]'"],
+    ]) {
+      if (!this.all<{ name: string }>('PRAGMA table_info(prompts)').some((c) => c.name === name))
+        this.connection.exec(`ALTER TABLE prompts ADD COLUMN ${name} ${definition}`);
+    }
+    this.connection.exec(`CREATE TABLE IF NOT EXISTS prompt_preferences (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      summary_model_id TEXT REFERENCES models(id) ON DELETE SET NULL
+    )`);
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, current_version INTEGER NOT NULL, color_slot INTEGER,
+        deleted INTEGER NOT NULL DEFAULT 0, UNIQUE(user_id,name)
+      );
+      CREATE TABLE IF NOT EXISTS skill_versions (
+        skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL, document TEXT NOT NULL,
+        PRIMARY KEY(skill_id,version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_skills_user ON skills(user_id);
+    `);
+    if (!this.get("SELECT key FROM settings WHERE key='migration:skills-v1'")) {
+      this.transaction(() => {
+        for (const row of this.all<{
+          id: string;
+          user_id: string;
+          title: string;
+          content: string;
+          description: string;
+          tags: string;
+          color_slot: number | null;
+        }>('SELECT * FROM prompts')) {
+          this.run(
+            'INSERT INTO skills(id,user_id,name,current_version,color_slot) VALUES(?,?,?,1,?)',
+            row.id,
+            row.user_id,
+            `skill-${row.id}`,
+            row.color_slot,
+          );
+          this.run(
+            'INSERT INTO skill_versions(skill_id,version,document) VALUES(?,1,?)',
+            row.id,
+            JSON.stringify({
+              title: row.title,
+              content: row.content,
+              description: row.description,
+              tags: JSON.parse(row.tags),
+              files: [],
+            }),
+          );
+        }
+        this.run("INSERT INTO settings(key,value) VALUES('migration:skills-v1','true')");
+      });
+    }
+    for (const [table, column] of [
+      ['conversations', 'skills'],
+      ['messages', 'skills'],
+      ['messages', 'skill_reads'],
+      ['messages', 'calls'],
+    ] as const) {
+      if (!this.all<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === column))
+        this.connection.exec(
+          `ALTER TABLE ${table} ADD COLUMN ${column} TEXT NOT NULL DEFAULT '[]'`,
+        );
+    }
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(models)').some(
+        (c) => c.name === 'tool_calling',
+      )
+    )
+      this.connection.exec('ALTER TABLE models ADD COLUMN tool_calling INTEGER NOT NULL DEFAULT 0');
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

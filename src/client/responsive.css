@@ -41,9 +41,6 @@
   .idea-card p {
     font-size: var(--font-caption);
   }
-  .prompt-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -406,19 +403,6 @@
   .toolbar select {
     font-size: var(--font-caption);
     max-width: 100%;
-  }
-  .prompt-grid {
-    grid-template-columns: 1fr;
-  }
-  .prompt-card {
-    padding: 20px;
-  }
-  .prompt-card > p {
-    min-height: 0;
-    margin-bottom: 20px;
-  }
-  .prompt-card > .button {
-    margin-top: 0;
   }
   .feature-row {
     padding: 16px 13px;

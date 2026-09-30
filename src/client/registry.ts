@@ -17,6 +17,7 @@ import { UsagePage } from '../features/usage/client';
 import { UsersPage } from '../features/users/client';
 import { ModelsPage } from '../features/models/client';
 import { PromptsPage } from '../features/prompts/client';
+import { PromptsSettings } from '../features/prompts/settings';
 import { PreferencesPage } from '../features/preferences/client';
 import { manifest as preferences } from '../features/preferences/manifest';
 import { AccountPage } from '../features/auth/client';
@@ -34,6 +35,8 @@ export interface ClientFeature {
   placement: 'workspace' | 'statistics' | 'settings';
   settingsLabel?: string;
   settingsParent?: string;
+  /** Optional settings page for a feature that also has a workspace page. */
+  settingsComponent?: ComponentType;
 }
 // Build-time client catalog; runtime availability comes from the authenticated server registry.
 export const clientFeatures: ClientFeature[] = [
@@ -46,7 +49,13 @@ export const clientFeatures: ClientFeature[] = [
     settingsParent: 'extensions',
   },
   { placement: 'workspace', manifest: chat, icon: MessageSquare, component: ChatPage },
-  { placement: 'workspace', manifest: prompts, icon: BookOpen, component: PromptsPage },
+  {
+    placement: 'workspace',
+    manifest: prompts,
+    icon: BookOpen,
+    component: PromptsPage,
+    settingsComponent: PromptsSettings,
+  },
   { placement: 'statistics', manifest: usage, icon: ChartNoAxesCombined, component: UsagePage },
   { placement: 'settings', manifest: models, icon: Layers, component: ModelsPage },
   { placement: 'settings', manifest: users, icon: Users, component: UsersPage },

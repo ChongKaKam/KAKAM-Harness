@@ -105,11 +105,16 @@ export function ModelsPage() {
     setFormError('');
     try {
       if (modelModal === 'new')
-        await post('/admin/models', { ...values, vision: form.has('vision') });
+        await post('/admin/models', {
+          ...values,
+          vision: form.has('vision'),
+          toolCalling: form.has('toolCalling'),
+        });
       else
         await patch(`/admin/models/${modelModal!.id}`, {
           label: values.label,
           vision: form.has('vision'),
+          toolCalling: form.has('toolCalling'),
           enabled: form.has('enabled'),
           userIds: form.getAll('userIds'),
         });
@@ -501,6 +506,16 @@ export function ModelsPage() {
                     defaultChecked={modelModal !== 'new' && modelModal.vision}
                   />
                   支持图片输入
+                </label>
+              )}
+              {(modelModal === 'new' || modelModal.kind !== 'jev') && (
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    name="toolCalling"
+                    defaultChecked={modelModal !== 'new' && modelModal.toolCalling}
+                  />
+                  支持工具调用（Skill 参考文档按需读取）
                 </label>
               )}
               {modelModal !== 'new' && (

@@ -1,3 +1,5 @@
+import { generateToolTurn } from './tool-turn';
+import type { ToolDefinition, ToolStep } from './registry';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
 import type { ReasoningEffort } from '../shared/types';
@@ -28,6 +30,26 @@ const count = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 export class AnthropicMessagesAdapter implements ModelAdapter {
+  generateTurn(
+    connection: ProviderConnection,
+    model: string,
+    messages: ProviderMessage[],
+    tools: ToolDefinition[],
+    steps: ToolStep[],
+    signal: AbortSignal,
+    effort?: ReasoningEffort,
+  ) {
+    return generateToolTurn(
+      'anthropic-messages',
+      connection,
+      model,
+      messages,
+      tools,
+      steps,
+      signal,
+      effort,
+    );
+  }
   async discover(connection: ProviderConnection): Promise<string[]> {
     const names = new Set<string>();
     const cursors = new Set<string>();

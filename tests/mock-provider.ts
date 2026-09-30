@@ -1,3 +1,4 @@
+import { skillProviderFixture } from './skill-provider-fixture';
 import express from 'express';
 import { createServer } from 'node:http';
 export const imageData =
@@ -15,6 +16,10 @@ The Fibonacci sequence:
   '\n```\n';
 function extensionText(content: unknown): string | undefined {
   if (typeof content !== 'string') return;
+  if (content.startsWith('Write a short introduction for this prompt-library card'))
+    return content.includes('[empty-description]')
+      ? '   '
+      : '帮你梳理写作思路、润色表达，适合整理初稿和日常写作。';
   if (content.startsWith('Decide whether to enable'))
     return content.includes('[bad-json]')
       ? '{"enabled":"true"}'
@@ -148,6 +153,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/chat/completions', (req, res) => {
     requests.push(req.body);
+    if (skillProviderFixture(req.body, 'chat-completions', res)) return;
     if (req.body.model === 'upstream-error') {
       res.status(401).json({ error: { message: 'sensitive upstream details' } });
       return;
@@ -188,6 +194,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/responses', (req, res) => {
     requests.push(req.body);
+    if (skillProviderFixture(req.body, 'responses', res)) return;
     if (req.body.model === 'upstream-error') {
       res.status(401).json({ error: { message: 'sensitive upstream details' } });
       return;
@@ -239,6 +246,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/messages', (req, res) => {
     requests.push(req.body);
+    if (skillProviderFixture(req.body, 'anthropic-messages', res)) return;
     anthropicHeaders.push(req.headers);
     if (req.body.model === 'upstream-error') {
       res.status(401).json({ error: { message: 'sensitive upstream details' } });
@@ -274,7 +282,13 @@ export async function mockProvider(portNumber = 0) {
     const hasImage = req.body.messages
       .at(-1)
       ?.content.some((block: { type: string }) => block.type === 'image');
-    const text = (hasImage ? '我收到了一张图片。\n\n' : '') + markdownFixture;
+    const promptText = req.body.messages
+      .at(-1)
+      ?.content.filter((block: { type: string }) => block.type === 'text')
+      .map((block: { text: string }) => block.text)
+      .join('');
+    const text =
+      extensionText(promptText) ?? (hasImage ? '我收到了一张图片。\n\n' : '') + markdownFixture;
     const parts = slow ? Array(50).fill('慢速回复 ') : [text.slice(0, 6), text.slice(6)];
     let index = 0;
     const timer = setInterval(

@@ -1418,37 +1418,6 @@ td .button {
   white-space: nowrap;
   color: var(--faint);
 }
-.prompt-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-.prompt-card {
-  padding: 20px;
-}
-.prompt-card > .row {
-  color: var(--faint);
-}
-.prompt-card h3 {
-  margin: 20px 0 9px;
-  color: var(--muted);
-}
-.prompt-card > p {
-  font-size: var(--font-caption);
-  color: var(--faint);
-  white-space: pre-wrap;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 95px;
-  line-height: 1.8;
-}
-.prompt-card > .button {
-  margin-top: 20px;
-  width: 100%;
-  font-size: var(--font-caption);
-}
 .account-panel {
   max-width: 550px;
   padding: 27px;

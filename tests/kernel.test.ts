@@ -257,3 +257,120 @@ test('conversation groups migrate old chats, persist across restart and detach w
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('prompt metadata migrates without changing old content or colors and persists across restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kh-prompt-migration-'));
+  let kernel = new KHKernel(dir);
+  try {
+    kernel.ctx.db.run(
+      "INSERT INTO users(id,username,display_name,password_hash,role) VALUES('owner','owner','Owner','hash','admin')",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO prompts(id,user_id,title,content,color_slot) VALUES('card','owner','Old card','Original content',6)",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO providers(id,name,base_url,encrypted_key) VALUES('provider','Provider','https://example.test','unused')",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO models(id,provider_id,name,label) VALUES('model','provider','small','Small')",
+    );
+    kernel.ctx.db.connection.exec(
+      'ALTER TABLE prompts DROP COLUMN description; ALTER TABLE prompts DROP COLUMN tags; DROP TABLE prompt_preferences',
+    );
+    await kernel.stop();
+    for (let restart = 0; restart < 2; restart++) {
+      kernel = new KHKernel(dir);
+      const card = kernel.ctx.db.get<{
+        content: string;
+        description: string;
+        tags: string;
+        color_slot: number;
+      }>('SELECT * FROM prompts')!;
+      assert.equal(card.content, 'Original content');
+      assert.equal(card.color_slot, 6);
+      assert.equal(card.description, restart === 0 ? '' : 'Saved introduction');
+      assert.equal(card.tags, restart === 0 ? '[]' : '["写作"]');
+      if (restart === 0) {
+        kernel.ctx.db.run(
+          "UPDATE prompts SET description='Saved introduction',tags='[\"写作\"]' WHERE id='card'",
+        );
+        kernel.ctx.db.run(
+          "INSERT INTO prompt_preferences(user_id,summary_model_id) VALUES('owner','model')",
+        );
+      } else {
+        assert.equal(
+          kernel.ctx.db.get<{ summary_model_id: string }>('SELECT * FROM prompt_preferences')!
+            .summary_model_id,
+          'model',
+        );
+        kernel.ctx.db.run("DELETE FROM models WHERE id='model'");
+        assert.equal(
+          kernel.ctx.db.get<{ summary_model_id: null }>('SELECT * FROM prompt_preferences')!
+            .summary_model_id,
+          null,
+        );
+      }
+      assert.deepEqual(kernel.ctx.db.all('PRAGMA foreign_key_check'), []);
+      await kernel.stop();
+    }
+  } finally {
+    await kernel.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy prompts migrate once into versioned skills with ownership, color and disabled state intact', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kh-skill-migration-'));
+  let kernel = new KHKernel(dir);
+  try {
+    kernel.ctx.db.run(
+      "INSERT INTO users(id,username,display_name,password_hash,role) VALUES('skill-owner','skill-owner','Owner','hash','user')",
+    );
+    kernel.ctx.db.run(
+      "INSERT INTO prompts(id,user_id,title,content,description,tags,color_slot) VALUES('legacy-skill','skill-owner','旧卡片','  保留原文空格  ','用途','[\"写作\"]',6)",
+    );
+    kernel.ctx.db.run("INSERT INTO settings VALUES('feature:prompts','false')");
+    kernel.ctx.db.run("DELETE FROM settings WHERE key='migration:skills-v1'");
+    await kernel.stop();
+    kernel = new KHKernel(dir);
+    const old = kernel.ctx.db.get<{ document: string }>(
+      "SELECT document FROM skill_versions WHERE skill_id='legacy-skill' AND version=1",
+    )!;
+    assert.deepEqual(JSON.parse(old.document), {
+      title: '旧卡片',
+      content: '  保留原文空格  ',
+      description: '用途',
+      tags: ['写作'],
+      files: [],
+    });
+    assert.deepEqual(
+      {
+        ...kernel.ctx.db.get(
+          "SELECT user_id,color_slot,current_version FROM skills WHERE id='legacy-skill'",
+        ),
+      },
+      { user_id: 'skill-owner', color_slot: 6, current_version: 1 },
+    );
+    kernel.ctx.db.run("UPDATE skills SET deleted=1 WHERE id='legacy-skill'");
+    await kernel.stop();
+    kernel = new KHKernel(dir);
+    assert.equal(
+      kernel.ctx.db.get<{ deleted: number }>("SELECT deleted FROM skills WHERE id='legacy-skill'")!
+        .deleted,
+      1,
+    );
+    assert.equal(
+      kernel.ctx.db.get<{ count: number }>('SELECT COUNT(*) AS count FROM skill_versions')!.count,
+      1,
+    );
+    assert.equal(
+      kernel.ctx.db.get<{ value: string }>(
+        "SELECT value FROM settings WHERE key='feature:prompts'",
+      )!.value,
+      'false',
+    );
+  } finally {
+    await kernel.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

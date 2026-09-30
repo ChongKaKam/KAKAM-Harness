@@ -94,6 +94,14 @@ export function useConversation(
                     : message,
                 ),
               );
+            } else if (event.type === 'skill-progress') {
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === event.messageId
+                    ? { ...message, skillReads: event.skillReads, calls: event.calls }
+                    : message,
+                ),
+              );
             } else if (event.type === 'done') {
               terminal = true;
               setMessages((previous) =>

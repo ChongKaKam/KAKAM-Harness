@@ -267,7 +267,7 @@ test('neutral shell, sailboat, feature categories and project link adapt to both
     await expect(plugin).toBeVisible();
     await expect(core.getByRole('switch')).toHaveCount(0);
     await expect(core.getByText('始终启用', { exact: true })).toHaveCount(7);
-    await expect(plugin.getByRole('switch', { name: '提示词库开关' })).toBeEnabled();
+    await expect(plugin.getByRole('switch', { name: 'Skill 库开关' })).toBeEnabled();
     await expect(plugin.getByRole('switch', { name: 'Search开关' })).toBeEnabled();
     const coreBox = (await core.boundingBox())!;
     const pluginBox = (await plugin.boundingBox())!;

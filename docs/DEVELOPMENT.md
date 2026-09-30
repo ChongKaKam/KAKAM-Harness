@@ -13,7 +13,7 @@
 | [FEATURES.md](FEATURES.md)         | 如何添加一个包含 server / client 的功能，如何扩展服务与 Adapter？ |
 | [UI_GUIDE.md](UI_GUIDE.md)         | 如何新增 UI 组件并继承颜色、字号、布局与交互规范？                |
 
-推荐先读本页的项目结构，再实际打开 `src/features/prompts/`；它是当前最小的完整插件实例。涉及登录、模型授权或流式生成时，再读对应 feature 和测试。
+推荐先读本页的项目结构，再实际打开 `src/features/prompts/`；它是包含私人卡片、设置页和按需模型调用的完整插件实例。涉及登录、模型授权或流式生成时，再读对应 feature 和测试。
 
 ## 项目是什么
 
@@ -79,16 +79,16 @@ Git 与 Docker 构建上下文均排除 `.env` 及 `.env.*` 配置 / 备份，�
 
 ## 应该改哪一层
 
-| 需求                               | 推荐位置                                                 | 注册 / 契约影响                                                |
-| ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| 新增私人知识、收藏、记忆等独立能力 | 新 `src/features/<id>/`，通常为 plugin                   | server + client 两个注册入口；需要存储时追加迁移               |
-| 扩展已有聊天或账户功能             | 对应 feature；局部组件 / hooks 放同目录                  | 保持已有接口兼容，更新 DTO / 校验 / 测试                       |
-| 多个页面复用的小 UI                | `src/client/<component>.tsx`，参照 UI 指南               | 普通组件不需要 manifest 或 Kernel 注册                         |
-| 设置中的新页面                     | feature client 的 `placement: 'settings'`                | 使用 `navigate('settings', id)`，不要在侧栏重复加入口          |
-| 多个服务端能力复用的业务服务       | 由所属 feature 提供 Cordis Service                       | Context 类型扩充、消费者 inject、生命周期清理                  |
-| 新模型协议                         | `src/adapters/` + 来源配置能力                           | Registry、来源 apiMode 与 Adapter 映射、表单、迁移、适配器测试 |
-| 全局主题 / 字号规则                | `shared/appearance.ts`、`shared/typography.ts`、公共 CSS | 影响所有页面，需要完整视觉回归                                 |
-| 用户身份、来源校验、全局 HTTP 限制 | `server/app.ts`、auth / users、kernel/http               | 属于全局边界，不能由页面显示状态代替后端鉴权                   |
+| 需求                               | 推荐位置                                                         | 注册 / 契约影响                                                |
+| ---------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
+| 新增私人知识、收藏、记忆等独立能力 | 新 `src/features/<id>/`，通常为 plugin                           | server + client 两个注册入口；需要存储时追加迁移               |
+| 扩展已有聊天或账户功能             | 对应 feature；局部组件 / hooks 放同目录                          | 保持已有接口兼容，更新 DTO / 校验 / 测试                       |
+| 多个页面复用的小 UI                | `src/client/<component>.tsx`，参照 UI 指南                       | 普通组件不需要 manifest 或 Kernel 注册                         |
+| 设置中的新页面                     | feature client 的 `placement: 'settings'` 或 `settingsComponent` | 使用 `navigate('settings', id)`，不要在侧栏重复加入口          |
+| 多个服务端能力复用的业务服务       | 由所属 feature 提供 Cordis Service                               | Context 类型扩充、消费者 inject、生命周期清理                  |
+| 新模型协议                         | `src/adapters/` + 来源配置能力                                   | Registry、来源 apiMode 与 Adapter 映射、表单、迁移、适配器测试 |
+| 全局主题 / 字号规则                | `shared/appearance.ts`、`shared/typography.ts`、公共 CSS         | 影响所有页面，需要完整视觉回归                                 |
+| 用户身份、来源校验、全局 HTTP 限制 | `server/app.ts`、auth / users、kernel/http                       | 属于全局边界，不能由页面显示状态代替后端鉴权                   |
 
 不要仅因为“以后可能有很多插件”就先建立任意扩展点系统。LLM 拓展已有 extensions 核心，能力插件统一向它注册；其他场景先明确谁提供能力、谁消费能力，沿用已有 Service / Registry 模式；依赖关系和失败时行为应可描述、可测试。
 
@@ -178,3 +178,7 @@ git diff --check
 拓展能力回归在 `tests/extensions.test.ts` 与 `tests/e2e/extensions.spec.ts`，覆盖 Search、Jev、权限、模式、来源持久化、停止、卸载与重连；mock-provider 提供隔离的原生 Jev 和 Perplexity Search 响应，不需要真实密钥或付费调用。
 
 模型诊断回归位于 `tests/model-diagnostics.test.ts`：覆盖四种协议的真实测试请求、401、半截流、超时、非 JSON、日志限长及凭据脱敏。拓展菜单与管理列表的模式同步、原生 Popover 键盘和手机布局由 `tests/e2e/extensions.spec.ts` 验证。
+
+Skill 库兼容回归位于 `tests/prompts.test.ts`（编辑、标签校验、账户隔离、三类 LLM Adapter、真实用量、停用取消）与 `tests/e2e/prompts.spec.ts`（设置模型、生成简介、编辑 / 搜索 / 标签、明暗和四档字号）；旧库升级与重启保存在 `tests/kernel.test.ts` 验证。局部迭代运行受影响用例即可，无需每次执行全部浏览器套件。
+
+Skill 文档读取与工具循环回归在 `tests/skills.test.ts`，模型工具夹具在 `tests/skill-provider-fixture.ts`，覆盖三种协议、版本绑定、读取权限、累计用量、断线、停用和停止。迁移覆盖在 `tests/kernel.test.ts`，浏览器在 `tests/e2e/skills.spec.ts`；原提示词用例继续验证兼容接口和管理页面。后续执行环境的工作范围集中在 [Skill TODO](SKILLS_TODO.md)，这些能力尚未实现。

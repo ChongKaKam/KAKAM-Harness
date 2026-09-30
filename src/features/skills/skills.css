@@ -1,0 +1,161 @@
+.skills-attachment-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 8px;
+  width: min(300px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 40px #0002;
+}
+.skills-attachment-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: var(--font-ui);
+  text-align: left;
+}
+.skills-attachment-menu > button:hover {
+  background: var(--surface-alt);
+}
+.skills-attachment-menu > p {
+  margin: 0 12px 8px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.skills-attachment-menu .badge {
+  margin-left: auto;
+}
+.skills-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.skills-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 5px 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-alt);
+  font-size: var(--font-caption);
+}
+.skills-chip > span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.skills-chip select {
+  width: auto;
+  min-width: 85px;
+  padding: 6px;
+  margin: 0;
+  font-size: var(--font-caption);
+}
+.skills-chip > svg,
+.skills-chip > button {
+  flex-shrink: 0;
+}
+.skills-picker > p {
+  font-size: var(--font-ui);
+  line-height: 1.7;
+}
+.skills-picker-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.skills-picker-item {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+}
+.skills-picker-item .check-row {
+  margin: 0;
+  font-size: var(--font-ui);
+}
+.skills-picker-item small {
+  display: block;
+  font-size: var(--font-caption);
+  color: var(--muted);
+  margin-top: 4px;
+}
+.skills-picker-item > p {
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  overflow-wrap: anywhere;
+}
+.skills-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.skills-preview {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.skills-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-code);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.skills-files {
+  min-width: 0;
+  padding: 14px;
+  margin: 20px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.skills-files legend {
+  font-size: var(--font-ui);
+}
+.skills-file {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.skills-details {
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.skills-details > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+}
+.skills-details-content {
+  max-height: min(300px, 40dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 12px 12px;
+}
+.skills-details-content > p {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+@media (pointer: coarse) {
+  .skills-chip .icon-button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

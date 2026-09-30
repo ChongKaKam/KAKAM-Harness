@@ -7,10 +7,11 @@ import { SecretVault } from '../../kernel/crypto';
 import { testModelConnection } from './connection-test';
 import type { Model, User, ApiMode } from '../../shared/types';
 export { manifest } from './manifest';
-const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.enabled,CASE WHEN p.api_mode='jev' THEN 'jev' ELSE 'llm' END AS kind`;
+const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.tool_calling AS toolCalling,m.enabled,CASE WHEN p.api_mode='jev' THEN 'jev' ELSE 'llm' END AS kind`;
 const normalize = (m: Model) => ({
   ...m,
   vision: m.kind !== 'jev' && Boolean(m.vision),
+  toolCalling: m.kind !== 'jev' && Boolean(m.toolCalling),
   enabled: Boolean(m.enabled),
 });
 export const baseUrl = z.url().refine((v) => {
@@ -57,6 +58,7 @@ const modelSchema = z.object({
   name: z.string().trim().min(1).max(200),
   label: z.string().trim().min(1).max(100),
   vision: z.boolean().default(false),
+  toolCalling: z.boolean().default(false),
 });
 export class ModelsService extends Service {
   static inject = ['db', 'adapters'];
@@ -253,12 +255,13 @@ export function modelsFeature(secret: string) {
             throw new HttpError(409, '此模型已在白名单中');
           const id = randomUUID();
           ctx.db.run(
-            'INSERT INTO models(id,provider_id,name,label,vision,sort_order) VALUES(?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM models))',
+            'INSERT INTO models(id,provider_id,name,label,vision,tool_calling,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM models))',
             id,
             input.providerId,
             input.name,
             input.label,
             Number(input.vision && ctx.models.connection(input.providerId).apiMode !== 'jev'),
+            Number(input.toolCalling && ctx.models.connection(input.providerId).apiMode !== 'jev'),
           );
           res.status(201).json({ id });
         });
@@ -283,13 +286,14 @@ export function modelsFeature(secret: string) {
             .object({
               enabled: z.boolean(),
               vision: z.boolean(),
+              toolCalling: z.boolean().optional(),
               label: z.string().trim().min(1).max(100),
               userIds: z.array(z.string().uuid()).max(1000),
             })
             .parse(req.body);
           const id = String(req.params.id);
-          const savedModel = ctx.db.get<{ providerId: string }>(
-            'SELECT provider_id AS providerId FROM models WHERE id=?',
+          const savedModel = ctx.db.get<{ providerId: string; toolCalling: number }>(
+            'SELECT tool_calling AS toolCalling,provider_id AS providerId FROM models WHERE id=?',
             id,
           );
           if (!savedModel) throw new HttpError(404, '模型不存在');
@@ -298,10 +302,14 @@ export function modelsFeature(secret: string) {
               if (!ctx.db.get('SELECT id FROM users WHERE id=?', userId))
                 throw new HttpError(400, '授权用户不存在');
             ctx.db.run(
-              'UPDATE models SET enabled=?,vision=?,label=? WHERE id=?',
+              'UPDATE models SET enabled=?,vision=?,tool_calling=?,label=? WHERE id=?',
               Number(input.enabled),
               Number(
                 input.vision && ctx.models.connection(savedModel.providerId).apiMode !== 'jev',
+              ),
+              Number(
+                (input.toolCalling ?? savedModel.toolCalling) &&
+                  ctx.models.connection(savedModel.providerId).apiMode !== 'jev',
               ),
               input.label,
               id,

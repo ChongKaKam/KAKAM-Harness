@@ -45,7 +45,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `chat`        | core   | 私有对话与分组、后台生成、SSE 订阅与停止          | 工作区                         |
 | `usage`       | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
 | `preferences` | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
-| `prompts`     | plugin | 私人提示词、配色、带草稿进入对话                  | 工作区                         |
+| `prompts`     | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入    | 工作区                         |
 
 Models 的管理页受管理员限制，但已授权模型列表 API 向普通用户开放；不能把整个 models feature 的 HTTP 接口统一锁成管理员专用。Core / Plugin 是生命周期分类，`adminOnly` 是目录可见性，两者不是同一个维度。
 
@@ -62,7 +62,7 @@ Models 的管理页受管理员限制，但已授权模型列表 API 向普通�
 
 每个服务端 feature 声明 `inject`。其 Router 用 `ctx.effect(() => ctx.http.register(router))` 注册，注册函数返回 disposer。插件停用时 Cordis 释放作用域，Router 同步从活动列表撤销。插件自己的数据不会自动删除。
 
-服务端 `/api/features` 返回已验证用户可见的 manifest 与 enabled 状态；前端把它和编译期 client catalog 取交集生成导航、路由。Client catalog 的 placement 描述 workspace / statistics / settings 展示位置；设置容器属于 Web Shell，feature 保留各自 server/client 实现。管理员更新插件后立即刷新，其他客户端每 30 秒刷新目录。禁用后旧标签页可能短暂保留 UI，但 API 即刻不可用。
+服务端 `/api/features` 返回已验证用户可见的 manifest 与 enabled 状态；前端把它和编译期 client catalog 取交集生成导航、路由。Client catalog 的 placement 描述 workspace / statistics / settings 展示位置；设置容器属于 Web Shell，feature 保留各自 server/client 实现。工作区 feature 可通过同一 client 注册的 `settingsComponent` 提供独立设置页，沿用 manifest 权限与启停过滤。管理员更新插件后立即刷新，其他客户端每 30 秒刷新目录。禁用后旧标签页可能短暂保留 UI，但 API 即刻不可用。
 
 Core 和可选插件都按 feature 组织；“core”指平台启动必须具备且不允许在 UI 停用的 feature，区别于 Cordis 引擎自身。
 
@@ -85,22 +85,22 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - `providers.platform_url` 为可空的平台链接，仅 HTTP(S) 且不含嵌入凭据。只出现在管理员 DTO，API 连接仍只使用 baseUrl / key / apiMode。更新时省略该字段保留旧值，空字符串或 null 清空。
 - `models.sort_order` 为全局顺序。首次升级按旧的来源名称 / 模型名称排序初始化；后续启动不重排。新模型使用 MAX + 1 追加，列表按 sort_order、id 稳定排序。
 - `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一项为其默认。浏览器已明确选择且仍有权限的模型继续优先。
-- `usage.id = messages.id = requestId`（assistant）。读取历史时 LEFT JOIN 用量，`Message.usage` 为 `{ input, output, total } | null`；用户消息不带此字段。最终 SSE `done.message` 也带相同值，重连 snapshot 与历史一致。查询用量前仍先校验对话所有权；此关联不会让管理员读到其他用户的私人回复。
+- `requestId = messages.id`（assistant），首个回答模型请求沿用该 ID 记入 usage，后续工具循环请求使用独立 ID。`messages.calls` 保存调用关联；历史按 usage 中的实际记录聚合，旧消息仍 LEFT JOIN 原用量。任一调用缺失上报时完整合计为 null，`Message.usage` 为 `{ input, output, total } | null`；用户消息不带此字段。最终 SSE `done.message` 也带相同值，重连 snapshot 与历史一致。查询用量前仍先校验对话所有权；此关联不会让管理员读到其他用户的私人回复。
 - `messages.duration_ms` 是可空非负整数，追加迁移保留旧数据为 null。聊天任务用服务器单调时钟从后台任务开始到结束计时，包含拓展调用、上游等待与生成；完成、失败和主动停止都持久保存。`Message.durationMs` 在 SSE done、历史与重连 snapshot 中一致，浏览器离开或幂等重试不会重置。旧消息及异常进程退出前未记录的用时不推算。
 - Anthropic 原生头为 x-api-key / anthropic-version，图片转为 base64 内容块；只向聊天正文转发 text_delta，忽略 thinking/signature 内容。message_start 与 message_delta 的 usage 按字段合并，输出为累计计数。输入加上 cache creation / cache read，message_stop 才代表协议结束；缺失结束、error、max_tokens 等保留已生成文本并报告未完成。None 不发送思考字段；非 None 使用 adaptive + output_config.effort，兼容范围和输出上限见 README。
 
 ### 数据归属
 
-| 数据                           | 当前持久化位置                                     | 边界                                                           |
-| ------------------------------ | -------------------------------------------------- | -------------------------------------------------------------- |
-| 账户 / 头像 / 会话             | `users`、`sessions`                                | 会话只存 token 摘要，客户端持有原 token                        |
-| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`              | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                  |
-| 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages` | 图片随消息保存在数据库，访问检查用户归属                       |
-| 用量                           | `usage`                                            | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
-| 插件启停 / 提示词              | `settings`、`prompts`                              | 停用保留数据，重启恢复启停状态                                 |
-| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                   | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
-| 字号                           | localStorage `drift:font-size:<userId>`            | 按账户和当前浏览器保存，不随服务器备份迁移                     |
-| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`     | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
+| 数据                           | 当前持久化位置                                               | 边界                                                           |
+| ------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------- |
+| 账户 / 头像 / 会话             | `users`、`sessions`                                          | 会话只存 token 摘要，客户端持有原 token                        |
+| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`                        | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                  |
+| 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages`           | 图片随消息保存在数据库，访问检查用户归属                       |
+| 用量                           | `usage`                                                      | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
+| 插件启停 / Skill               | `settings`、`skills`、`skill_versions`、`prompt_preferences` | 停用保留数据，重启恢复启停状态                                 |
+| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                             | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
+| 字号                           | localStorage `drift:font-size:<userId>`                      | 按账户和当前浏览器保存，不随服务器备份迁移                     |
+| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`               | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
 
 表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。当前数据库事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
 
@@ -114,7 +114,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 ## 界面偏好
 
-界面偏好由 preferences feature 保存到用户独立的 `ui_preferences`。v0.6 的追加迁移新增 `color_pattern`，从旧 `accent_color` 推导所属色系；后者仅保留旧客户端兼容。Web Shell 使用独立的 `shellTokens(mode)`：纯黑白灰的表面、文字与控件，不受色系切换影响。`conversation_groups.color_slot`、`prompts.color_slot` 以可空整数保存手动选色，null 代表稳定自动配色；更新 API 校验范围和资源所有权。切换色系以序号映射，短色板按模数折返，不删除历史选择。
+界面偏好由 preferences feature 保存到用户独立的 `ui_preferences`。v0.6 的追加迁移新增 `color_pattern`，从旧 `accent_color` 推导所属色系；后者仅保留旧客户端兼容。Web Shell 使用独立的 `shellTokens(mode)`：纯黑白灰的表面、文字与控件，不受色系切换影响。`conversation_groups.color_slot`、`skills.color_slot` 以可空整数保存手动选色，null 代表稳定自动配色；更新 API 校验范围和资源所有权。切换色系以序号映射，短色板按模数折返，不删除历史选择。
 
 代码语法颜色独立存放在 `syntax-highlighting.css`，按相同的语义 token 集合分别提供明暗色板（基于 highlight.js GitHub 主题），仅作用于 Markdown 代码块。不要用 Shell 文字色覆盖 `.hljs-*`；浏览器回归测试会在不重建消息 DOM 的情况下切换系统主题，检查 Python 关键字、函数名、数字、字符串、内置函数、注释的区分与可读性。
 
@@ -182,7 +182,7 @@ const colors = usePatternColors();
 </article>;
 ```
 
-对话分组、提示词库、首页建议、统计卡片和活动图均复用映射。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
+对话分组、Skill 库、首页建议、统计卡片和活动图均复用映射。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
 
 ## LLM 拓展能力核心
 
@@ -196,6 +196,24 @@ const colors = usePatternColors();
 
 `messages.extensions` 追加 JSON 列记录能力状态、决策、查询、来源和每次辅助调用的 usage ID / 阶段 / 状态 / 用量；旧消息为 `[]`。阶段变化立即检查点保存，通过 `extensions` SSE 事件更新；snapshot、done 与历史返回同一结构。浏览器离开只关闭订阅，主动停止、插件卸载或关机才中止对应工作。异常重启把遗留活动阶段标为 error，不恢复生成。
 
-每个辅助调用独立写 `usage`，`model_name` 含能力和阶段；Token 只取供应商已上报值，累计数据取最新。Jev 的 total 为已上报 input_tokens + output_tokens，缺任一字段则未上报；Search API 没有 Token usage，保留 NULL。回复旁原有用量仍属于最终回答，辅助明细在拓展详情且计入全局统计。聊天任务在接受时预建原有回复用量记录；拓展失败而未发出最终回答请求时，该记录为 error 且 Token 为 NULL。
+每个辅助调用独立写 `usage`，`model_name` 含能力和阶段；Token 只取供应商已上报值，累计数据取最新。Jev 的 total 为已上报 input_tokens + output_tokens，缺任一字段则未上报；Search API 没有 Token usage，保留 NULL。回复旁用量属于回答模型的所有请求，辅助明细在拓展详情且计入全局统计。聊天任务在接受时预建原有回复用量记录；拓展失败而未发出最终回答请求时，该记录为 error 且 Token 为 NULL。
 
 辅助模型只接收最近 6 条文本消息，每条保留末尾 8000 字符；图片不转发。Search 顺序请求有限数量的词条，按去片段的 HTTP(S) URL 去重，过滤凭据 URL 和不安全协议。检索摘要按不可信证据交给最终模型，保存来源并要求编号链接引用；当前不抓取网页全文，不独立核验事实，也不保证模型每个断言均正确引用。
+
+## Skill 库与文档读取
+
+产品入口统一为「Skill 库」。为保留已安装实例的插件启停状态及链接，feature ID、`features/prompts/` 管理界面、`#/prompts` 和 `#/settings/prompts` 继续保留。领域 DTO 与存储位于 `features/skills/`，新 API 为 `/skills`；旧 `/prompts` API 是同一存储的兼容外观，不再写旧 prompts 表。
+
+数据库以一次事务迁移旧卡片到 `skills` 和 `skill_versions`，设置 `migration:skills-v1` 标记；重启不会重导入或复活已删除卡片。每个版本的 JSON 保存标题、简介、正文、标签、参考文件；正文只有此处一份事实来源。`skills` 保存所有者、稳定 name、当前版本、颜色和 deleted 标记。删除归档库条目，已有消息的选择和读取记录保留，后续不能再读取该技能。保留旧 prompts 表供升级核对，不进行双写。
+
+Skill 插件通过 `ctx.effect(() => ctx.extensions.registerSkills(provider))` 注册用户感知的版本解析与读取函数。chat 只注入 extensions；使用 `planSkills` 固定本轮版本，再通过 `openSkills` 获取受限的文档会话。插件停用会撤销注册并中止相关任务；不带技能的普通聊天可继续运行。用户身份显式传递，每次读取重新检查所有权、版本和删除状态。
+
+`conversations.skills` 保存持续生效的选择；消息提交中的 skills 数组是本轮快照，省略时继承已保存选择，空数组移除全部。仅本轮条目不会持久加入后续选择。`messages.skills` 保存实际版本和显示名，`skill_reads` 保存已读取的路径、范围，`calls` 保存每次上游请求的 ID、状态与用量检查点。SSE skill-progress、done、重连 snapshot 和历史返回一致数据。编辑库产生新版本，已有绑定不自动更新。
+
+明确选择的主文档作为用户级上下文载入；文件目录只有路径和长度。唯一读工具 `skills_read` 根据本轮白名单访问固定版本，不接受服务器文件路径，不联网、不执行脚本。下轮重新组成主文档上下文，引用文件按需重读；不会把过去的“已读取”标记当作仍拥有文档正文。未选择技能时不提供该工具。
+
+chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可选 generateTurn 接口。Chat Completions 保留工具调用 ID，Responses 保留完整 output items（含不透明 reasoning）并维持 store:false，Anthropic 保留 tool_use 与 thinking/signature 块；这些协议续接数据只留在本轮服务端内存，不当作聊天正文或发给其他模型。停止、超时、插件停用和关机共用本轮取消信号；总时限仍是 180 秒，服务重启不续跑。
+
+本轮固定模型来源、协议与 Adapter，避免不透明续接数据跨供应商；每次请求前重新执行 ModelsService.authorize。`models.tool_calling` 默认关闭，管理员按具体模型启用；单文件手动载入不需要工具调用，含参考文件时必须启用。对非法工具、路径、参数、重复片段及预算超限直接终止并保留已完成内容，不静默宣称参考文件已读取。预算见 [API 与限制](FEATURES.md#skill-库-api)。
+
+每次回答模型请求独立写 usage，同一请求累计值取最新，跨请求才相加；聚合值不另写一笔 usage。中断保留已经上报的计数，未知值不补零。历史读取以 usage 表为准，`messages.calls` 用于关联和阶段展示。简介仍通过现有 utility 显式调用，只返回编辑草稿，不随库迁移或浏览自动生成；`prompt_preferences` 保留用户简介模型偏好。

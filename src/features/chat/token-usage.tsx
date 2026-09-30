@@ -14,7 +14,13 @@ export function TokenUsage({ message }: { message: Message }) {
         <>
           <strong>本次回复 · Token 消耗</strong>
           {!!message.extensions?.length && (
-            <p>此处为最终回答用量；辅助模型和检索调用见上方拓展详情，也计入统计。</p>
+            <p>此处为回答模型用量；辅助模型和检索调用见上方拓展详情，也计入统计。</p>
+          )}
+          {!!message.skills?.length && (
+            <p>
+              包含本轮回答模型的全部请求；逐次用量见 Skill
+              载入记录。任一请求未上报时，完整合计显示为未上报。
+            </p>
           )}
           {usage ? (
             <>

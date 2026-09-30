@@ -1,3 +1,4 @@
+import type { SelectedSkill } from '../features/skills/types';
 import { createContext, useContext, type Dispatch, type SetStateAction } from 'react';
 import type { Conversation, FeatureManifest, Model, User } from '../shared/types';
 export interface WorkspaceContext {
@@ -10,6 +11,8 @@ export interface WorkspaceContext {
   navigate: (page: string, conversationId?: string) => void;
   notify: (text: string) => void;
   conversationId?: string;
+  draftSkills: SelectedSkill[];
+  setDraftSkills: Dispatch<SetStateAction<SelectedSkill[]>>;
   draft: string;
   setDraft: Dispatch<SetStateAction<string>>;
 }

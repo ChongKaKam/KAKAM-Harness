@@ -1,10 +1,11 @@
+import { AttachmentMenu, SkillChips, useChatSkills } from '../skills/chat-controls';
+import { SkillDetails } from '../skills/message-details';
 import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   ArrowUp,
   ArrowDown,
-  Paperclip,
   X,
   Square,
   Sailboat,
@@ -66,6 +67,7 @@ export function ChatPage() {
     notify,
   } = useWorkspace();
   const extensions = useExtensions(user.id, features);
+  const skills = useChatSkills(conversationId);
   const [revision, setRevision] = useState(0);
   const {
     messages,
@@ -148,6 +150,8 @@ export function ChatPage() {
       loading ||
       extensions.saving ||
       extensions.loading ||
+      skills.loading ||
+      !!skills.error ||
       !modelId ||
       (!draft.trim() && !images.length)
     )
@@ -155,6 +159,7 @@ export function ChatPage() {
     const originalDraft = draft;
     const text = draft.trim();
     const attachments = images;
+    const selectedSkills = skills.selected;
     const startingId = conversationId;
     scroll.latest();
     setSubmitting(true);
@@ -166,6 +171,7 @@ export function ChatPage() {
       images: attachments,
       reasoningEffort: effort,
       extensions: extensions.modes,
+      skills: skills.selected.map(({ id, version, scope }) => ({ id, version, scope })),
     };
     try {
       if (!id) {
@@ -181,9 +187,11 @@ export function ChatPage() {
       // Submission is independent of the disposable SSE viewer and component lifecycle.
       await post(`/conversations/${id}/messages`, { ...body, requestId });
       pending.current = undefined;
+
       setDraft((current) => (current === originalDraft ? '' : current));
       if (mounted.current && (viewId.current === id || viewId.current === startingId)) {
         scroll.latest();
+        skills.accepted(selectedSkills);
         setImages([]);
         setRevision((value) => value + 1);
       }
@@ -191,6 +199,7 @@ export function ChatPage() {
       if (mounted.current && (viewId.current === id || viewId.current === startingId)) {
         setError((error as Error).message);
         setImages(attachments);
+        skills.restore(selectedSkills);
         // A lost acknowledgement may still represent an accepted job; resubscribe, never auto-resend.
         setRevision((value) => value + 1);
       }
@@ -267,6 +276,7 @@ export function ChatPage() {
                       {m.modelName && <span>{m.modelName}</span>}
                     </div>
                     <div className="message-content">
+                      <SkillDetails message={m} />
                       <ExtensionDetails runs={m.extensions} />
                       {m.images.length > 0 && (
                         <div className="message-images">
@@ -336,7 +346,12 @@ export function ChatPage() {
               <ArrowDown size={20} />
             </button>
           )}
-          <ErrorNote text={error || streamError || extensions.error} />
+          <ErrorNote text={error || streamError || extensions.error || skills.error} />
+          {skills.error && (
+            <button className="button" onClick={skills.reload}>
+              重新加载对话 Skill
+            </button>
+          )}
           {reconnecting && (
             <p className="chat-connection-note" role="status">
               连接恢复后会自动同步；已提交的回复仍在服务器上继续生成。
@@ -357,6 +372,7 @@ export function ChatPage() {
             </div>
           )}
           <div className="composer">
+            <SkillChips controls={skills} disabled={busy || skills.loading} />
             <LiveComposer
               ref={input}
               value={draft}
@@ -388,17 +404,12 @@ export function ChatPage() {
                 multiple
                 onChange={addImages}
               />
-              <button
-                className="icon-button"
-                title={
-                  selected?.vision ? '添加图片（最多 4 张，每张 5 MB）' : '请选择支持图片的模型'
-                }
-                aria-label="添加图片"
-                disabled={busy || !selected?.vision}
-                onClick={() => file.current?.click()}
-              >
-                <Paperclip size={19} />
-              </button>
+              <AttachmentMenu
+                disabled={busy}
+                vision={!!selected?.vision}
+                addImages={() => file.current?.click()}
+                controls={skills}
+              />
               <ModelPicker
                 models={models}
                 modelId={modelId}
@@ -437,7 +448,9 @@ export function ChatPage() {
                     (!draft.trim() && !images.length) ||
                     loading ||
                     extensions.saving ||
-                    extensions.loading
+                    extensions.loading ||
+                    skills.loading ||
+                    !!skills.error
                   }
                   onClick={send}
                 >

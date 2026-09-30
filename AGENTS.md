@@ -20,7 +20,8 @@
 - 使用真实 Cordis 3.18.1 作为引擎；KH-Kernel 封装 feature 注册、启停和关闭过程。不要另写一套并行的插件运行时。
 - 产品能力按 `src/features/<id>/{manifest.ts,server.ts,client.tsx}` 聚合，可在同目录增加 hooks、组件、类型和 CSS。manifest 是浏览器可导入的纯数据，不导入服务端依赖或凭据。
 - `kind: 'core'` 是必须启用的基础能力；`kind: 'plugin'` 是可选产品能力。两者使用同一 feature 结构。当前不是在线安装任意第三方代码的平台。
-- LLM 拓展能力插件先向 `extensions` 核心注册，不直接接入聊天；辅助 LLM / Jev 必须来自模型管理、逐调用校验当前用户权限并记录真实用量。详见 [功能扩展](docs/FEATURES.md#注册托管的-llm-能力)。
+- Skill 库通过 extensions 注册版本解析与受控文档读取，chat 不直接依赖可选插件。Skill 文档是用户级指令；工具循环逐请求校验模型权限、记录真实用量，协议续接中的推理块不进入聊天正文。脚本/网络/依赖执行尚未实现，见 [TODO](docs/SKILLS_TODO.md)。
+- LLM 拓展能力插件先向 `extensions` 核心注册，不直接接入聊天；显式辅助任务使用同一核心的 utility 接口，不加入聊天能力菜单；辅助 LLM / Jev 必须来自模型管理、逐调用校验当前用户权限并记录真实用量。详见 [功能扩展](docs/FEATURES.md#注册托管的-llm-能力)。
 - 新 feature 分别接入 `src/server/app.ts` 和 `src/client/registry.ts`；当前没有文件扫描、动态模块加载或自动注册。
 - 服务端依赖声明在 `inject`；共享服务用 Cordis `Service`，类型扩充在 `src/kernel/context.ts`。路由和其他副作用通过 `ctx.effect` 注册并返回清理函数。
 - Context 不保存当前用户。API 从 `req.user` 获取身份，跨服务调用显式传递用户。私人资源查询与修改同时限定资源 ID 和用户 ID；管理员身份不是读取他人聊天的通行证。

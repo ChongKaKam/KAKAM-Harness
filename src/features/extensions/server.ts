@@ -2,6 +2,8 @@ import { Service, type Context } from 'cordis';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { SkillSession, type SkillProvider, type SkillPlan } from './skill-runtime';
+import type { SkillSelection } from '../skills/types';
 import { HttpError, requireAdmin, requireUser } from '../../kernel/http';
 import type { ProviderMessage, TokenUsage } from '../../adapters/registry';
 import type {
@@ -60,10 +62,124 @@ function parseJson<T>(text: string, schema: z.ZodType<T>): T {
   }
 }
 export class ExtensionsService extends Service {
-  static inject = ['db', 'models'];
+  static inject = ['db', 'models', 'kernel'];
   private entries = new Map<string, Registered>();
+  private utilities = new Map<string, { name: string; abort: AbortController }>();
+  private utilityCalls = new Map<string, Promise<unknown>>();
+  private stopping = false;
+  private skills?: { provider: SkillProvider; abort: AbortController };
+  registerSkills(provider: SkillProvider) {
+    if (this.skills) throw new Error('Skill provider already registered');
+    const entry = { provider, abort: new AbortController() };
+    this.skills = entry;
+    return () => {
+      entry.abort.abort();
+      if (this.skills === entry) this.skills = undefined;
+    };
+  }
+  planSkills(user: User, selections: SkillSelection[]): SkillPlan | undefined {
+    if (!selections.length) return undefined;
+    if (!this.skills) throw new HttpError(409, 'Skill 库已停用，请移除所选技能后重试');
+    const skills = this.skills.provider.resolve(user, selections);
+    return { skills, provider: this.skills.provider, signal: this.skills.abort.signal };
+  }
+  openSkills(user: User, plan: SkillPlan) {
+    return new SkillSession(user, plan);
+  }
   constructor(ctx: Context) {
     super(ctx, 'extensions', true);
+    ctx.effect(() =>
+      ctx.kernel.onShutdown(async () => {
+        this.stopping = true;
+        for (const utility of this.utilities.values()) utility.abort.abort();
+        await Promise.allSettled(this.utilityCalls.values());
+      }),
+    );
+  }
+  /** Explicit feature actions share authorization and usage tracking, without joining chat. */
+  registerUtility(id: string, name: string) {
+    if (this.utilities.has(id)) throw new Error(`Duplicate utility: ${id}`);
+    const entry = { name, abort: new AbortController() };
+    this.utilities.set(id, entry);
+    return () => {
+      entry.abort.abort();
+      this.utilities.delete(id);
+    };
+  }
+  generateUtility(user: User, id: string, modelId: string, prompt: string, signal: AbortSignal) {
+    if (this.stopping) throw new HttpError(503, '服务正在重启，请稍后重试');
+    const entry = this.utilities.get(id);
+    if (!entry) throw new HttpError(409, '此功能已停用，请刷新后重试');
+    const key = `${id}:${user.id}`;
+    if (this.utilityCalls.has(key)) throw new HttpError(409, '简介正在生成，请稍后重试');
+    const operationSignal = AbortSignal.any([
+      signal,
+      entry.abort.signal,
+      AbortSignal.timeout(60_000),
+    ]);
+    operationSignal.throwIfAborted();
+    const model = this.ctx.models.authorize(user, modelId, 'llm');
+    const connection = this.ctx.models.connection(model.providerId);
+    const adapter = this.ctx.models.adapter(connection.apiMode);
+    const callId = randomUUID();
+    this.ctx.db.run(
+      'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
+      callId,
+      user.id,
+      `[${entry.name}] ${model.label}`,
+      null,
+      null,
+      null,
+      'streaming',
+      new Date().toISOString(),
+    );
+    const work = (async () => {
+      let usage: TokenUsage | null = null;
+      let status = 'error';
+      try {
+        let text = '';
+        for await (const event of adapter.generate(
+          connection,
+          model.name,
+          [{ role: 'user', content: prompt }],
+          operationSignal,
+          'none',
+        )) {
+          operationSignal.throwIfAborted();
+          if (event.type === 'usage') usage = event.usage;
+          else text += event.text;
+          if (text.length > 4000) throw new HttpError(502, '模型返回的简介过长，请更换模型后重试');
+        }
+        operationSignal.throwIfAborted();
+        if (!text.trim()) throw new HttpError(502, '模型未返回简介，请重试');
+        status = 'complete';
+        return { text: text.trim(), usage };
+      } catch (error) {
+        if (operationSignal.aborted) {
+          const timeout = operationSignal.reason?.name === 'TimeoutError';
+          status = timeout ? 'error' : 'cancelled';
+          throw new HttpError(
+            timeout ? 504 : 409,
+            timeout ? '简介生成超时，请重试' : '简介生成已取消',
+          );
+        }
+        throw error instanceof HttpError
+          ? error
+          : new HttpError(502, '简介生成失败，请检查模型配置后重试');
+      } finally {
+        this.ctx.db.run(
+          'UPDATE usage SET input_tokens=?,output_tokens=?,total_tokens=?,status=? WHERE id=?',
+          usage?.input ?? null,
+          usage?.output ?? null,
+          usage?.total ?? null,
+          status,
+          callId,
+        );
+      }
+    })();
+    const tracked = work.finally(() => this.utilityCalls.delete(key));
+    this.utilityCalls.set(key, tracked);
+    return tracked;
   }
   register(definition: ExtensionDefinition) {
     if (this.entries.has(definition.id)) throw new Error(`Duplicate extension: ${definition.id}`);

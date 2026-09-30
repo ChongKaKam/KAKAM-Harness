@@ -1,3 +1,5 @@
+import { generateToolTurn } from './tool-turn';
+import type { ToolDefinition, ToolStep } from './registry';
 import type { ModelAdapter, ProviderConnection, ProviderMessage, ProviderEvent } from './registry';
 import type { ReasoningEffort } from '../shared/types';
 import { HttpError } from '../kernel/http';
@@ -18,6 +20,26 @@ async function check(response: Response, connection: ProviderConnection) {
   }
 }
 export class OpenAICompatibleAdapter implements ModelAdapter {
+  generateTurn(
+    connection: ProviderConnection,
+    model: string,
+    messages: ProviderMessage[],
+    tools: ToolDefinition[],
+    steps: ToolStep[],
+    signal: AbortSignal,
+    effort?: ReasoningEffort,
+  ) {
+    return generateToolTurn(
+      connection.apiMode ?? 'chat-completions',
+      connection,
+      model,
+      messages,
+      tools,
+      steps,
+      signal,
+      effort,
+    );
+  }
   async discover(c: ProviderConnection) {
     const response = await providerFetch(c, endpoint(c, 'models'), {
       headers: headers(c),

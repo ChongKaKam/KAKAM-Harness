@@ -1,8 +1,8 @@
 import type { FeatureManifest } from '../../shared/types';
 export const manifest: FeatureManifest = {
   id: 'prompts',
-  name: '提示词库',
-  description: '收藏常用提示词，一键开始对话',
+  name: 'Skill 库',
+  description: '管理私人 Skill，在聊天中载入指令并按需读取参考文档',
   kind: 'plugin',
-  version: '0.1.0',
+  version: '0.3.0',
 };

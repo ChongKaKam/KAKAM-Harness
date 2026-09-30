@@ -1,3 +1,4 @@
+import type { SelectedSkill, SkillRead } from '../features/skills/types';
 import type { AccentColor } from './appearance';
 export type Role = 'admin' | 'user';
 export type ApiMode = 'chat-completions' | 'responses' | 'anthropic-messages' | 'jev';
@@ -41,6 +42,7 @@ export interface Model {
   name: string;
   label: string;
   vision: boolean;
+  toolCalling?: boolean;
   enabled: boolean;
 }
 export interface Provider {
@@ -77,6 +79,9 @@ export interface Attachment {
   data: string;
 }
 export interface Message {
+  skills?: SelectedSkill[];
+  skillReads?: SkillRead[];
+  calls?: ExtensionCall[];
   extensions?: ExtensionRun[];
   id: string;
   role: 'user' | 'assistant';
@@ -126,6 +131,7 @@ export interface UsageData {
   activity: { day: string; model: string; total: number; requests: number }[];
 }
 export type StreamEvent =
+  | { type: 'skill-progress'; messageId: string; skillReads: SkillRead[]; calls: ExtensionCall[] }
   | { type: 'extensions'; messageId: string; extensions: ExtensionRun[] }
   | { type: 'snapshot'; messages: Message[] }
   | { type: 'delta'; messageId: string; text: string }

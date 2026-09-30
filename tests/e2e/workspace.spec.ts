@@ -198,10 +198,10 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await page.getByRole('radio', { name: '白天', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await nav(page, '功能与插件');
-  await page.getByRole('switch', { name: '提示词库开关' }).click();
-  await expect(page.getByRole('switch', { name: '提示词库开关' })).not.toBeChecked();
-  await page.getByRole('switch', { name: '提示词库开关' }).click();
-  await expect(page.getByRole('switch', { name: '提示词库开关' })).toBeChecked();
+  await page.getByRole('switch', { name: 'Skill 库开关' }).click();
+  await expect(page.getByRole('switch', { name: 'Skill 库开关' })).not.toBeChecked();
+  await page.getByRole('switch', { name: 'Skill 库开关' }).click();
+  await expect(page.getByRole('switch', { name: 'Skill 库开关' })).toBeChecked();
   const menu = page.getByRole('button', { name: '打开导航' });
   if (await menu.isVisible()) await menu.click();
   await page.getByRole('button', { name: '退出登录' }).click();
@@ -213,15 +213,14 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await expect(page.getByRole('button', { name: '模型与接入', exact: true })).toHaveCount(0);
   if (await page.getByRole('button', { name: '收起导航' }).isVisible())
     await page.getByRole('button', { name: '收起导航' }).click();
-  await nav(page, '提示词库');
-  await page.getByRole('button', { name: '新建提示词' }).click();
+  await nav(page, 'Skill 库');
+  await page.getByRole('button', { name: '新建Skill' }).click();
   await page.getByLabel('名称', { exact: true }).fill('我的学习伙伴');
-  await page.getByLabel('提示词内容').fill('帮我理解一个概念');
-  await page.getByRole('button', { name: '保存提示词' }).click();
-  await page.getByRole('button', { name: '用于新对话' }).click();
-  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveText(
-    '帮我理解一个概念',
-  );
+  await page.getByLabel('主指令（SKILL.md）').fill('帮我理解一个概念');
+  await page.getByRole('button', { name: '保存Skill' }).click();
+  await page.getByRole('button', { name: '载入新对话' }).click();
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeEmpty();
+  await expect(page.getByLabel('已选 Skill')).toContainText('我的学习伙伴');
   expect(pageErrors).toEqual([]);
 });
 
@@ -446,7 +445,7 @@ test('conversation and prompt colors can be assigned, remapped and reset without
   const neutralRow = await row.evaluate((element) => getComputedStyle(element).color);
   const closeMenu = page.getByRole('button', { name: '收起导航' });
   if (await closeMenu.isVisible()) await closeMenu.click();
-  await nav(page, '提示词库');
+  await nav(page, 'Skill 库');
   const card = page.locator('.prompt-card').filter({ hasText: `配色卡片 ${info.project.name}` });
   await card.getByRole('button', { name: /设置颜色/ }).click();
   await page.getByRole('dialog').getByRole('radio', { name: '玫瑰粉', exact: true }).click();
@@ -462,7 +461,7 @@ test('conversation and prompt colors can be assigned, remapped and reset without
     'true',
   );
   await page.reload();
-  await nav(page, '提示词库');
+  await nav(page, 'Skill 库');
   await expect
     .poll(() => card.evaluate((element) => element.style.getPropertyValue('--item-color')))
     .toBe('#f0c9d1');

@@ -1,3 +1,7 @@
+import { skillSelections } from '../extensions/skill-runtime';
+import type { SelectedSkill, SkillRead } from '../skills/types';
+import { generateReply, aggregateCalls } from './skill-generation';
+import type { ExtensionCall } from '../../shared/types';
 import { modesSchema } from '../extensions/server';
 import { Router, type Response } from 'express';
 import type { Context } from 'cordis';
@@ -6,7 +10,7 @@ import { z } from 'zod';
 import { HttpError, requireUser } from '../../kernel/http';
 import { ownGroup, registerGroupRoutes } from './groups-server';
 import type { Message, StreamEvent, Attachment } from '../../shared/types';
-import type { TokenUsage, ProviderMessage } from '../../adapters/registry';
+import type { ProviderMessage } from '../../adapters/registry';
 export { manifest } from './manifest';
 const imageSchema = z.object({
   name: z.string().max(200),
@@ -21,6 +25,7 @@ const imageSchema = z.object({
 const inputSchema = z
   .object({
     modelId: z.string().uuid(),
+    skills: skillSelections.optional(),
     extensions: modesSchema.default({}),
     requestId: z.string().uuid().optional(),
     reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).default('none'),
@@ -42,13 +47,16 @@ function validateImages(images: Attachment[]) {
   }
 }
 const messageColumns =
-  'm.id,m.role,m.content,m.images,m.extensions,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
+  'm.id,m.role,m.content,m.images,m.extensions,m.skills,m.skill_reads AS skillReads,m.calls,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
 function messages(ctx: Context, id: string): Message[] {
   return ctx.db
     .all<
-      Omit<Message, 'images' | 'extensions'> & {
+      Omit<Message, 'images' | 'extensions' | 'skills' | 'skillReads' | 'calls'> & {
         images: string;
         extensions: string;
+        skills: string;
+        skillReads: string;
+        calls: string;
         input: number | null;
         output: number | null;
         total: number | null;
@@ -57,17 +65,44 @@ function messages(ctx: Context, id: string): Message[] {
       `SELECT ${messageColumns} FROM messages m LEFT JOIN usage u ON u.id=m.id WHERE m.conversation_id=? ORDER BY m.rowid`,
       id,
     )
-    .map(({ input, output, total, ...m }) => ({
-      ...m,
-      images: JSON.parse(m.images),
-      extensions: JSON.parse(m.extensions),
-      ...(m.role === 'assistant'
-        ? {
-            usage:
-              input !== null && output !== null && total !== null ? { input, output, total } : null,
-          }
-        : {}),
-    }));
+    .map(({ input, output, total, ...m }) => {
+      const calls: ExtensionCall[] = JSON.parse(m.calls).map((call: ExtensionCall) => {
+        const row = ctx.db.get<{
+          input: number | null;
+          output: number | null;
+          total: number | null;
+          status: ExtensionCall['status'];
+        }>(
+          'SELECT input_tokens AS input,output_tokens AS output,total_tokens AS total,status FROM usage WHERE id=?',
+          call.id,
+        );
+        return {
+          ...call,
+          status: row?.status ?? call.status,
+          usage:
+            row && row.input !== null && row.output !== null && row.total !== null
+              ? { input: row.input, output: row.output, total: row.total }
+              : null,
+        };
+      });
+      return {
+        ...m,
+        images: JSON.parse(m.images),
+        extensions: JSON.parse(m.extensions),
+        skills: JSON.parse(m.skills),
+        skillReads: JSON.parse(m.skillReads),
+        calls,
+        ...(m.role === 'assistant'
+          ? {
+              usage: calls.length
+                ? aggregateCalls(calls)
+                : input !== null && output !== null && total !== null
+                  ? { input, output, total }
+                  : null,
+            }
+          : {}),
+      };
+    });
 }
 interface Generation {
   abort: AbortController;
@@ -116,6 +151,15 @@ export const server = {
         saved.id,
       );
     }
+    for (const saved of ctx.db.all<{ id: string; calls: string }>(
+      "SELECT id,calls FROM messages WHERE status='error'",
+    )) {
+      const calls: ExtensionCall[] = JSON.parse(saved.calls);
+      if (calls.some((call) => call.status === 'streaming')) {
+        for (const call of calls) if (call.status === 'streaming') call.status = 'error';
+        ctx.db.run('UPDATE messages SET calls=? WHERE id=?', JSON.stringify(calls), saved.id);
+      }
+    }
     ctx.db.run("UPDATE usage SET status='error' WHERE status='streaming'");
     router.get('/conversations', (req, res) => {
       const rows = ctx.db.all<{ id: string; title: string; updatedAt: string }>(
@@ -144,6 +188,15 @@ export const server = {
       const id = String(req.params.id);
       own(id, req.user!.id);
       res.json({ messages: snapshot(id) });
+    });
+    router.get('/conversations/:id/skills', (req, res) => {
+      const id = String(req.params.id);
+      own(id, req.user!.id);
+      res.json(
+        JSON.parse(
+          ctx.db.get<{ skills: string }>('SELECT skills FROM conversations WHERE id=?', id)!.skills,
+        ),
+      );
     });
     router.get('/conversations/:id/events', (req, res) => {
       const id = String(req.params.id);
@@ -247,6 +300,22 @@ export const server = {
       }
       validateImages(input.images);
       const model = ctx.models.authorize(user, input.modelId, 'llm');
+      const selectedSkills =
+        input.skills ??
+        skillSelections.parse(
+          JSON.parse(
+            ctx.db.get<{ skills: string }>('SELECT skills FROM conversations WHERE id=?', id)!
+              .skills,
+          ),
+        );
+      const skillPlan = ctx.extensions.planSkills(user, selectedSkills);
+      const session = skillPlan ? ctx.extensions.openSkills(user, skillPlan) : undefined;
+      const skillContext = session?.prepare();
+      if (session?.tools().length && !model.toolCalling)
+        throw new HttpError(400, '所选 Skill 包含参考文档，请选择已启用工具调用的模型');
+      const skillSnapshot: SelectedSkill[] =
+        skillPlan?.skills.map(({ id, version, title, scope }) => ({ id, version, title, scope })) ??
+        [];
       const extensionPlan = ctx.extensions.plan(user, input.extensions, input.modelId);
       if (active.has(id) || userActive.has(user.id))
         throw new HttpError(409, '已有回复正在生成，请先停止或等待完成');
@@ -267,8 +336,6 @@ export const server = {
         ) > 30_000_000
       )
         throw new HttpError(400, '对话较长，请新建对话后继续');
-      const connection = ctx.models.connection(model.providerId);
-      const adapter = ctx.models.adapter(connection.apiMode);
       const now = new Date().toISOString();
       const generation: Generation = {
         abort: new AbortController(),
@@ -276,6 +343,9 @@ export const server = {
         message: {
           id: messageId,
           role: 'assistant',
+          skills: skillSnapshot,
+          skillReads: session?.reads ?? [],
+          calls: [],
           content: '',
           images: [],
           modelName: model.label,
@@ -285,13 +355,14 @@ export const server = {
       };
       ctx.db.transaction(() => {
         ctx.db.run(
-          'INSERT INTO messages(id,conversation_id,role,content,images,created_at) VALUES(?,?,?,?,?,?)',
+          'INSERT INTO messages(id,conversation_id,role,content,images,created_at,skills) VALUES(?,?,?,?,?,?,?)',
           randomUUID(),
           id,
           'user',
           input.content,
           JSON.stringify(input.images),
           now,
+          JSON.stringify(skillSnapshot),
         );
         ctx.db.run(
           'INSERT INTO messages(id,conversation_id,role,content,model_name,status,created_at) VALUES(?,?,?,?,?,?,?)',
@@ -302,6 +373,17 @@ export const server = {
           model.label,
           'streaming',
           now,
+        );
+        ctx.db.run(
+          'UPDATE messages SET skills=?,skill_reads=? WHERE id=?',
+          JSON.stringify(skillSnapshot),
+          JSON.stringify(session?.reads ?? []),
+          messageId,
+        );
+        ctx.db.run(
+          'UPDATE conversations SET skills=? WHERE id=?',
+          JSON.stringify(skillSnapshot.filter((skill) => skill.scope === 'conversation')),
+          id,
         );
         ctx.db.run(
           'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
@@ -343,11 +425,15 @@ export const server = {
       };
       generation.finished = (async () => {
         const started = performance.now();
-        let usage: TokenUsage | undefined;
+
         let status: Message['status'] = 'complete';
         let checkpoint = Date.now();
         try {
-          const signal = AbortSignal.any([generation.abort.signal, AbortSignal.timeout(180_000)]);
+          const signal = AbortSignal.any([
+            generation.abort.signal,
+            AbortSignal.timeout(180_000),
+            ...(skillPlan ? [skillPlan.signal] : []),
+          ]);
           const prepared = await ctx.extensions.prepare(
             user,
             extensionPlan,
@@ -364,20 +450,35 @@ export const server = {
             },
           );
           signal.throwIfAborted();
-          ctx.models.authorize(user, input.modelId, 'llm');
-          for await (const chunk of adapter.generate(
-            connection,
-            model.name,
-            prepared,
+          if (skillContext)
+            prepared[prepared.length - 1] = {
+              ...prepared[prepared.length - 1],
+              content: `${prepared[prepared.length - 1].content}\n\n${skillContext}`,
+            };
+          await generateReply(ctx, {
+            user,
+            modelId: input.modelId,
+            messageId,
+            messages: prepared,
             signal,
-            input.reasoningEffort,
-          )) {
-            if (chunk.type === 'usage') usage = chunk.usage;
-            else {
-              generation.message.content += chunk.text;
+            session,
+            effort: input.reasoningEffort,
+            calls: generation.message.calls!,
+            progress: (skillReads: SkillRead[], calls: ExtensionCall[]) => {
+              generation.message.skillReads = [...skillReads];
+              ctx.db.run(
+                'UPDATE messages SET skill_reads=?,calls=? WHERE id=?',
+                JSON.stringify(skillReads),
+                JSON.stringify(calls),
+                messageId,
+              );
+              broadcast({ type: 'skill-progress', messageId, skillReads, calls });
+            },
+            text: (text) => {
+              generation.message.content += text;
               if (generation.message.content.length > 2_000_000)
                 throw new HttpError(502, '回复过长，已停止生成');
-              broadcast({ type: 'delta', messageId, text: chunk.text });
+              broadcast({ type: 'delta', messageId, text });
               if (Date.now() - checkpoint > 1500) {
                 ctx.db.run(
                   'UPDATE messages SET content=? WHERE id=?',
@@ -386,8 +487,8 @@ export const server = {
                 );
                 checkpoint = Date.now();
               }
-            }
-          }
+            },
+          });
         } catch (error) {
           status = generation.abort.signal.aborted ? 'cancelled' : 'error';
           if (status === 'error')
@@ -400,7 +501,7 @@ export const server = {
             });
         } finally {
           generation.message.status = status;
-          generation.message.usage = usage ?? null;
+          generation.message.usage = aggregateCalls(generation.message.calls ?? []);
           const durationMs = Math.round(performance.now() - started);
           generation.message.durationMs = durationMs;
           try {
@@ -412,14 +513,8 @@ export const server = {
                 durationMs,
                 messageId,
               );
-              ctx.db.run(
-                'UPDATE usage SET input_tokens=?,output_tokens=?,total_tokens=?,status=? WHERE id=?',
-                usage?.input ?? null,
-                usage?.output ?? null,
-                usage?.total ?? null,
-                status,
-                messageId,
-              );
+              if (!generation.message.calls?.length)
+                ctx.db.run('UPDATE usage SET status=? WHERE id=?', status, messageId);
               ctx.db.run(
                 'UPDATE conversations SET updated_at=? WHERE id=?',
                 new Date().toISOString(),

@@ -15,7 +15,7 @@ export function SettingsPage({
 }) {
   const { user, features, refresh, navigate } = useWorkspace();
   const feature = available.find((f) => f.manifest.id === tab);
-  const Component = feature?.component;
+  const Component = feature?.settingsComponent ?? feature?.component;
   const personal = available.filter((f) => !f.manifest.adminOnly && !f.settingsParent);
   const admin = available.filter((f) => f.manifest.adminOnly && !f.settingsParent);
   const link = (id: string, name: string, Icon: ClientFeature['icon']) => (

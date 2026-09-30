@@ -14,6 +14,25 @@ export interface ProviderMessage {
 }
 export type TokenUsage = MessageUsage;
 export type ProviderEvent = { type: 'text'; text: string } | { type: 'usage'; usage: TokenUsage };
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: unknown;
+}
+export interface ToolTurn {
+  calls: ToolCall[];
+  continuation: unknown[];
+}
+export interface ToolStep {
+  turn: ToolTurn;
+  results: { id: string; output: string }[];
+}
+export type ToolEvent = ProviderEvent | { type: 'turn'; turn: ToolTurn };
 export interface DecisionInput {
   state: string;
   instructions: string;
@@ -21,6 +40,15 @@ export interface DecisionInput {
 export type DecisionEvent =
   { type: 'decision'; enabled: boolean } | { type: 'usage'; usage: TokenUsage };
 export interface ModelAdapter {
+  generateTurn?(
+    connection: ProviderConnection,
+    model: string,
+    messages: ProviderMessage[],
+    tools: ToolDefinition[],
+    steps: ToolStep[],
+    signal: AbortSignal,
+    effort?: ReasoningEffort,
+  ): AsyncIterable<ToolEvent>;
   decide?(
     connection: ProviderConnection,
     model: string,

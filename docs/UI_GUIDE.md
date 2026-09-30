@@ -5,7 +5,7 @@
 ## 信息架构与视觉分工
 
 - Shell 包含品牌、主导航、对话列表、用户入口与内容区域，使用**纯黑白灰**。不要恢复灰褐色框架或让绿色 / Color Pattern 接管整页文字。
-- 工作区放对话、提示词等产品能力；统计独立分组；左下角用户入口进入设置。通用设置、账户设置、相关信息及管理员页面均属于设置容器。
+- 工作区放对话、Skill 库等产品能力；统计独立分组；左下角用户入口进入设置。通用设置、账户设置、相关信息及管理员页面均属于设置容器。
 - feature 页面只负责自己的内容，不再创建第二套全局侧栏、用户菜单或主题 Provider。功能管理区分 Core / Plugin；普通用户不能看到管理员操作。
 - Color Pattern 给卡片、建议、对话分组、图表、图标与边框分配多色；正文和辅助文字仍保持中性色。用户选的是色系与组件颜色，不是把页面所有元素染成一种颜色。
 - 使用现有 `Logo`（d·）、首页 Sailboat、Chatbot 的 Bot 默认头像以及 `UserAvatar`；不在新页面各自创造品牌标识。
@@ -24,7 +24,7 @@
 | `Empty` / `Spinner` / `ErrorNote`   | 同上                           | 空状态、加载状态、`text` 错误反馈；Spinner 含 status、ErrorNote 含 alert                                                      |
 | `Modal`                             | 同上                           | `title`、`close`、`children`；原生 dialog，支持 Escape 与外部点击关闭                                                         |
 | `useLoad`                           | 同上                           | `loader`、可选依赖数组；返回 data / error / reload，无全局缓存                                                                |
-| `api` / `post` / `patch` / `remove` | `client/api.ts`                | 相对 API 路径，例如 `/prompts`；不要重复 `/api`                                                                               |
+| `api` / `post` / `patch` / `remove` | `client/api.ts`                | 相对 API 路径，例如 `/skills`；不要重复 `/api`                                                                                |
 | `useWorkspace`                      | `client/context.tsx`           | user、setUser、models、conversations、features、refresh、navigate、notify、草稿                                               |
 | `useUi`                             | `client/ui-preferences.tsx`    | preferences、resolvedTheme、fontSize、setFontSize、save；激活账户由 Shell 管理                                                |
 | `Tooltip`                           | `client/tooltip.tsx`           | `label`、触发内容 `children`、浮层 `content`、可选 `className`；悬停 / 聚焦 / 点击固定，Escape 与外侧关闭；内容不可含交互控件 |
@@ -73,7 +73,7 @@ Shell token 的主要来源是 [`shellTokens()`](../src/shared/appearance.ts)，
 
 侧栏为次级灰色表面，内容区为主表面，通过细边框与圆角分隔；卡片和输入框使用 `--shadow-surface`，弹窗与模型浮层使用 `--shadow-floating`。明暗模式独立调整阴影强度。仅顶栏和遮罩保留原有模糊，避免给所有卡片叠加玻璃效果。
 
-`features/chat/conversation-list.tsx` 负责侧栏对话组织，Shell 仍负责导航和账户状态。分组标题、图标底色与边框使用 `usePatternColors()` + 分组 ID / `colorSlot`；分组内外的对话条目、消息气泡、助手头像与阅读大纲保持中性灰度。普通对话不提供单独选色入口，旧 `colorSlot` 仅保留接口兼容。首页建议、提示词与统计配色不变。
+`features/chat/conversation-list.tsx` 负责侧栏对话组织，Shell 仍负责导航和账户状态。分组标题、图标底色与边框使用 `usePatternColors()` + 分组 ID / `colorSlot`；分组内外的对话条目、消息气泡、助手头像与阅读大纲保持中性灰度。普通对话不提供单独选色入口，旧 `colorSlot` 仅保留接口兼容。首页建议、Skill 与统计配色不变。
 
 分组是单层可折叠列表，用按钮的 `aria-expanded` / `aria-controls` 关联组内区域；名称截断并保留 title，计数、生成提示和操作不挤压到视口外。搜索分组名称或对话标题时自动展开结果；进入对话时展开其分组。分组编辑和对话管理复用原生 Modal，支持 Escape、焦点返回、保存错误和删除确认；删除分组明确说明对话保留。图标来自 lucide 固定选项或一个 emoji 字素，作为纯文本渲染。配色使用当前注册表中的原生 radio，不另建色板，也不嵌套选色弹窗。
 
@@ -204,6 +204,14 @@ CSS 必须显式导入，可在所属 client 模块导入仅作用于本功能�
 - 聊天输入沿用 Tiptap 实时编辑，不再增加编辑 / 预览切换。编辑器要保留选择与 undo；中文输入法合成期间不能发送。桌面和手机 Enter 的既有行为见 README。
 - 保留聊天的独立滚动容器、底部跟随、上翻后暂停、大纲定位和返回最新按钮。组件 cleanup 不能调用聊天停止 API。
 
+## Skill 卡片
+
+Skill 卡片的本地样式位于 `features/prompts/prompts.css`，使用 `prompts-*` 命名空间，替代旧全局 prompt-card 排版。图标缩为 32px 的辅助标记，与编辑 / 选色 / 删除操作位于顶部；标题使用 font-heading（标准 20px）与 650 字重，简介使用 font-ui（标准 14px），最多显示三行。标签位于介绍下方，底部固定「载入新对话」操作，传递 id/version 的技能引用，保持消息输入正文不变。颜色继续复用 pattern-card，不改变 Shell 配色。
+
+列表上方是搜索框、数量与可多选的标签按钮，使用 aria-pressed 表达筛选状态，支持清除筛选及无结果状态。编辑复用原生 Modal；标签输入在中文输入法合成期间不处理回车，已选标签可移除。简介可手写，生成按钮旁保留配置与用量说明；生成期间锁定标题和正文，防止返回结果覆盖另一份草稿，关闭编辑窗口取消这一次简介调用。保存失败保留输入，Escape 关闭后返回触发按钮。
+
+「设置 → Skill 库」使用该 feature 的 settingsComponent，模型下拉只显示当前用户可用 LLM；失效选择明确提示重新选择。所有字号使用语义 token，卡片在桌面三列、中宽两列、手机一列，触屏操作增大命中区域，明暗均保留中性正文。
+
 ## 来源列表与连接诊断
 
 来源列表使用 `models-provider-list` / `models-provider-card`：图标、名称 / 协议、API 地址及元信息集中排列，右侧提供探测、编辑、删除。窄屏操作区换到下一行，长地址可折行，保留触控命中区域；不通过缩小字号提高密度。样式位于 feature 旁的 `models.css`，保持灰色框架与四档语义字号。
@@ -238,6 +246,14 @@ UI 变更至少查看：light / dark（含系统跟随）、自然鲜明 / 柔�
 
 回复的 `ExtensionDetails` 默认折叠为带同款四菱形图标的状态条，根据已有 run 状态与当前调用阶段实时显示理解问题、自动判断、生成搜索词、检索进度或终态；终态优先于调用阶段，失败和停止不继续显示执行中。拓展执行期间隐藏重复的通用“正在思考”提示，拓展完成后恢复最终回答生成提示。原生 details/summary 支持点击及键盘展开；状态变化通过 polite live region 提示，保持用户当前的展开状态。旋转进度图标与展开箭头遵循减少动态效果偏好。
 
-展开后，搜索词、编号来源和分阶段 Token 放在同一个可聚焦的详情区，桌面最高 `min(360px, 45dvh)`，手机最高 `min(300px, 40dvh)`；详情区内部纵向滚动并限制滚动传递，状态条始终留在滚动区外。来源标题与摘要以纯文本呈现，外链使用安全 HTTP(S) URL、noopener noreferrer。状态独立使用明暗绿色 / 红色并保留文字。最终回答继续用原有安全 Markdown 管线，回复旁 Token 只表示最终回答调用，拓展消耗在详情和统计中查看。总耗时包含拓展处理。
+展开后，搜索词、编号来源和分阶段 Token 放在同一个可聚焦的详情区，桌面最高 `min(360px, 45dvh)`，手机最高 `min(300px, 40dvh)`；详情区内部纵向滚动并限制滚动传递，状态条始终留在滚动区外。来源标题与摘要以纯文本呈现，外链使用安全 HTTP(S) URL、noopener noreferrer。状态独立使用明暗绿色 / 红色并保留文字。最终回答继续用原有安全 Markdown 管线，回复旁 Token 表示回答模型的全部请求，拓展消耗在详情和统计中查看。总耗时包含拓展处理。
 
 新增能力 UI 必须检查明暗主题、四档字号、手机触控、焦点与长链接换行，不允许横向撑破聊天栏。
+
+## 聊天 Skill 附件
+
+回形针打开原生 Popover，包含「添加图片」与「Skill 库」；后者始终带「插件」标签。模型无图片能力时只禁用图片项，插件停用时禁用 Skill 库项并说明原因。菜单适应可视视口和软键盘，Escape 关闭并恢复触发按钮焦点。
+
+选择器使用原生 Modal，可搜索名称/简介/标签、筛选标签、预览指令与参考文本并多选。输入栏标签显示名称、固定版本、本对话/仅本轮范围与移除按钮；选择随下一条消息提交，不覆盖编辑器正文。已有版本落后时，选择器提供显式「更新到 vN」。管理页保持原有 Color Pattern 卡片；聊天技能标签和加载详情使用中性表面与语义字号。
+
+`SkillDetails` 折叠显示实际读取记录与每次模型请求状态/用量，限制内部高度和滚动。文档预览沿用安全 Markdown 管线，参考文件以纯文本展示。编辑器新增参考文件路径和正文表单；保存产生新版本，版本冲突保留草稿并提示重新打开。

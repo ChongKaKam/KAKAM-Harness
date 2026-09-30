@@ -309,6 +309,10 @@ interface ModelAdapter {
 
 `tests/streaming-latency.test.ts` 使用受控流在结束帧发送前验证首个文字已转发，同时覆盖拆分 UTF-8 / SSE 边界；它验证本地逐片行为，不代表真实供应商延迟。集成测试覆盖草稿探测不写库、权限、三种协议、失败用量与思考参数。真实来源问题需要用户授权后的独立诊断，不加入付费凭据或生产数据到自动测试。
 
+### 工作区能力的设置页
+
+一个 feature 同时有工作区页面和设置页时，在同一条 `ClientFeature` 注册中保留 `placement: 'workspace'` 与 `component`，增加可选 `settingsComponent: ComponentType`。Shell 将其加入设置目录，`#/settings/<id>` 渲染该组件，普通 `#/<id>` 仍渲染工作区组件；无需重复 manifest、feature 实例或导航。停用、权限过滤继续使用同一个 manifest。参考 Skill 库的 `PromptsPage` / `PromptsSettings`。
+
 ## 注册托管的 LLM 能力
 
 新增能力仍是普通 feature，manifest 声明 `capability: true`，由 server / client 两个入口显式注册。核心 `extensions` 提供能力目录、用户模式、管理员 Auto 策略与辅助调用记录。能力插件不直接接入 chat；参考 [`search/server.ts`](../src/features/search/server.ts)：
@@ -352,3 +356,32 @@ interface ModelAdapter {
 | `GET /api/conversations`              | 每项增加 `groupId: string \| null`；按更新时间降序返回全部私人对话                                   |
 
 `icon` 为 `folder / book / code / briefcase / sparkles` 或一个 emoji 字素（最长 32 个 UTF-16 code units，支持肤色、旗帜与 ZWJ 组合），以共享 `groups.ts` 验证；`colorSlot` 为 null 或 0–63 整数。跨账户分组 / 对话返回 404，未登录返回 401，输入错误返回 400。分组仅整理已有对话，不建立共享上下文或影响模型请求。
+
+## Skill 库 API
+
+领域 DTO 在 `features/skills/types.ts`，存储与输入校验在同目录 store.ts，管理插件仍由 `features/prompts/server.ts` 注册。所有接口使用当前账户，不提供管理员读取他人技能的通道。
+
+| API                                    | 输入与行为                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/skills?q=...`                | 摘要列表：id/name/title/description/tags/colorSlot/version/fileCount；q 匹配标题、简介、正文及标签，不返回正文和参考文件 |
+| `GET /api/skills/:id?version=N`        | 当前或指定版本的完整指令与 files；跨用户、已删除或缺失版本返回 404                                                       |
+| `POST /api/skills`                     | title/content 必填；description/tags/files 可选；生成稳定 name 和 v1，返回完整 Skill                                     |
+| `PATCH /api/skills/:id`                | 部分修改内容，至少一个字段；可带 version 做乐观并发校验，过期返回 409；生成新版本，不修改已有版本                        |
+| `PATCH /api/skills/:id/color`          | 修改 colorSlot（null 或 0–63），不产生指令版本                                                                           |
+| `DELETE /api/skills/:id`               | 归档技能，保留历史消息、版本数据和加载记录；不再允许使用或读取                                                           |
+| `GET/PATCH /api/skills/preferences`    | 当前账户 summaryModelId；保存时验证模型启用、类型和授权                                                                  |
+| `POST /api/skills/description`         | 接受 title/content，通过已保存模型生成简介草稿与真实 usage，不保存 Skill                                                 |
+| `GET /api/conversations/:id/skills`    | 当前用户对话的已保存持续选择，含 id/version/title/scope                                                                  |
+| `POST /api/conversations/:id/messages` | 增加可选 skills 数组，每项 id/version/scope；scope 默认 conversation，也可 turn；省略继承，空数组清空                    |
+
+`/api/prompts` 保留旧列表字段和旧写入返回值，其 CRUD、颜色与简介接口统一代理到版本化 Skill 存储。旧调用者不需迁移 ID；新客户端仅使用 /skills。feature ID 仍为 prompts，用于保留启停设置及旧路由，不代表存在第二个提示词库。
+
+主指令最长 20000 字符，标题 80、简介 160；标签最多 8 个、每个 24 字符，大小写无关去重。最多 16 个参考文件，每个 40000 字符，正文与参考内容合计 200000 字符。仅接受 references/ 或 assets/ 下的 md/txt/json/csv 相对路径，拒绝绝对路径、空路径段、点路径段及重复路径。
+
+每轮最多选择 8 个 Skill；主文档与引用片段累计最多 80000 个 UTF-16 字符。模型读工具为 `skills_read({skillId,path,offset,limit})`，单次 limit 为 1–12000，最多读取 16 次，最多 8 次模型请求。返回 content、totalCharacters 和 nextOffset；同样的技能/路径/offset/limit 重复读取终止本轮。首次主文档载入和工具读取均记录具体版本与范围。
+
+`ModelsService` 返回 toolCalling 布尔能力；管理员创建模型时可设置，修改时省略保留旧值。Jev 不支持此能力。旧模型默认 false，不进行付费自动探测；支持三种聊天协议的工具映射，但具体兼容供应商仍需支持对应协议。
+
+Adapter 的 generate 保持文本/用量接口；可选 generateTurn 接受 tools 和本轮 steps，返回 text、usage 以及最终 turn（calls＋不透明 continuation）。只在完整协议结束后执行工具，不执行半截 JSON。Responses 推理项和 Anthropic 签名块必须原样续传，不发送到浏览器。协议依据：[OpenAI Function calling](https://developers.openai.com/api/docs/guides/function-calling)、[Responses 状态](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[Anthropic 工具结果](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)。
+
+简介仍由 `ExtensionsService.registerUtility('prompt-description', 'Skill 简介')` 托管，逐调用验证当前用户模型权限，Adapter.generate 的思考程度 none，记录真实用量。输出最多读取 4000 字符，返回压缩至 160 字符的纯文本草稿；每用户一个活动简介请求，60 秒超时；关闭编辑窗口、插件卸载或关机取消。模型偏好私有，生成不加入聊天 Auto/On/Off 目录，也不隐式修改卡片。

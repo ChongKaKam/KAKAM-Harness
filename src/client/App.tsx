@@ -1,3 +1,4 @@
+import type { SelectedSkill } from '../features/skills/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Menu,
@@ -47,6 +48,7 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
+  const [draftSkills, setDraftSkills] = useState<SelectedSkill[]>([]);
   const [toast, setToast] = useState('');
   const [loadError, setLoadError] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -143,6 +145,7 @@ export default function App() {
           setSearch('');
           setModels([]);
           setDraft('');
+          setDraftSkills([]);
           navigate('chat');
         }}
       />
@@ -159,6 +162,7 @@ export default function App() {
       await post('/auth/logout');
       setUser(undefined);
       setDraft('');
+      setDraftSkills([]);
       setConversations([]);
       setGroups([]);
       setSearch('');
@@ -181,6 +185,8 @@ export default function App() {
         conversationId: route.id,
         draft,
         setDraft,
+        draftSkills,
+        setDraftSkills,
       }}
     >
       <div className="app-layout">
@@ -210,6 +216,7 @@ export default function App() {
             className="new-chat"
             onClick={() => {
               setDraft('');
+              setDraftSkills([]);
               navigate('chat');
             }}
           >
@@ -339,7 +346,7 @@ export default function App() {
           )}
           {route.page === 'settings' ? (
             <SettingsPage
-              available={available.filter((f) => f.placement === 'settings')}
+              available={available.filter((f) => f.placement === 'settings' || f.settingsComponent)}
               tab={route.id}
             />
           ) : Component ? (
