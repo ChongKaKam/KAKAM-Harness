@@ -14,6 +14,7 @@
 | [架构说明](docs/ARCHITECTURE.md) | Cordis / KH-Kernel 分工、请求与生命周期、权限、持久化、后台生成                 |
 | [功能扩展指南](docs/FEATURES.md) | 新 feature 的 DTO、数据库、server / client 示例、双注册入口、Service 与 Adapter |
 | [UI 组件指南](docs/UI_GUIDE.md)  | 公共组件接口、黑白灰 Shell、Color Pattern、字号、CSS 分层、交互与移动端         |
+| [发布手册](docs/RELEASE.md)      | Commit 规范、推送检查、远端备份、指定提交部署与上线验证                         |
 
 功能或规范变化时，在同次改动中同步对应文档；规则与负责位置见 [规范与文档同步](docs/DEVELOPMENT.md#规范与文档同步)。文档中的教学组件与功能示例不代表已经上线的能力。
 
@@ -86,7 +87,7 @@ npm start
 
 ## 远端部署
 
-将仓库复制到服务器后执行 `./deploy.sh`。首次运行默认仅绑定服务器 `127.0.0.1:3600`，适合放在 Caddy / Nginx 之后。配置 `.env`：
+首次安装或更新统一使用 `./deploy.sh`。现有生产服务器的 SSH 目标、备份、拉取指定提交与上线验证步骤见 [发布手册](docs/RELEASE.md)；不要只凭容器运行状态判断部署完成。首次运行默认仅绑定服务器 `127.0.0.1:3600`，适合放在 Caddy / Nginx 之后。配置 `.env`：
 
 ```dotenv
 PUBLIC_ORIGIN=https://ai.example.com
@@ -140,20 +141,7 @@ docker compose down
 
 `PUBLIC_ORIGIN`、`PORT`、`BIND_ADDRESS`、`COOKIE_SECURE` 和 `TRUST_PROXY` 也会沿用，只有更换域名、端口或代理方式时才需要修改。Compose 当前固定项目名为 `kakam-harness`，默认卷名为 `kakam-harness_kakam-data`；正常更新保持项目名与卷的映射不变，避免连接到新建的空卷。字号、最近模型及思考程度等浏览器本地偏好不在服务器备份内。
 
-备份时应将真实 `.env` 与完整数据目录配套保存到私有位置；`.env.example` 只是模板，不能代替真实配置。以下命令在项目目录执行，将备份放到仓库外的新目录，暂停服务后复制，避免遗漏 WAL 中的内容：
-
-```bash
-(
-  set -e
-  umask 077
-  drift_backup_dir="$(mktemp -d ../drift-space-backup.XXXXXX)"
-  trap 'docker compose start app' EXIT
-  docker compose stop app
-  docker compose cp app:/app/data "$drift_backup_dir/data"
-  cp .env "$drift_backup_dir/.env"
-  echo "备份已保存到 $drift_backup_dir"
-)
-```
+备份时应将真实 `.env` 与完整数据目录配套保存到私有位置；`.env.example` 只是模板，不能代替真实配置。生产更新前使用 [发布手册的备份步骤](docs/RELEASE.md#2-备份配置与数据)，短暂停止服务再复制，以免遗漏 SQLite WAL 中的内容。
 
 备份中包含账户、对话、图片和加密密钥，需按私有数据保管，并另存一份到服务器之外的私有备份位置。迁移时将完整数据目录恢复到新卷并沿用原 `APP_SECRET`。第一版没有自动密钥轮换；更换密钥前需重新录入模型凭据。Git 不保存 `.env` 或数据卷，单纯克隆仓库会创建一套新数据。
 
