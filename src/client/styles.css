@@ -12,12 +12,25 @@
   font-size: var(--font-ui);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
-  --width: 246px;
-  --radius-control: 12px;
-  --radius-panel: 18px;
-  --radius-floating: 24px;
-  --shadow-surface: 0 2px 8px #00000004, 0 12px 32px #00000005;
-  --shadow-floating: 0 8px 24px #0000000c, 0 28px 80px #0000001a;
+  --width: 240px;
+  --topbar-height: 44px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --radius-hover: 4px;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-floating: 12px;
+  --control-sm: 24px;
+  --control-md: 28px;
+  --control-lg: 32px;
+  --shadow-surface: none;
+  --shadow-floating: 0 4px 12px #00000014, 0 16px 40px #00000012;
 }
 * {
   box-sizing: border-box;
@@ -60,8 +73,8 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline: 3px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset: 2px;
 }
 input,
 select,
@@ -644,12 +657,12 @@ body {
 }
 .chat-page {
   padding: 30px 48px 18px;
-  min-height: calc(100dvh - 64px);
+  min-height: calc(100dvh - var(--topbar-height));
 }
 .chat-column {
   max-width: 804px;
   margin: 0 auto;
-  min-height: calc(100dvh - 112px);
+  min-height: calc(100dvh - var(--topbar-height) - var(--space-12));
   display: flex;
   flex-direction: column;
 }

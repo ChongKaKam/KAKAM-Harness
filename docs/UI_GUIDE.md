@@ -1,6 +1,6 @@
 # UI 组件与视觉规范
 
-本页是 Drift Space 的 UI 开发契约。交互应安静、清晰，借鉴 Apple 的圆角、留白和表面层次，保持清晰的内容组织和专注的聊天体验；这里的“参考”不表示引入对应产品的代码或假定具有它们的全部功能。新增组件以当前源码为基础，规范调整在同次变更中同步本页与相关测试。
+本页是 Drift Space 的 UI 开发契约。Quiet Precision 以内容优先、紧凑节奏、低干扰反馈组织现有 Web Shell；Notion / Apple 仅作为视觉参考，不引入对应产品代码或假定具备它们的全部功能。新增组件以当前源码为基础，规范调整在同次变更中同步本页与相关测试。
 
 ## 信息架构与视觉分工
 
@@ -69,9 +69,11 @@ Shell token 的主要来源是 [`shellTokens()`](../src/shared/appearance.ts)，
 
 ## 表面层次与对话分组
 
-公共几何 token 位于 `styles.css`：`--radius-control` 为 12px，`--radius-panel` 为 18px，`--radius-floating` 为 24px。按钮、表单与导航使用控件圆角，卡片使用面板圆角，桌面内容容器、输入框与模态窗口使用较大圆角；手机内容区保持贴边，输入框采用 18px。小标记、头像、胶囊和内容内部圆角可按形状保留。不要按字号比例扩大侧栏。
+公共几何 token 位于 `styles.css`：`--space-1/2/3/4/6/8/10/12` 对应 4/8/12/16/24/32/40/48px；`--radius-hover/control/panel/floating` 对应 4/6/8/12px；`--control-sm/md/lg` 对应 24/28/32px。新增固定间距先选这些 token，字号与随字号扩张的控件仍使用语义字号和内容驱动尺寸。桌面侧栏 240px、顶栏 44px，手机顶栏 56px；侧栏宽度不随字号放大。
 
-侧栏为次级灰色表面，内容区为主表面，通过细边框与圆角分隔；卡片和输入框使用 `--shadow-surface`，弹窗与模型浮层使用 `--shadow-floating`。明暗模式独立调整阴影强度。仅顶栏和遮罩保留原有模糊，避免给所有卡片叠加玻璃效果。
+侧栏为次级灰色表面，内容区为主表面，使用低对比的 1px 细线和留白建立层次。静态 `.panel`、首页建议和 Color Pattern 卡片无阴影；仅弹窗、Popover、Tooltip、Toast 与拖拽浮层使用 `--shadow-floating`。面板和输入框使用不同圆角，不以大圆角包装整个 Shell。顶栏保留已有轻度模糊。`shared/appearance.ts` 是运行时明暗 Shell 颜色的来源；`appearance.css` 提供同值回退，不让 Color Pattern 接管正文。
+
+Quiet Precision 的跨页面映射集中在 `client/quiet-precision.css`，在公共 CSS 之后导入；局部结构和状态仍由 feature 自己的 CSS 负责。聊天保留阅读宽度，设置页用分组间距和细线代替卡片套卡片，模型来源与扩展能力使用紧凑行，统计手机端把最近调用表格逐项呈现。移动端高频操作命中区至少 44px；键盘焦点使用 3px 低透明度中性色环，按钮按下有很小的即时缩放，系统减少动态效果时取消空间动画。Toast 4 秒自动关闭，悬停或聚焦期间暂停；公共 Tooltip 桌面悬停 500ms 后出现，相邻提示快速切换，键盘聚焦和触屏点击立即显示。不要把整页缩放当作字号设置。
 
 `features/chat/conversation-list.tsx` 负责侧栏对话组织，Shell 仍负责导航和账户状态。分组标题、图标底色与边框使用 `usePatternColors()` + 分组 ID / `colorSlot`；分组内外的对话条目、消息气泡、助手头像与阅读大纲保持中性灰度。普通对话不提供单独选色入口，旧 `colorSlot` 仅保留接口兼容。首页建议、Skill 与统计配色不变。
 
@@ -183,9 +185,10 @@ syntax-highlighting.css          独立的明暗代码 token
 typography.css                   统一字号与相关适配
 features/chat/navigation.css     聊天阅读位置与大纲
 features/chat/composer.css       最后的紧凑输入框与模型弹层规则
+quiet-precision.css              跨页面间距、圆角、浮层与密度映射
 ```
 
-这是当前 CSS 层叠约定，不是已经实现了 CSS Modules 或 `@layer`。部分旧规则使用 `:root .selector` 提高优先级；修样式前检查实际生效规则。新 feature 使用 `.bookmarks-*` 等专属类，不把覆盖堆进全局 `enhancements.css`，不通过 `!important` 掩盖不明来源的冲突。
+这是当前 CSS 层叠约定，不是已经实现了 CSS Modules 或 `@layer`。部分旧规则使用 `:root .selector` 提高优先级；修样式前检查实际生效规则。`quiet-precision.css` 只映射跨页面公共尺寸和表面，不放某个 feature 的业务状态。新 feature 使用 `.bookmarks-*` 等专属类，不把覆盖堆进全局 `enhancements.css`，不通过 `!important` 掩盖不明来源的冲突。
 
 CSS 必须显式导入，可在所属 client 模块导入仅作用于本功能的样式；涉及公共覆盖顺序时放到 `main.tsx` 合适位置并说明原因。优先直接修改负责该行为的规则，避免同一个选择器在多个文件反复叠加。
 

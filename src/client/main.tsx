@@ -10,6 +10,7 @@ import './syntax-highlighting.css';
 import './typography.css';
 import '../features/chat/navigation.css';
 import '../features/chat/composer.css';
+import './quiet-precision.css';
 createRoot(document.getElementById('root')!).render(
   <UiProvider>
     <App />

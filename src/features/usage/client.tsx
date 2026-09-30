@@ -33,25 +33,31 @@ export function UsagePage() {
       />
       <div className="toolbar">
         {user.role === 'admin' && (
-          <select
-            aria-label="按用户筛选"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          >
-            <option value="">全部用户</option>
-            {users.data?.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.displayName} ({u.email ?? u.legacyUsername})
-              </option>
-            ))}
-          </select>
+          <label className="usage-filter">
+            用户
+            <select
+              aria-label="按用户筛选"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+            >
+              <option value="">全部用户</option>
+              {users.data?.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.displayName} ({u.email ?? u.legacyUsername})
+                </option>
+              ))}
+            </select>
+          </label>
         )}
-        <select aria-label="统计时间范围" value={days} onChange={(e) => setDays(e.target.value)}>
-          <option value="7">最近 7 天</option>
-          <option value="30">最近 30 天</option>
-          <option value="90">最近 90 天</option>
-          <option value="365">最近一年</option>
-        </select>
+        <label className="usage-filter">
+          时间范围
+          <select aria-label="统计时间范围" value={days} onChange={(e) => setDays(e.target.value)}>
+            <option value="7">最近 7 天</option>
+            <option value="30">最近 30 天</option>
+            <option value="90">最近 90 天</option>
+            <option value="365">最近一年</option>
+          </select>
+        </label>
       </div>
       <ErrorNote text={error} />
       {!data ? (
@@ -87,22 +93,25 @@ export function UsagePage() {
             最近调用<span>最多显示 200 条 · 汇总包含全部记录</span>
           </div>
           <div className="panel table-wrap usage-recent">
-            <table aria-label="最近调用">
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  {user.role === 'admin' && <th>用户</th>}
-                  <th>模型</th>
-                  <th>输入</th>
-                  <th>输出</th>
-                  <th>总计</th>
-                  <th>状态</th>
+            <table role="table" aria-label="最近调用">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th role="columnheader">时间</th>
+                  {user.role === 'admin' && <th role="columnheader">用户</th>}
+                  <th role="columnheader">模型</th>
+                  <th role="columnheader">输入</th>
+                  <th role="columnheader">输出</th>
+                  <th role="columnheader">总计</th>
+                  <th role="columnheader">状态</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {data.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="nowrap">
+                  <tr role="row" key={row.id}>
+                    <td role="cell" className="nowrap" data-label="时间">
+                      <span className="usage-cell-label" aria-hidden="true">
+                        时间
+                      </span>
                       {new Date(row.createdAt).toLocaleString('zh-CN', {
                         month: '2-digit',
                         day: '2-digit',
@@ -110,12 +119,42 @@ export function UsagePage() {
                         minute: '2-digit',
                       })}
                     </td>
-                    {user.role === 'admin' && <td>{row.email}</td>}
-                    <td>{row.modelName}</td>
-                    <td>{number(row.inputTokens)}</td>
-                    <td>{number(row.outputTokens)}</td>
-                    <td>{number(row.totalTokens)}</td>
-                    <td>
+                    {user.role === 'admin' && (
+                      <td role="cell" data-label="用户">
+                        <span className="usage-cell-label" aria-hidden="true">
+                          用户
+                        </span>
+                        {row.email}
+                      </td>
+                    )}
+                    <td role="cell" data-label="模型">
+                      <span className="usage-cell-label" aria-hidden="true">
+                        模型
+                      </span>
+                      {row.modelName}
+                    </td>
+                    <td role="cell" data-label="输入">
+                      <span className="usage-cell-label" aria-hidden="true">
+                        输入
+                      </span>
+                      {number(row.inputTokens)}
+                    </td>
+                    <td role="cell" data-label="输出">
+                      <span className="usage-cell-label" aria-hidden="true">
+                        输出
+                      </span>
+                      {number(row.outputTokens)}
+                    </td>
+                    <td role="cell" data-label="总计">
+                      <span className="usage-cell-label" aria-hidden="true">
+                        总计
+                      </span>
+                      {number(row.totalTokens)}
+                    </td>
+                    <td role="cell" data-label="状态">
+                      <span className="usage-cell-label" aria-hidden="true">
+                        状态
+                      </span>
                       <span className="usage-status" data-status={row.status}>
                         {
                           (

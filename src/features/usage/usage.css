@@ -52,3 +52,58 @@
   color: var(--usage-error-ink);
   background: var(--usage-error-fill);
 }
+.usage-filter {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 var(--space-3) 0 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.usage-filter select {
+  font-size: var(--font-ui);
+  padding: var(--space-1) var(--space-2);
+}
+.usage-cell-label {
+  display: none;
+}
+@media (max-width: 760px) {
+  .usage-recent {
+    border: 0;
+    background: transparent;
+    overflow: visible;
+  }
+  .usage-recent table,
+  .usage-recent tbody {
+    display: block;
+    min-width: 0;
+  }
+  .usage-recent thead {
+    display: none;
+  }
+  .usage-recent tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-4) 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .usage-recent td {
+    display: block;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+  .usage-recent .usage-cell-label {
+    display: block;
+    color: var(--faint);
+    font-size: var(--font-caption);
+    margin-bottom: var(--space-1);
+  }
+  .usage-recent td[data-label='模型'],
+  .usage-recent td[data-label='用户'] {
+    grid-column: 1 / -1;
+  }
+}

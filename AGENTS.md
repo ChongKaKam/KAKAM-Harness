@@ -45,6 +45,7 @@
 ## UI 约定
 
 - Web Shell 使用纯黑白灰；装饰色来自 Color Pattern 的组件背景、边框、图标与图表。成功 / 失败状态采用独立的绿色 / 红色语义配色，兼容明暗主题并保留文字标签。不要把整个 Shell 染成主题色。
+- Quiet Precision 的公共间距、圆角、控件尺寸和表面层级以 `styles.css` token 与最后导入的 `quiet-precision.css` 为准；静态区域不用阴影，阴影只给浮层。局部状态仍放所属 feature CSS，新增固定间距遵循 4px 网格。
 - 复用 `PageHeader`、`Empty`、`Spinner`、`ErrorNote`、`Modal`、`UserAvatar`、`AssistantAvatar`、`Markdown` 与现有按钮 / 表单类。
 - 字号使用 `--font-chat/input/ui/code/caption/title` 等语义变量。保持四档字号、辅助说明至少 12px；不使用整页 `zoom` 或 `transform: scale`，不随字号放大侧栏宽度。
 - 对话分组使用 Color Pattern；普通对话条目、消息气泡和助手头像保持灰度。分组删除仅解除归属，保留对话与消息。

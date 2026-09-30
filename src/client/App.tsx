@@ -50,6 +50,7 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [draftSkills, setDraftSkills] = useState<SelectedSkill[]>([]);
   const [toast, setToast] = useState('');
+  const [toastPaused, setToastPaused] = useState(false);
   const [loadError, setLoadError] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const activeUserId = useRef<string | undefined>(undefined);
@@ -101,6 +102,7 @@ export default function App() {
     const change = () => {
       setRoute(readRoute());
       setMobileOpen(false);
+      window.scrollTo(0, 0);
     };
     window.addEventListener('hashchange', change);
     const shortcut = (e: KeyboardEvent) => {
@@ -118,10 +120,10 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || toastPaused) return;
     const timer = setTimeout(() => setToast(''), 4000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [toast, toastPaused]);
   const navigate = useCallback((page: string, conversationId?: string) => {
     const next = destination(page, conversationId);
     window.location.hash = `/${next.page}${next.id ? `/${next.id}` : ''}`;
@@ -367,7 +369,16 @@ export default function App() {
           )}
         </main>
         {toast && (
-          <div role="status" className="toast">
+          <div
+            role="status"
+            className="toast"
+            onMouseEnter={() => setToastPaused(true)}
+            onMouseLeave={() => setToastPaused(false)}
+            onFocusCapture={() => setToastPaused(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setToastPaused(false);
+            }}
+          >
             <Check size={16} />
             {toast}
             <button aria-label="关闭提示" onClick={() => setToast('')}>

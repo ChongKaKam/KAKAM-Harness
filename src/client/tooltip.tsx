@@ -1,6 +1,8 @@
 import { useId, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import './tooltip.css';
 
+let lastTooltipClosedAt = 0;
+
 /** Non-interactive, top-layer tooltip; hover/focus on desktop, tap to pin on touch. */
 export function Tooltip({
   label,
@@ -20,13 +22,15 @@ export function Tooltip({
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
   const [open, setOpen] = useState(false);
-  const show = () => {
+  const show = (delay = false) => {
     clearTimeout(leaveTimer.current);
+    panel.current?.toggleAttribute('data-hover-delay', delay);
     panel.current?.showPopover();
     setOpen(true);
   };
   const hide = () => {
     clearTimeout(leaveTimer.current);
+    if (panel.current?.matches(':popover-open')) lastTooltipClosedAt = Date.now();
     panel.current?.hidePopover();
     setOpen(false);
     pinned.current = false;
@@ -86,10 +90,10 @@ export function Tooltip({
         className={className}
         aria-label={label}
         aria-describedby={open ? id : undefined}
-        onFocus={show}
+        onFocus={() => show()}
         onBlur={hide}
         onPointerEnter={(event) => {
-          if (event.pointerType === 'mouse') show();
+          if (event.pointerType === 'mouse') show(Date.now() - lastTooltipClosedAt >= 300);
         }}
         onPointerLeave={leave}
         onClick={() => {
@@ -108,7 +112,7 @@ export function Tooltip({
         role="tooltip"
         popover="manual"
         className="ds-tooltip"
-        onPointerEnter={show}
+        onPointerEnter={() => show()}
         onPointerLeave={leave}
       >
         {content}

@@ -1,45 +1,45 @@
 /* Neutral shell tokens are independent of Color Pattern. Only components receive item tokens. */
 :root {
-  --ink: #2b2b2b;
-  --muted: #5c5c5c;
-  --faint: #707070;
-  --line: #e2e2e2;
-  --sidebar: #f5f5f5;
-  --soft: #f0f0f0;
+  --ink: #262626;
+  --muted: #626262;
+  --faint: #6c6c6c;
+  --line: #e6e6e6;
+  --sidebar: #f7f7f7;
+  --soft: #f3f3f3;
   --surface: #ffffff;
-  --surface-alt: #f7f7f7;
-  --code: #f5f5f5;
-  --cell: #e2e2e2;
-  --accent: #4b4b4b;
+  --surface-alt: #fafafa;
+  --code: #f6f6f6;
+  --cell: #e6e6e6;
+  --accent: #444444;
   --accent-base: #777777;
-  --selection: #eaeaea;
-  --primary: #303030;
-  --primary-hover: #171717;
+  --selection: #ececec;
+  --primary: #292929;
+  --primary-hover: #111111;
   --on-primary: #ffffff;
   --control: #cecece;
   color: var(--ink);
   background: var(--surface);
 }
 :root[data-theme='dark'] {
-  --shadow-surface: 0 2px 8px #00000014, 0 12px 32px #00000018;
-  --shadow-floating: 0 8px 24px #00000030, 0 28px 80px #00000055;
-  --ink: #ebebeb;
-  --muted: #b8b8b8;
-  --faint: #a3a3a3;
-  --line: #3d3d3d;
+  --shadow-surface: none;
+  --shadow-floating: 0 4px 12px #00000040, 0 16px 40px #00000040;
+  --ink: #ededed;
+  --muted: #b6b6b6;
+  --faint: #999999;
+  --line: #373737;
   --sidebar: #202020;
   --soft: #292929;
-  --surface: #1a1a1a;
-  --surface-alt: #242424;
-  --code: #232323;
-  --cell: #3d3d3d;
-  --accent: #c8c8c8;
+  --surface: #191919;
+  --surface-alt: #222222;
+  --code: #222222;
+  --cell: #373737;
+  --accent: #d0d0d0;
   --accent-base: #aaaaaa;
   --selection: #303030;
-  --primary: #e0e0e0;
-  --primary-hover: #f5f5f5;
-  --on-primary: #222222;
-  --control: #4b4b4b;
+  --primary: #e8e8e8;
+  --primary-hover: #ffffff;
+  --on-primary: #191919;
+  --control: #515151;
 }
 :root button:focus-visible,
 :root input:focus-visible,

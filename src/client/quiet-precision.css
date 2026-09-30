@@ -1,0 +1,456 @@
+/* The last, shared visual layer. Feature CSS keeps layout and behavior; these tokens
+   give every view the same compact rhythm without tinting the neutral Shell. */
+:root .panel {
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+:root .button,
+:root input:not([type='checkbox']):not([type='radio']):not([type='range']),
+:root select,
+:root textarea {
+  border-radius: var(--radius-control);
+}
+:root .button {
+  min-height: max(var(--control-lg), 2.2em);
+  padding: var(--space-1) var(--space-3);
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    opacity 150ms ease,
+    transform 100ms ease;
+}
+:root .button:active:not(:disabled),
+:root .icon-button:active:not(:disabled),
+:root .send-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+:root .icon-button {
+  min-width: var(--control-lg);
+  min-height: var(--control-lg);
+  border-radius: var(--radius-hover);
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    transform 100ms ease;
+}
+:root .badge,
+:root .nav-plugin,
+:root .version-label {
+  border-radius: var(--radius-hover);
+}
+:root .notice,
+:root .error-note {
+  border-radius: var(--radius-control);
+  padding: var(--space-3) var(--space-4);
+  line-height: 1.55;
+}
+:root .empty {
+  padding: var(--space-12) var(--space-4);
+}
+
+/* Shell: the navigation is a quiet frame, not another floating card. */
+:root .sidebar {
+  padding: var(--space-4) var(--space-3) var(--space-3);
+}
+:root .sidebar > .brand {
+  padding: var(--space-1) var(--space-2) var(--space-6);
+}
+:root .new-chat {
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+:root .sidebar-search {
+  margin: var(--space-3) var(--space-2) var(--space-1);
+}
+:root .nav-label {
+  padding: var(--space-6) var(--space-2) var(--space-2);
+  letter-spacing: 0.08em;
+}
+:root .nav-item,
+:root .conversation-open {
+  min-height: var(--control-lg);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-hover);
+  line-height: 1.4;
+  transition: background-color 100ms ease;
+}
+:root .conversation-link,
+:root .profile {
+  border-radius: var(--radius-control);
+}
+:root .sidebar-footer {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+:root .shell {
+  border-radius: 0;
+  box-shadow: none;
+}
+:root .topbar {
+  height: var(--topbar-height);
+  padding: 0 var(--space-6);
+  border-radius: 0;
+  gap: var(--space-3);
+}
+:root .breadcrumb {
+  gap: var(--space-2);
+}
+:root .version-label {
+  padding: var(--space-1) var(--space-2);
+  letter-spacing: 0;
+}
+
+/* Main views share a compact title-to-content rhythm. */
+:root .shell > .page,
+:root .settings-page {
+  padding: var(--space-8) var(--space-10) var(--space-12);
+}
+:root .page-heading {
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+:root .page-heading p {
+  margin-top: var(--space-1);
+  line-height: 1.55;
+}
+:root .page-heading > .button {
+  margin-top: var(--space-6);
+}
+:root .section-label {
+  margin: var(--space-6) 0 var(--space-3);
+}
+:root .toolbar {
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-4);
+}
+:root .tabs {
+  gap: var(--space-6);
+  margin-bottom: var(--space-4);
+}
+:root .tabs > button {
+  padding: var(--space-2) 0;
+}
+:root .tabs > button.active:after {
+  height: 1px;
+  background: var(--ink);
+}
+
+/* Chat and its editor keep reading room while actions become more precise. */
+:root .chat-page.is-home {
+  padding-top: var(--space-12);
+}
+:root .home-intro {
+  margin-bottom: var(--space-8);
+}
+:root .idea-grid {
+  gap: var(--space-3);
+}
+:root .idea-card {
+  padding: var(--space-4);
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+  transition:
+    border-color 100ms ease,
+    background-color 100ms ease;
+}
+:root .idea-card:hover {
+  transform: none;
+}
+:root .home-bottom {
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+}
+:root .composer {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-radius: var(--radius-floating);
+  box-shadow: none;
+}
+:root .composer:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+:root .composer-format {
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+:root .composer-format button {
+  min-width: var(--control-lg);
+  min-height: var(--control-lg);
+  border-radius: var(--radius-hover);
+}
+:root .composer-tools {
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+:root .composer-caption {
+  padding: var(--space-2) 0;
+}
+:root .message {
+  margin: var(--space-6) 0 var(--space-8);
+}
+:root .message-author {
+  margin-bottom: var(--space-2);
+}
+:root .message.user .message-content {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-panel);
+}
+:root .code-container,
+:root .markdown-table,
+:root .composer-code-node {
+  border-radius: var(--radius-panel);
+}
+:root .code-toolbar {
+  padding: var(--space-2) var(--space-3);
+}
+:root .markdown pre {
+  padding: var(--space-4);
+}
+
+/* Settings, account, model and plugin surfaces use rows rather than cards in cards. */
+:root .settings-heading {
+  margin-bottom: var(--space-6);
+}
+:root .settings-layout {
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--space-8);
+}
+:root .settings-navigation {
+  top: calc(var(--topbar-height) + var(--space-6));
+  gap: var(--space-6);
+}
+:root .settings-navigation button {
+  min-height: var(--control-lg);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-hover);
+  gap: var(--space-2);
+}
+:root .settings-content .preferences-section {
+  padding: 0 0 var(--space-8);
+  margin: 0 0 var(--space-8);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:root .settings-content .preferences-section:last-child {
+  border-bottom: 0;
+}
+:root .preferences-section > p {
+  margin: var(--space-2) 0 var(--space-4);
+  line-height: 1.55;
+}
+:root .theme-options,
+:root .font-options,
+:root .pattern-colors {
+  gap: var(--space-2);
+}
+:root .theme-option,
+:root .font-option,
+:root .pattern-color {
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+}
+:root .font-preview {
+  border-radius: var(--radius-panel);
+  margin-top: var(--space-4);
+}
+:root .pattern-card {
+  border: 1px solid var(--item-line);
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+:root .pattern-preview-grid {
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+:root .about-card {
+  padding: 0;
+  border: 0;
+}
+:root .feature-groups {
+  gap: var(--space-6);
+}
+:root .feature-group-heading {
+  margin-bottom: var(--space-3);
+}
+:root .feature-groups .feature-row {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3);
+  gap: var(--space-3);
+}
+:root .feature-groups .feature-row > .grow {
+  min-width: 0;
+}
+:root .feature-groups .feature-controls {
+  grid-column: auto;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+:root .feature-icon,
+:root .provider-icon {
+  border-radius: var(--radius-control);
+}
+:root .account-panel,
+:root .provider-card.models-provider-card,
+:root .prompts-page .prompt-card {
+  padding: var(--space-4);
+  border-radius: var(--radius-panel);
+}
+:root .models-provider-list {
+  gap: var(--space-2);
+}
+:root .models-sort-table th,
+:root .models-sort-table td {
+  padding: var(--space-2) var(--space-3);
+}
+:root .extensions-list-row {
+  padding: var(--space-3);
+}
+:root .skills-picker-item {
+  border-radius: var(--radius-control);
+}
+
+/* Data stays dense; only floating surfaces cast shadows. */
+:root .stats-grid {
+  gap: var(--space-3);
+}
+:root .stat-card {
+  padding: var(--space-4);
+}
+:root .usage-chart {
+  padding: var(--space-4);
+  margin: var(--space-6) 0;
+}
+:root .table-wrap th,
+:root .table-wrap td {
+  padding: var(--space-2) var(--space-3);
+  line-height: 20px;
+}
+:root .table-wrap tbody tr:hover {
+  background: var(--surface-alt);
+}
+:root .modal {
+  padding: var(--space-6);
+  border-radius: var(--radius-floating);
+  box-shadow: var(--shadow-floating);
+}
+:root .modal-actions {
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+:root .model-picker-popover,
+:root .extensions-popover,
+:root .skills-attachment-menu,
+:root .ds-tooltip,
+:root .toast {
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-floating);
+}
+:root .toast {
+  padding: var(--space-3) var(--space-4);
+}
+:root .login-story {
+  padding: var(--space-10) var(--space-12);
+}
+:root .login-form {
+  padding: var(--space-12) var(--space-10);
+}
+:root .login-box input {
+  padding: var(--space-3);
+}
+
+@media (max-width: 1100px) {
+  :root .shell > .page,
+  :root .settings-page {
+    padding: var(--space-8) var(--space-6) var(--space-10);
+  }
+  :root .settings-layout {
+    grid-template-columns: 152px minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+}
+@media (max-width: 760px) {
+  :root {
+    --topbar-height: 56px;
+  }
+  :root .sidebar {
+    padding-top: var(--space-4);
+  }
+  :root .sidebar > .brand {
+    padding-bottom: var(--space-6);
+  }
+  :root .topbar {
+    padding: 0 var(--space-4);
+  }
+  :root .shell > .page,
+  :root .settings-page {
+    padding: var(--space-6) var(--space-4) var(--space-10);
+  }
+  :root .settings-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  :root .settings-navigation {
+    position: static;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+  }
+  :root .settings-navigation button,
+  :root .button,
+  :root .new-chat,
+  :root .nav-item,
+  :root .conversation-open,
+  :root .profile,
+  :root .theme-option,
+  :root .font-option,
+  :root .pattern-color {
+    min-height: 44px;
+  }
+  :root .icon-button,
+  :root .send-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  :root .composer-format button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  :root .composer-tools .icon-button,
+  :root .composer-tools .send-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  :root .chat-page.is-home {
+    padding-top: var(--space-8);
+  }
+  :root .idea-card {
+    min-height: 72px;
+    padding: var(--space-3) var(--space-4) var(--space-3) 56px;
+  }
+  :root .settings-content .preferences-section {
+    padding-bottom: var(--space-6);
+    margin-bottom: var(--space-6);
+  }
+  :root .feature-groups .feature-row {
+    flex-wrap: wrap;
+  }
+  :root .feature-groups .feature-controls {
+    flex-direction: row;
+    justify-content: flex-end;
+    flex: 1 1 calc(100% - 44px);
+    margin-left: 44px;
+  }
+  :root .modal {
+    padding: var(--space-4);
+  }
+}
