@@ -1,0 +1,162 @@
+.context-manager-token-composition {
+  min-width: 0;
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+.context-manager-token-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.context-manager-token-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.context-manager-token-title h4 {
+  margin: 0;
+  font-size: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.6;
+}
+.context-manager-token-badge {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-hover);
+  background: var(--soft);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.8;
+}
+.context-manager-token-scope,
+.context-manager-token-scale,
+.context-manager-token-note,
+.context-manager-token-method,
+.context-manager-token-loading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.context-manager-token-scope {
+  margin-top: var(--space-1);
+}
+.context-manager-token-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-caption);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.context-manager-token-total strong {
+  color: var(--ink);
+  font-size: var(--font-heading-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.context-manager-token-grid {
+  display: grid;
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+  gap: var(--space-1);
+  min-width: 0;
+}
+.context-manager-token-cell {
+  display: block;
+  min-width: 0;
+  aspect-ratio: 1;
+  border-radius: var(--radius-hover);
+  background: var(--cell);
+}
+.context-manager-token-scale {
+  margin-top: var(--space-2);
+}
+.context-manager-token-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+}
+.context-manager-token-part {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  text-align: left;
+  color: var(--ink);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+.context-manager-token-part:hover,
+.context-manager-token-part[data-highlighted='true'] {
+  border-color: var(--line);
+  background: var(--surface-alt);
+}
+.context-manager-token-part[aria-pressed='true'] {
+  border-color: var(--muted);
+}
+.context-manager-token-swatch {
+  flex: 0 0 12px;
+  height: 12px;
+  border-radius: var(--radius-hover);
+}
+.context-manager-token-part-label {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.context-manager-token-part-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.context-manager-token-percent {
+  flex-shrink: 0;
+  align-self: flex-start;
+  font-variant-numeric: tabular-nums;
+}
+.context-manager-token-note {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+.context-manager-token-method {
+  margin-top: var(--space-2);
+}
+.context-manager-token-method summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.context-manager-token-method p {
+  margin: var(--space-2) 0 0;
+}
+.context-manager-token-error,
+.context-manager-token-loading {
+  margin-block: var(--space-4);
+}
+.context-manager-token-loading p {
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .context-manager-token-legend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .context-manager-token-method summary {
+    display: list-item;
+    align-content: center;
+    min-height: 44px;
+  }
+}

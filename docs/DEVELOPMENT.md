@@ -76,6 +76,8 @@ compose.yaml / Dockerfile       运行和构建契约
 
 `dist/`、`node_modules/`、`test-results/` 是生成目录；数据库与真实 `.env` 是部署状态，均不是功能代码。`output/` 可能包含设计探索产物，不是应用自动加载的资产目录；素材要进入产品必须显式接入、验证体积与使用位置。
 
+上下文占比的浏览器参考分词依赖锁定为 `gpt-tokenizer@4.0.0`，仅使用 `o200k_base` 编码。分词器随抽屉计算按需加载到独立 Web Worker，避免加入主线程的聊天渲染路径；Vite 构建须保留 Worker 资源。估算口径和真实用量边界见 [context-manager 接口](FEATURES.md#对话-context-manager)。
+
 Git 与 Docker 构建上下文均排除 `.env` 及 `.env.*` 配置 / 备份，仅允许占位示例 `.env.example`；Docker 构建同时排除 `output/` 设计产物。
 
 ## 应该改哪一层

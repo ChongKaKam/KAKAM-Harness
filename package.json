@@ -31,6 +31,7 @@
     "cordis": "3.18.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
+    "gpt-tokenizer": "4.0.0",
     "helmet": "^8.3.0",
     "lucide-react": "^1.48.0",
     "mermaid": "11.17.2",

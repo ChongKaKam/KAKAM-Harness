@@ -64,6 +64,29 @@ test('context history and selected-turn handoff work in the responsive drawer', 
     await expect(drawer).toBeVisible();
     await expect(drawer.locator('.context-manager-commit')).toHaveCount(2);
     await expect(drawer.locator('.context-manager-section')).toHaveCount(4);
+    const tokenChart = drawer.locator('.context-manager-token-composition');
+    const tokenGrid = tokenChart.getByRole('img', { name: /上下文文本 Token 估算/ });
+    const tokenLegend = tokenChart.getByRole('group', { name: '高亮上下文分区' });
+    const sessionTokens = tokenLegend.getByRole('button', { name: /^Session 记忆/ });
+    const currentTokens = tokenLegend.getByRole('button', { name: /^当前 prompt/ });
+    await expect(tokenGrid).toBeVisible();
+    await expect(tokenGrid.locator('.context-manager-token-cell')).toHaveCount(100);
+    await expect(tokenLegend.getByRole('button')).toHaveCount(4);
+    await expect(tokenLegend.getByRole('button', { name: /^System prompt/ })).toHaveAttribute(
+      'aria-label',
+      /约 0 文本 Token，占 0%，未注入/,
+    );
+    await expect(sessionTokens).toHaveAttribute('aria-label', /约 [1-9][\d,]* 文本 Token/);
+    await expect(currentTokens).toHaveAttribute('aria-label', /约 [1-9][\d,]* 文本 Token/);
+    await sessionTokens.click();
+    await expect(sessionTokens).toHaveAttribute('aria-pressed', 'true');
+    await expect(sessionTokens).toHaveAttribute('data-highlighted', 'true');
+    await sessionTokens.click();
+    await expect(sessionTokens).toHaveAttribute('aria-pressed', 'false');
+    await page.mouse.move(0, 0);
+    await currentTokens.focus();
+    await expect(currentTokens).toBeFocused();
+    await expect(currentTokens).toHaveAttribute('data-highlighted', 'true');
     await drawer
       .locator('.context-manager-section')
       .filter({ hasText: 'System prompt' })
@@ -89,6 +112,7 @@ test('context history and selected-turn handoff work in the responsive drawer', 
       await page.reload();
       await trigger.click();
       await expect(drawer.locator('.context-manager-section')).toHaveCount(4);
+      await expect(tokenGrid).toBeVisible();
       const bounds = (await drawer.boundingBox())!;
       expect(bounds.x).toBeGreaterThanOrEqual(0);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
@@ -101,11 +125,20 @@ test('context history and selected-turn handoff work in the responsive drawer', 
       await page.screenshot({
         path: `test-results/context-manager-${theme}-${info.project.name}.png`,
       });
+      await tokenChart.scrollIntoViewIfNeeded();
+      expect(
+        await tokenChart.evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true);
+      await tokenChart.screenshot({
+        path: `test-results/context-token-${theme}-${info.project.name}.png`,
+      });
       await page.keyboard.press('Escape');
     }
 
     await trigger.click();
     await drawer.locator('.context-manager-commit').filter({ hasText: '先梳理项目目标' }).click();
+    await expect(sessionTokens).toHaveAttribute('aria-label', /约 0 文本 Token，占 0%，暂无历史/);
+    await expect(currentTokens).toHaveAttribute('aria-label', /约 [1-9][\d,]* 文本 Token，占 100%/);
     const handoff = drawer.getByRole('region', { name: 'Hand-off 交接', exact: true });
     await expect(handoff.getByRole('combobox', { name: 'Hand-off 模型', exact: true })).toHaveValue(
       model.id,
@@ -128,6 +161,7 @@ test('context history and selected-turn handoff work in the responsive drawer', 
     expect(await readFile((await download.path())!, 'utf8')).toContain('相关文档资料');
     expect(handoffCalls).toBe(1);
     await drawer.locator('.context-manager-commit').filter({ hasText: '现在确认进度' }).click();
+    await expect(sessionTokens).toHaveAttribute('aria-label', /约 [1-9][\d,]* 文本 Token/);
     await expect(drawer.getByRole('button', { name: '下载 Markdown', exact: true })).toHaveCount(0);
     await page.keyboard.press('Escape');
 
