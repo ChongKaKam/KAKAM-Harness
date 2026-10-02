@@ -186,7 +186,7 @@ const colors = usePatternColors();
 </article>;
 ```
 
-对话分组、Skill 库、首页建议、统计卡片和活动图均复用映射。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
+对话分组、Skill 库、统计卡片和活动图均复用映射；空白对话首页只保留问候语与输入框。文本始终继承 Shell 的中性文字，原色色值用于边框、图标、色样与数据可视化。`ColorPickerButton` 提供共用选择弹窗，持久化由各 feature 的授权 API 完成。主题和色系随账户保存，字号继续保持设备独立。
 
 ## LLM 拓展能力核心
 

@@ -317,9 +317,6 @@ textarea {
   :root .settings-content .theme-options {
     grid-template-columns: 1fr;
   }
-  :root .hero-mark {
-    display: none;
-  }
   :root .message.user .message-content {
     margin-left: 0;
   }

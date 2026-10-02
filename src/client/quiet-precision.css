@@ -177,24 +177,6 @@
 :root .home-intro {
   margin-bottom: var(--space-8);
 }
-:root .idea-grid {
-  gap: var(--space-3);
-}
-:root .idea-card {
-  padding: var(--space-4);
-  border-radius: var(--radius-panel);
-  box-shadow: none;
-  transition:
-    border-color 100ms ease,
-    background-color 100ms ease;
-}
-:root .idea-card:hover {
-  transform: none;
-}
-:root .home-bottom {
-  margin-top: var(--space-8);
-  padding-top: var(--space-4);
-}
 :root .composer {
   padding: var(--space-3) var(--space-4) var(--space-2);
   border-radius: var(--radius-floating);
@@ -466,10 +448,6 @@
   }
   :root .chat-page.is-home {
     padding-top: var(--space-8);
-  }
-  :root .idea-card {
-    min-height: 72px;
-    padding: var(--space-3) var(--space-4) var(--space-3) 56px;
   }
   :root .settings-content .preferences-section {
     padding-bottom: var(--space-6);

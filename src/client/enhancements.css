@@ -21,13 +21,10 @@
 }
 [data-theme='dark'] .sidebar,
 [data-theme='dark'] .sidebar-search,
-[data-theme='dark'] .home-bottom,
 [data-theme='dark'] .provider-bottom,
 [data-theme='dark'] .metric-strip > div,
-[data-theme='dark'] .hero-mark,
 [data-theme='dark'] .version-label,
-[data-theme='dark'] .nav-plugin,
-[data-theme='dark'] .home-bottom .badge {
+[data-theme='dark'] .nav-plugin {
   border-color: var(--line);
 }
 [data-theme='dark'] .button.primary,
@@ -40,7 +37,6 @@
 [data-theme='dark'] .send-button:hover {
   background: var(--soft);
 }
-[data-theme='dark'] .idea-card,
 [data-theme='dark'] .notice,
 [data-theme='dark'] .message.user .message-content,
 [data-theme='dark'] th,
@@ -82,7 +78,6 @@
 [data-theme='dark'] td strong,
 [data-theme='dark'] .login-statement h1,
 [data-theme='dark'] .home-intro h1 span,
-[data-theme='dark'] .idea-card h3,
 [data-theme='dark'] .provider-card h3,
 [data-theme='dark'] .stat-card strong {
   color: var(--ink);

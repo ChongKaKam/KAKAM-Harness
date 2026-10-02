@@ -220,7 +220,7 @@ test('Python syntax retains distinct token colors when the theme changes in plac
   }
 });
 
-test('neutral shell, sailboat, feature categories and project link adapt to both themes', async ({
+test('neutral shell, minimal chat home, feature categories and project link adapt to both themes', async ({
   page,
 }, info) => {
   await openWorkspace(page);
@@ -231,15 +231,10 @@ test('neutral shell, sailboat, feature categories and project link adapt to both
       .click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', mode);
     await page.goto('/#/chat');
-    await expect(page.locator('.hero-mark .lucide-sailboat')).toHaveCount(1);
-    if (info.project.name === 'desktop') await expect(page.locator('.hero-mark')).toBeVisible();
-    for (const selector of [
-      '.sidebar',
-      '.topbar',
-      '.home-intro h1',
-      '.home-intro p',
-      '.model-picker-trigger',
-    ]) {
+    await expect(page.locator('.home-intro h1')).toContainText('今天，想探索些什么？');
+    await expect(page.getByRole('button', { name: '发送消息' })).toBeVisible();
+    await expect(page.locator('.idea-grid, .home-bottom, .hero-mark')).toHaveCount(0);
+    for (const selector of ['.sidebar', '.topbar', '.home-intro h1', '.model-picker-trigger']) {
       const values = await page
         .locator(selector)
         .first()
@@ -253,10 +248,6 @@ test('neutral shell, sailboat, feature categories and project link adapt to both
         expect(g, `${mode}/${selector}/${value}`).toBe(b);
       }
     }
-    const colors = await page
-      .locator('.idea-card')
-      .evaluateAll((cards) => cards.map((card) => getComputedStyle(card).borderTopColor));
-    expect(new Set(colors).size).toBe(3);
     await page.screenshot({
       path: `test-results/neutral-home-${mode}-${info.project.name}.png`,
       fullPage: true,

@@ -7,8 +7,8 @@
 - Shell 包含品牌、主导航、对话列表、用户入口与内容区域，使用**纯黑白灰**。不要恢复灰褐色框架或让绿色 / Color Pattern 接管整页文字。
 - 工作区放对话、Skill 库等产品能力；统计独立分组；左下角用户入口进入设置。通用设置、账户设置、相关信息及管理员页面均属于设置容器。
 - feature 页面只负责自己的内容，不再创建第二套全局侧栏、用户菜单或主题 Provider。功能管理区分 Core / Plugin；普通用户不能看到管理员操作。
-- Color Pattern 给卡片、建议、对话分组、图表、图标与边框分配多色；正文和辅助文字仍保持中性色。用户选的是色系与组件颜色，不是把页面所有元素染成一种颜色。
-- 使用现有 `Logo`（d·）、首页 Sailboat、Chatbot 的 Bot 默认头像以及 `UserAvatar`；不在新页面各自创造品牌标识。
+- Color Pattern 给卡片、对话分组、图表、图标与边框分配多色；正文和辅助文字仍保持中性色。用户选的是色系与组件颜色，不是把页面所有元素染成一种颜色。
+- 空白对话首页只显示个性化问候语与聊天输入框，不放引导卡片、模型数量或品牌标语；使用现有 `Logo`（d·）、Chatbot 的 Bot 默认头像以及 `UserAvatar`，不在新页面各自创造品牌标识。
 
 ## 组件放在哪里
 
@@ -71,11 +71,11 @@ Shell token 的主要来源是 [`shellTokens()`](../src/shared/appearance.ts)，
 
 公共几何 token 位于 `styles.css`：`--space-1/2/3/4/6/8/10/12` 对应 4/8/12/16/24/32/40/48px；`--radius-hover/control/panel/floating` 对应 4/6/8/12px；`--control-sm/md/lg` 对应 24/28/32px。新增固定间距先选这些 token，字号与随字号扩张的控件仍使用语义字号和内容驱动尺寸。桌面侧栏 240px、顶栏 44px，手机顶栏 56px；侧栏宽度不随字号放大。
 
-侧栏为次级灰色表面，内容区为主表面，使用低对比的 1px 细线和留白建立层次。静态 `.panel`、首页建议和 Color Pattern 卡片无阴影；仅弹窗、Popover、Tooltip、Toast 与拖拽浮层使用 `--shadow-floating`。面板和输入框使用不同圆角，不以大圆角包装整个 Shell。顶栏保留已有轻度模糊。`shared/appearance.ts` 是运行时明暗 Shell 颜色的来源；`appearance.css` 提供同值回退，不让 Color Pattern 接管正文。
+侧栏为次级灰色表面，内容区为主表面，使用低对比的 1px 细线和留白建立层次。静态 `.panel` 和 Color Pattern 卡片无阴影；仅弹窗、Popover、Tooltip、Toast 与拖拽浮层使用 `--shadow-floating`。面板和输入框使用不同圆角，不以大圆角包装整个 Shell。顶栏保留已有轻度模糊。`shared/appearance.ts` 是运行时明暗 Shell 颜色的来源；`appearance.css` 提供同值回退，不让 Color Pattern 接管正文。
 
 Quiet Precision 的跨页面映射集中在 `client/quiet-precision.css`，在公共 CSS 之后导入；局部结构和状态仍由 feature 自己的 CSS 负责。聊天保留阅读宽度，设置页用分组间距和细线代替卡片套卡片，模型来源与扩展能力使用紧凑行，统计手机端把最近调用表格逐项呈现。侧栏搜索与 Skill 库搜索是完整的复合控件：外层负责唯一的边框、背景和键盘焦点反馈，内层 input 不再单独画框或轮廓，图标、文字与快捷键共用一条对齐线。移动端高频操作命中区至少 44px；键盘焦点使用 3px 低透明度中性色环，按钮按下有很小的即时缩放，系统减少动态效果时取消空间动画。Toast 4 秒自动关闭，悬停或聚焦期间暂停；公共 Tooltip 桌面悬停 500ms 后出现，相邻提示快速切换，键盘聚焦和触屏点击立即显示。不要把整页缩放当作字号设置。
 
-`features/chat/conversation-list.tsx` 负责侧栏对话组织，Shell 仍负责导航和账户状态。分组标题、图标底色与边框使用 `usePatternColors()` + 分组 ID / `colorSlot`；分组内外的对话条目、消息气泡、助手头像与阅读大纲保持中性灰度。普通对话不提供单独选色入口，旧 `colorSlot` 仅保留接口兼容。首页建议、Skill 与统计配色不变。
+`features/chat/conversation-list.tsx` 负责侧栏对话组织，Shell 仍负责导航和账户状态。分组标题、图标底色与边框使用 `usePatternColors()` + 分组 ID / `colorSlot`；分组内外的对话条目、消息气泡、助手头像与阅读大纲保持中性灰度。普通对话不提供单独选色入口，旧 `colorSlot` 仅保留接口兼容。Skill 与统计仍使用各自的配色。
 
 分组是单层可折叠列表，用按钮的 `aria-expanded` / `aria-controls` 关联组内区域；名称截断并保留 title，计数、生成提示和操作不挤压到视口外。搜索分组名称或对话标题时自动展开结果；进入对话时展开其分组。分组编辑和对话管理复用原生 Modal，支持 Escape、焦点返回、保存错误和删除确认；删除分组明确说明对话保留。图标来自 lucide 固定选项或一个 emoji 字素，作为纯文本渲染。配色使用当前注册表中的原生 radio，不另建色板，也不嵌套选色弹窗。
 

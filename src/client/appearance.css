@@ -116,9 +116,6 @@
   border-color: var(--line);
 }
 :root .home-intro h1 span,
-:root .idea-card h3,
-:root .hero-mark,
-:root .home-bottom .logo-word,
 :root .login-statement h1,
 :root .markdown,
 :root .markdown h1,
@@ -154,9 +151,7 @@
 :root .composer,
 :root .modal,
 :root .sidebar-search,
-:root .hero-mark,
 :root .version-label,
-:root .home-bottom,
 :root .provider-bottom,
 :root .code-container,
 :root .welcome-symbol {

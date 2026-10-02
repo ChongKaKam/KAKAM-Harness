@@ -9,15 +9,11 @@ import {
   ArrowDown,
   X,
   Square,
-  Sailboat,
   ArrowUpRight,
   Copy,
   Check,
-  PenLine,
   Pencil,
   RefreshCw,
-  Code2,
-  Compass,
   GitBranch,
 } from 'lucide-react';
 import { UserAvatar } from '../../client/user-avatar';
@@ -33,31 +29,9 @@ import { TokenUsage } from './token-usage';
 import { GenerationTime } from './generation-time';
 import { copyText } from '../../client/clipboard';
 import { Markdown } from '../../client/markdown';
-import { usePatternColors } from '../../client/color-pattern';
 import { ErrorNote, Spinner } from '../../client/components';
 import type { Attachment, ReasoningEffort } from '../../shared/types';
-const ideas = [
-  {
-    icon: PenLine,
-    title: '把想法写清楚',
-    text: '帮我梳理一个想法，先问我三个问题，了解我想表达什么。',
-    description: '从零散的灵感到清晰的表达',
-  },
-  {
-    icon: Compass,
-    title: '理解一个新概念',
-    text: '我想学习一个新概念，请先问我感兴趣的领域，然后用直观的例子解释。',
-    description: '换个角度，看懂复杂的事情',
-  },
-  {
-    icon: Code2,
-    title: '一起解决问题',
-    text: '请作为我的编程伙伴，帮我分析问题。先询问我遇到的问题和相关代码。',
-    description: '分析代码，找到下一步方向',
-  },
-];
 export function ChatPage() {
-  const colors = usePatternColors();
   const {
     user,
     models,
@@ -277,18 +251,10 @@ export function ChatPage() {
         >
           {empty && (
             <div className="home-intro">
-              <div className="eyebrow">
-                <span className="status-dot" />
-                YOUR PERSONAL WORKSPACE
-              </div>
               <h1>
                 你好，{user.displayName}。<br />
                 <span>今天，想探索些什么？</span>
               </h1>
-              <p>一个问题，一点灵感，或一个还没成形的想法。</p>
-              <div className="hero-mark" aria-hidden="true">
-                <Sailboat size={26} />
-              </div>
             </div>
           )}
           {loading && !messages.length ? (
@@ -554,45 +520,6 @@ export function ChatPage() {
             <span>AI 可能会出错，请核实重要信息</span>
           </div>
         </div>
-        {empty && (
-          <>
-            <div className="section-label">
-              从这里开始 <span>A LITTLE INSPIRATION</span>
-            </div>
-            <div className="idea-grid">
-              {ideas.map((idea, index) => (
-                <button
-                  key={idea.title}
-                  className="idea-card pattern-card"
-                  style={colors.style({ key: 'home-ideas', index: index * 3 })}
-                  onClick={() => {
-                    setDraft(idea.text);
-                    input.current?.focus();
-                  }}
-                >
-                  <idea.icon size={20} />
-                  <ArrowUpRight className="idea-arrow" size={15} />
-                  <h3>{idea.title}</h3>
-                  <p>{idea.description}</p>
-                </button>
-              ))}
-            </div>
-            <div className="home-bottom">
-              <div>
-                <span className="small-brand">d·</span>
-                <p>
-                  少一点切换，多一点专注。
-                  <br />
-                  <span>让对话成为思考的起点。</span>
-                </p>
-              </div>
-              <span className="badge">
-                <span className="status-dot" />
-                {models.length} 个可用模型
-              </span>
-            </div>
-          </>
-        )}
       </div>
       {contextEnabled &&
         contextTurn?.userId === user.id &&
