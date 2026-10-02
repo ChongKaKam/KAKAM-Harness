@@ -5,7 +5,7 @@ import { copyText } from '../../client/clipboard';
 import { Empty, ErrorNote, Modal, Spinner } from '../../client/components';
 import { useWorkspace } from '../../client/context';
 import { Markdown } from '../../client/markdown';
-import { TokenComposition } from './token-composition';
+import { CharacterComposition } from './character-composition';
 import type { MessageUsage } from '../../shared/types';
 import type {
   ContextHandoff,
@@ -231,7 +231,7 @@ function SnapshotContent({
               为本轮回答模型各次请求的上报合计。
             </p>
           </header>
-          <TokenComposition snapshot={snapshot} />
+          <CharacterComposition snapshot={snapshot} />
           <div className="context-manager-sections">
             {snapshot.sections.map((section) => (
               <Section key={section.id} section={section} />

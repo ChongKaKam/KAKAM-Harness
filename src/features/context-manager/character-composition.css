@@ -1,4 +1,4 @@
-.context-manager-token-composition {
+.context-manager-character-composition {
   min-width: 0;
   margin-top: var(--space-6);
   padding: var(--space-4);
@@ -6,7 +6,7 @@
   border-radius: var(--radius-panel);
   background: var(--surface);
 }
-.context-manager-token-heading {
+.context-manager-character-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -14,41 +14,25 @@
   gap: var(--space-2) var(--space-4);
   margin-bottom: var(--space-4);
 }
-.context-manager-token-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-.context-manager-token-title h4 {
+.context-manager-character-heading h4 {
   margin: 0;
   font-size: var(--font-ui);
   font-weight: 600;
   line-height: 1.6;
 }
-.context-manager-token-badge {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-hover);
-  background: var(--soft);
-  color: var(--muted);
-  font-size: var(--font-caption);
-  line-height: 1.8;
-}
-.context-manager-token-scope,
-.context-manager-token-scale,
-.context-manager-token-note,
-.context-manager-token-method,
-.context-manager-token-loading p {
+.context-manager-character-scope,
+.context-manager-character-scale,
+.context-manager-character-note {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-caption);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
-.context-manager-token-scope {
+.context-manager-character-scope {
   margin-top: var(--space-1);
 }
-.context-manager-token-total {
+.context-manager-character-total {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -59,35 +43,35 @@
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.context-manager-token-total strong {
+.context-manager-character-total strong {
   color: var(--ink);
   font-size: var(--font-heading-small);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.context-manager-token-grid {
+.context-manager-character-grid {
   display: grid;
   grid-template-columns: repeat(20, minmax(0, 1fr));
   gap: var(--space-1);
   min-width: 0;
 }
-.context-manager-token-cell {
+.context-manager-character-cell {
   display: block;
   min-width: 0;
   aspect-ratio: 1;
   border-radius: var(--radius-hover);
   background: var(--cell);
 }
-.context-manager-token-scale {
+.context-manager-character-scale {
   margin-top: var(--space-2);
 }
-.context-manager-token-legend {
+.context-manager-character-legend {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-1);
   margin: var(--space-3) 0;
 }
-.context-manager-token-part {
+.context-manager-character-part {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -101,62 +85,40 @@
   font-size: var(--font-caption);
   line-height: 1.6;
 }
-.context-manager-token-part:hover,
-.context-manager-token-part[data-highlighted='true'] {
+.context-manager-character-part:hover,
+.context-manager-character-part[data-highlighted='true'] {
   border-color: var(--line);
   background: var(--surface-alt);
 }
-.context-manager-token-part[aria-pressed='true'] {
+.context-manager-character-part[aria-pressed='true'] {
   border-color: var(--muted);
 }
-.context-manager-token-swatch {
+.context-manager-character-swatch {
   flex: 0 0 12px;
   height: 12px;
   border-radius: var(--radius-hover);
 }
-.context-manager-token-part-label {
+.context-manager-character-part-label {
   display: grid;
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.context-manager-token-part-value {
+.context-manager-character-part-value {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.context-manager-token-percent {
+.context-manager-character-percent {
   flex-shrink: 0;
   align-self: flex-start;
   font-variant-numeric: tabular-nums;
 }
-.context-manager-token-note {
+.context-manager-character-note {
   padding-top: var(--space-3);
   border-top: 1px solid var(--line);
 }
-.context-manager-token-method {
-  margin-top: var(--space-2);
-}
-.context-manager-token-method summary {
-  width: fit-content;
-  cursor: pointer;
-}
-.context-manager-token-method p {
-  margin: var(--space-2) 0 0;
-}
-.context-manager-token-error,
-.context-manager-token-loading {
-  margin-block: var(--space-4);
-}
-.context-manager-token-loading p {
-  text-align: center;
-}
 @media (max-width: 760px) {
-  .context-manager-token-legend {
+  .context-manager-character-legend {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .context-manager-token-method summary {
-    display: list-item;
-    align-content: center;
-    min-height: 44px;
   }
 }
