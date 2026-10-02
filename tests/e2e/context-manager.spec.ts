@@ -72,7 +72,21 @@ test('context history and selected-turn handoff work in the responsive drawer', 
     const sessionCharacters = characterLegend.getByRole('button', { name: /^Session 记忆/ });
     const currentCharacters = characterLegend.getByRole('button', { name: /^当前 prompt/ });
     await expect(characterGrid).toBeVisible();
-    await expect(characterGrid.locator('.context-manager-character-cell')).toHaveCount(100);
+    await expect(characterGrid.locator('.context-manager-character-cell')).toHaveCount(224);
+    const secondSnapshot: ContextSnapshot = await (
+      await request.get(`/api/context-manager/conversations/${conversation.id}/turns/${secondId}`)
+    ).json();
+    const sessionSize = secondSnapshot.sections.find(
+      (section) => section.id === 'session',
+    )!.characters;
+    await expect(characterGrid.locator('[data-section="session"]')).toHaveCount(
+      Math.ceil(sessionSize / 64),
+    );
+    await expect(characterGrid.locator('[data-section="current"]')).toHaveCount(1);
+    await expect(
+      characterGrid.locator('.context-manager-character-cell:not([data-section])'),
+    ).toHaveCount(224 - Math.ceil(sessionSize / 64) - 1);
+    await expect(characterChart).toContainText('每格 ≤ 64 字符');
     await expect(characterLegend.getByRole('button')).toHaveCount(4);
     await expect(characterLegend.getByRole('button', { name: /^System prompt/ })).toHaveAttribute(
       'aria-label',
@@ -154,6 +168,11 @@ test('context history and selected-turn handoff work in the responsive drawer', 
       'aria-label',
       `当前 prompt：${currentSection.characters} 字符，占 100%；点击高亮`,
     );
+    await expect(characterGrid.locator('[data-section="current"]')).toHaveCount(1);
+    await expect(characterGrid.locator('[data-section="session"]')).toHaveCount(0);
+    await expect(
+      characterGrid.locator('.context-manager-character-cell:not([data-section])'),
+    ).toHaveCount(223);
     const handoff = drawer.getByRole('region', { name: 'Hand-off 交接', exact: true });
     await expect(handoff.getByRole('combobox', { name: 'Hand-off 模型', exact: true })).toHaveValue(
       model.id,

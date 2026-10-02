@@ -21,7 +21,6 @@
   line-height: 1.6;
 }
 .context-manager-character-scope,
-.context-manager-character-scale,
 .context-manager-character-note {
   margin: 0;
   color: var(--muted);
@@ -45,14 +44,14 @@
 }
 .context-manager-character-total strong {
   color: var(--ink);
-  font-size: var(--font-heading-small);
+  font-size: var(--font-ui);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .context-manager-character-grid {
   display: grid;
-  grid-template-columns: repeat(20, minmax(0, 1fr));
-  gap: var(--space-1);
+  grid-template-columns: repeat(32, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
 }
 .context-manager-character-cell {
@@ -62,13 +61,13 @@
   border-radius: var(--radius-hover);
   background: var(--cell);
 }
-.context-manager-character-scale {
-  margin-top: var(--space-2);
+.context-manager-character-cell[data-dimmed='true'] {
+  opacity: 0.25;
 }
 .context-manager-character-legend {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
   margin: var(--space-3) 0;
 }
 .context-manager-character-part {
@@ -77,7 +76,7 @@
   gap: var(--space-2);
   min-width: 0;
   min-height: 44px;
-  padding: var(--space-2);
+  padding: var(--space-1);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   text-align: left;
@@ -98,27 +97,13 @@
   height: 12px;
   border-radius: var(--radius-hover);
 }
-.context-manager-character-part-label {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 .context-manager-character-part-value {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.context-manager-character-percent {
-  flex-shrink: 0;
-  align-self: flex-start;
-  font-variant-numeric: tabular-nums;
-}
-.context-manager-character-note {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--line);
-}
 @media (max-width: 760px) {
-  .context-manager-character-legend {
-    grid-template-columns: minmax(0, 1fr);
+  .context-manager-character-grid {
+    grid-template-columns: repeat(16, minmax(0, 1fr));
+    gap: var(--space-1);
   }
 }
