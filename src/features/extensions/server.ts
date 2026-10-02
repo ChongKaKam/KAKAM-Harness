@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { SkillSession, type SkillProvider, type SkillPlan } from './skill-runtime';
+import type { ContextObserver, ContextRecorder, ContextTurn } from './context-observer';
 import type { SkillSelection } from '../skills/types';
 import { HttpError, requireAdmin, requireUser } from '../../kernel/http';
 import type { ProviderMessage, TokenUsage } from '../../adapters/registry';
@@ -64,10 +65,44 @@ function parseJson<T>(text: string, schema: z.ZodType<T>): T {
 export class ExtensionsService extends Service {
   static inject = ['db', 'models', 'kernel'];
   private entries = new Map<string, Registered>();
-  private utilities = new Map<string, { name: string; abort: AbortController }>();
+  private utilities = new Map<
+    string,
+    { name: string; abort: AbortController; maxCharacters: number; timeoutMs: number }
+  >();
   private utilityCalls = new Map<string, Promise<unknown>>();
   private stopping = false;
   private skills?: { provider: SkillProvider; abort: AbortController };
+  private contextObserver?: ContextObserver;
+  registerContextObserver(observer: ContextObserver) {
+    if (this.contextObserver) throw new Error('Context observer already registered');
+    this.contextObserver = observer;
+    return () => {
+      if (this.contextObserver === observer) this.contextObserver = undefined;
+      // Already accepted turns retain their recorder until completion.
+    };
+  }
+  observeContext(input: ContextTurn): ContextRecorder | undefined {
+    if (!this.contextObserver) return undefined;
+    // An optional audit feature must never interrupt an otherwise valid chat request.
+    const safely = <T>(work: () => T): T | undefined => {
+      try {
+        return work();
+      } catch {
+        console.error('Context snapshot persistence failed');
+        return undefined;
+      }
+    };
+    const recorder = safely(() => this.contextObserver!.begin(input));
+    if (!recorder) return undefined;
+    return {
+      request: (request) => {
+        safely(() => recorder.request(request));
+      },
+      finish: (message) => {
+        safely(() => recorder.finish(message));
+      },
+    };
+  }
   registerSkills(provider: SkillProvider) {
     if (this.skills) throw new Error('Skill provider already registered');
     const entry = { provider, abort: new AbortController() };
@@ -97,9 +132,18 @@ export class ExtensionsService extends Service {
     );
   }
   /** Explicit feature actions share authorization and usage tracking, without joining chat. */
-  registerUtility(id: string, name: string) {
+  registerUtility(
+    id: string,
+    name: string,
+    options: { maxCharacters?: number; timeoutMs?: number } = {},
+  ) {
     if (this.utilities.has(id)) throw new Error(`Duplicate utility: ${id}`);
-    const entry = { name, abort: new AbortController() };
+    const entry = {
+      name,
+      abort: new AbortController(),
+      maxCharacters: options.maxCharacters ?? 4000,
+      timeoutMs: options.timeoutMs ?? 60_000,
+    };
     this.utilities.set(id, entry);
     return () => {
       entry.abort.abort();
@@ -111,11 +155,11 @@ export class ExtensionsService extends Service {
     const entry = this.utilities.get(id);
     if (!entry) throw new HttpError(409, '此功能已停用，请刷新后重试');
     const key = `${id}:${user.id}`;
-    if (this.utilityCalls.has(key)) throw new HttpError(409, '简介正在生成，请稍后重试');
+    if (this.utilityCalls.has(key)) throw new HttpError(409, `${entry.name}正在生成，请稍后重试`);
     const operationSignal = AbortSignal.any([
       signal,
       entry.abort.signal,
-      AbortSignal.timeout(60_000),
+      AbortSignal.timeout(entry.timeoutMs),
     ]);
     operationSignal.throwIfAborted();
     const model = this.ctx.models.authorize(user, modelId, 'llm');
@@ -148,10 +192,11 @@ export class ExtensionsService extends Service {
           operationSignal.throwIfAborted();
           if (event.type === 'usage') usage = event.usage;
           else text += event.text;
-          if (text.length > 4000) throw new HttpError(502, '模型返回的简介过长，请更换模型后重试');
+          if (text.length > entry.maxCharacters)
+            throw new HttpError(502, `模型返回的${entry.name}过长，请更换模型后重试`);
         }
         operationSignal.throwIfAborted();
-        if (!text.trim()) throw new HttpError(502, '模型未返回简介，请重试');
+        if (!text.trim()) throw new HttpError(502, `模型未返回${entry.name}，请重试`);
         status = 'complete';
         return { text: text.trim(), usage };
       } catch (error) {
@@ -160,12 +205,12 @@ export class ExtensionsService extends Service {
           status = timeout ? 'error' : 'cancelled';
           throw new HttpError(
             timeout ? 504 : 409,
-            timeout ? '简介生成超时，请重试' : '简介生成已取消',
+            timeout ? `${entry.name}生成超时，请重试` : `${entry.name}生成已取消`,
           );
         }
         throw error instanceof HttpError
           ? error
-          : new HttpError(502, '简介生成失败，请检查模型配置后重试');
+          : new HttpError(502, `${entry.name}生成失败，请检查模型配置后重试`);
       } finally {
         this.ctx.db.run(
           'UPDATE usage SET input_tokens=?,output_tokens=?,total_tokens=?,status=? WHERE id=?',

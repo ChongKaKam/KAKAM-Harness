@@ -29,23 +29,24 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → search → chat → usage → prompts → preferences 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → search → chat → usage → prompts → preferences → context-manager 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
 每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
 客户端入口 [`client/main.tsx`](../src/client/main.tsx) 创建 UiProvider 和 App。App 解析 hash 路由、加载当前用户、获取服务器 feature 状态；编译期 `clientFeatures` 与运行时目录取交集，决定可见组件。UI 隐藏不代表后端已经鉴权，后端仍独立执行权限与归属校验。
 
-| Feature ID    | kind   | 提供的能力                                        | 主要 UI 位置                   |
-| ------------- | ------ | ------------------------------------------------- | ------------------------------ |
-| `auth`        | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像  | 登录页 / 设置中的账户设置      |
-| `users`       | core   | 管理用户、角色、停用、重置与会话撤销              | 管理员设置                     |
-| `models`      | core   | ModelsService、来源、白名单、模型授权、连通性测试 | 管理员设置；聊天可见已授权模型 |
-| `extensions`  | core   | 托管能力注册、Auto 决策、辅助模型用量             | 管理员设置；聊天能力开关       |
-| `search`      | plugin | Perplexity 搜索、查询生成与来源记录               | 拓展能力的子设置页             |
-| `chat`        | core   | 私有对话与分组、后台生成、SSE 订阅与停止          | 工作区                         |
-| `usage`       | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
-| `preferences` | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
-| `prompts`     | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入    | 工作区                         |
+| Feature ID        | kind   | 提供的能力                                        | 主要 UI 位置                   |
+| ----------------- | ------ | ------------------------------------------------- | ------------------------------ |
+| `auth`            | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像  | 登录页 / 设置中的账户设置      |
+| `users`           | core   | 管理用户、角色、停用、重置与会话撤销              | 管理员设置                     |
+| `models`          | core   | ModelsService、来源、白名单、模型授权、连通性测试 | 管理员设置；聊天可见已授权模型 |
+| `extensions`      | core   | 托管能力注册、Auto 决策、辅助模型用量             | 管理员设置；聊天能力开关       |
+| `search`          | plugin | Perplexity 搜索、查询生成与来源记录               | 拓展能力的子设置页             |
+| `chat`            | core   | 私有对话与分组、后台生成、SSE 订阅与停止          | 工作区                         |
+| `usage`           | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
+| `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
+| `prompts`         | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入    | 工作区                         |
+| `context-manager` | plugin | 每轮上下文快照、交互轨迹与 LLM hand-off           | 回复抽屉 / 设置                |
 
 Models 的管理页受管理员限制，但已授权模型列表 API 向普通用户开放；不能把整个 models feature 的 HTTP 接口统一锁成管理员专用。Core / Plugin 是生命周期分类，`adminOnly` 是目录可见性，两者不是同一个维度。
 
@@ -98,6 +99,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 | 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages`           | 图片随消息保存在数据库，访问检查用户归属                       |
 | 用量                           | `usage`                                                      | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
 | 插件启停 / Skill               | `settings`、`skills`、`skill_versions`、`prompt_preferences` | 停用保留数据，重启恢复启停状态                                 |
+| 上下文快照 / 交接模型偏好      | `context_snapshots`、`context_preferences`                   | 按账户与对话隔离，编辑 / 重试保留快照，删除对话级联清理        |
 | 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                             | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
 | 字号                           | localStorage `drift:font-size:<userId>`                      | 按账户和当前浏览器保存，不随服务器备份迁移                     |
 | 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`               | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
@@ -219,3 +221,13 @@ chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可�
 本轮固定模型来源、协议与 Adapter，避免不透明续接数据跨供应商；每次请求前重新执行 ModelsService.authorize。`models.tool_calling` 默认关闭，管理员按具体模型启用；单文件手动载入不需要工具调用，含参考文件时必须启用。对非法工具、路径、参数、重复片段及预算超限直接终止并保留已完成内容，不静默宣称参考文件已读取。预算见 [API 与限制](FEATURES.md#skill-库-api)。
 
 每次回答模型请求独立写 usage，同一请求累计值取最新，跨请求才相加；聚合值不另写一笔 usage。中断保留已经上报的计数，未知值不补零。历史读取以 usage 表为准，`messages.calls` 用于关联和阶段展示。简介仍通过现有 utility 显式调用，只返回编辑草稿，不随库迁移或浏览自动生成；`prompt_preferences` 保留用户简介模型偏好。
+
+## 上下文快照与交接
+
+`context-manager` 向 extensions 注册只读观察器，由 chat 在接受一轮、每次回答模型请求前、生成结束时通知。核心只持有观察契约，不依赖可选插件；记录与 hand-off 都不改变后续聊天的输入，也不引入新的记忆注入服务。原始历史 / 当前提问先形成快照，之后替换为最近一次回答模型请求的组成，含实际发送的 Skill、Search 和可见工具上下文；请求计数为 0 时表示输入尚未发送。供应商续接的 reasoning / thinking 签名等不透明数据仍只留在当前生成内存，不进入快照或交接模型。观察器持久化失败只记录通用错误，不使正常聊天失败。
+
+快照是用户私有的对话审计记录。编辑 / 重试以新助手消息 ID 保存新轮次，旧快照保留，关联到被替换轮次；删除对话时级联删除。查询与 hand-off 同时限定用户与对话，管理员权限不能绕过。停用只撤销观察器以阻止新捕获，已接受轮次的 recorder 可继续保存结果，普通聊天不受影响；重启不恢复生成，重新启用根据持久化消息状态整理遗留记录。没有捕获的历史不凭当前聊天伪造过去快照。
+
+四个分区与数量契约见 [context-manager 接口](FEATURES.md#对话-context-manager)。当前 system 与长期记忆为空，是现有输入能力的真实反映。Session 是本轮实际发送的会话上下文，不能把“曾经读过”视为后续请求仍然带有原文。文本大小只描述快照，不等于模型 tokenizer、协议封装或图片的输入 Token；图片保留元数据，避免重复存储 base64。
+
+交接按所选轮次截止，包含该轮之前的交互与修订证据，防止后续对话混入较早的交接点。用户主动点击才通过 extensions utility 调用已授权 LLM，不安排付费后台任务；输出说明意图轨迹、实际进展、后续方向和资料引用，并区分证据与推断。有限输入预算溢出时返回明确错误，输出只返回当前浏览器作为交接草稿，不另建服务器文档库。它不是跨进程任务恢复，也不会复制隐式供应商上下文或重新抓取文档。模型偏好、输出和真实调用用量的接口边界见功能指南。

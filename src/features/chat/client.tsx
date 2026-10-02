@@ -1,5 +1,6 @@
 import { AttachmentMenu, SkillChips, useChatSkills } from '../skills/chat-controls';
 import { SkillDetails } from '../skills/message-details';
+import { ContextDrawer } from '../context-manager/drawer';
 import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
@@ -17,6 +18,7 @@ import {
   RefreshCw,
   Code2,
   Compass,
+  GitBranch,
 } from 'lucide-react';
 import { UserAvatar } from '../../client/user-avatar';
 import { ModelPicker } from './model-picker';
@@ -98,6 +100,15 @@ export function ChatPage() {
   const busy = submitting || messages.some((message) => message.status === 'streaming');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
+  const contextEnabled = features.some(
+    (feature) => feature.id === 'context-manager' && feature.enabled,
+  );
+  const [contextTurn, setContextTurn] = useState<{
+    userId: string;
+    conversationId: string;
+    messageId: string;
+  }>();
+  useEffect(() => setContextTurn(undefined), [user.id, conversationId, contextEnabled]);
   const mounted = useRef(true);
   const viewId = useRef(conversationId);
   viewId.current = conversationId;
@@ -340,9 +351,9 @@ export function ChatPage() {
                           </button>
                         </div>
                       )}
-                      {m.role === 'assistant' && m.status !== 'streaming' && (
+                      {m.role === 'assistant' && (m.status !== 'streaming' || contextEnabled) && (
                         <div className="chat-message-actions">
-                          {m.content && (
+                          {m.content && m.status !== 'streaming' && (
                             <button
                               className="copy-button"
                               aria-label="复制回复"
@@ -360,8 +371,25 @@ export function ChatPage() {
                               <span>{copied === m.id ? '已复制' : '复制'}</span>
                             </button>
                           )}
-                          <TokenUsage message={m} />
-                          <GenerationTime message={m} />
+                          {m.status !== 'streaming' && (
+                            <>
+                              <TokenUsage message={m} />
+                              <GenerationTime message={m} />
+                            </>
+                          )}
+                          {contextEnabled && conversationId && (
+                            <button
+                              type="button"
+                              className="copy-button context-manager-trigger"
+                              aria-label="查看本轮上下文"
+                              onClick={() =>
+                                setContextTurn({ userId: user.id, conversationId, messageId: m.id })
+                              }
+                            >
+                              <GitBranch size={14} aria-hidden="true" />
+                              上下文
+                            </button>
+                          )}
                           {!editing &&
                             m.id === lastAssistant?.id &&
                             lastUser &&
@@ -566,6 +594,15 @@ export function ChatPage() {
           </>
         )}
       </div>
+      {contextEnabled &&
+        contextTurn?.userId === user.id &&
+        contextTurn.conversationId === conversationId && (
+          <ContextDrawer
+            conversationId={contextTurn.conversationId}
+            messageId={contextTurn.messageId}
+            close={() => setContextTurn(undefined)}
+          />
+        )}
     </div>
   );
 }

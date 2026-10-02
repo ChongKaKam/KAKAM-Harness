@@ -38,7 +38,7 @@ export function skillProviderFixture(body: any, mode: ApiMode, res: Response): b
   const emit = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\r\n\r\n`);
   const respond = () => {
     if (mode === 'responses') {
-      const output = needCall
+      const output: unknown[] = needCall
         ? [
             { id: 'reason', type: 'reasoning', summary: [], encrypted_content: 'opaque-reasoning' },
             {
@@ -58,6 +58,16 @@ export function skillProviderFixture(body: any, mode: ApiMode, res: Response): b
             },
           ];
       if (needCall) {
+        if (prompt.includes('[visible-tool-preface]')) {
+          const preface = `准备读取第 ${results.length + 1} 份资料。`;
+          output.push({
+            id: `preface-${results.length}`,
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: preface, annotations: [] }],
+          });
+          emit({ type: 'response.output_text.delta', delta: preface });
+        }
         emit({
           type: 'response.function_call_arguments.delta',
           output_index: 1,

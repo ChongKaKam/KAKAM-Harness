@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { X, LoaderCircle, ArrowUpRight } from 'lucide-react';
 export function Logo({ small = false }: { small?: boolean }) {
   return (
@@ -66,10 +66,16 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const headingId = useId();
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = ref.current!;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.showModal();
-    return () => dialog.close();
+    return () => {
+      // Close while connected so the native dialog releases focus before React removes it.
+      // Keep dismissal in the caller: some dialogs deliberately refuse to close while busy.
+      dialog.close();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <dialog
@@ -86,7 +92,7 @@ export function Modal({
     >
       <div className="modal-heading">
         <h2 id={headingId}>{title}</h2>
-        <button className="icon-button" onClick={close} aria-label="关闭">
+        <button type="button" className="icon-button" onClick={close} aria-label="关闭">
           <X size={19} />
         </button>
       </div>

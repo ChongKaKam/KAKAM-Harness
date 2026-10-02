@@ -6,6 +6,7 @@ import {
   Layers,
   BookOpen,
   Settings,
+  GitBranch,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ExtensionsPage } from '../features/extensions/client';
@@ -18,6 +19,8 @@ import { UsersPage } from '../features/users/client';
 import { ModelsPage } from '../features/models/client';
 import { PromptsPage } from '../features/prompts/client';
 import { PromptsSettings } from '../features/prompts/settings';
+import { ContextManagerSettings } from '../features/context-manager/client';
+import { manifest as contextManager } from '../features/context-manager/manifest';
 import { PreferencesPage } from '../features/preferences/client';
 import { manifest as preferences } from '../features/preferences/manifest';
 import { AccountPage } from '../features/auth/client';
@@ -49,6 +52,13 @@ export const clientFeatures: ClientFeature[] = [
     settingsParent: 'extensions',
   },
   { placement: 'workspace', manifest: chat, icon: MessageSquare, component: ChatPage },
+  {
+    placement: 'settings',
+    settingsLabel: '上下文管理',
+    manifest: contextManager,
+    icon: GitBranch,
+    component: ContextManagerSettings,
+  },
   {
     placement: 'workspace',
     manifest: prompts,

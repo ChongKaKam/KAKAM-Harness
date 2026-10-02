@@ -22,7 +22,7 @@
 | ----------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `PageHeader`                        | `client/components.tsx`        | `eyebrow`、`title`、`description`、可选 `action`；统一页面标题与操作位置                                                      |
 | `Empty` / `Spinner` / `ErrorNote`   | 同上                           | 空状态、加载状态、`text` 错误反馈；Spinner 含 status、ErrorNote 含 alert                                                      |
-| `Modal`                             | 同上                           | `title`、`close`、`children`；原生 dialog，支持 Escape 与外部点击关闭                                                         |
+| `Modal`                             | 同上                           | `title`、`close`、`children`、可选 `className`；原生 dialog，支持 Escape 与外部点击关闭                                       |
 | `useLoad`                           | 同上                           | `loader`、可选依赖数组；返回 data / error / reload，无全局缓存                                                                |
 | `api` / `post` / `patch` / `remove` | `client/api.ts`                | 相对 API 路径，例如 `/skills`；不要重复 `/api`                                                                                |
 | `useWorkspace`                      | `client/context.tsx`           | user、setUser、models、conversations、features、refresh、navigate、notify、草稿                                               |
@@ -266,3 +266,13 @@ UI 变更按实际影响选择最小的验收组合；例如本次 Skill 卡片�
 选择器使用原生 Modal，可搜索名称/简介/标签、筛选标签、预览指令与参考文本并多选。输入栏标签显示名称、固定版本、本对话/仅本轮范围与移除按钮；选择随下一条消息提交，不覆盖编辑器正文。已有版本落后时，选择器提供显式「更新到 vN」。管理页保持原有 Color Pattern 卡片；聊天技能标签和加载详情使用中性表面与语义字号。
 
 `SkillDetails` 折叠显示实际读取记录与每次模型请求状态/用量，限制内部高度和滚动。文档预览沿用安全 Markdown 管线，参考文件以纯文本展示。编辑器新增参考文件路径和正文表单；保存产生新版本，版本冲突保留草稿并提示重新打开。
+
+## 上下文抽屉与交接
+
+每轮助手回复的「上下文」入口打开 `features/context-manager/drawer.tsx` 的 `ContextDrawer`；仅在插件启用时展示。它使用公共 `Modal` 的原生 dialog 与可选 `className`，局部 CSS 将其定位为右侧抽屉，不新建全局弹层系统。保留 Escape、外侧关闭和焦点返回，抽屉内部滚动；手机按视口排列历史与详情，长正文、路径和链接不得撑破宽度。关闭抽屉只释放查看订阅和正在生成的 hand-off，不停止聊天。
+
+历史列表以提交记录形式展示节点、简短 ID、提问、模型、时间、状态和修订关系；选中项使用 `aria-current`。详情固定展示 System prompt、长期记忆、Session 记忆、当前 prompt 四部分，各自统计 UTF-16 字符数、UTF-8 文本字节数和图片数量。当前未注入的 system / 长期记忆显示为空；请求数为 0 表示尚未发送，其他轮次展示最近一次回答模型请求的组成。原始输入与工具内容作为纯文本查看，不执行其 HTML；图片只列名称和文件大小。「本轮回复」折叠展示安全 Markdown，便于回看已被修订的回复。供应商 Token 单独显示，缺失保留「未上报」，不从字符统计换算。
+
+Hand-off 位于所选快照详情，模型列表沿用当前账户可用的 LLM，默认偏好来自插件设置。正在生成的聊天轮次不能生成交接；主动点击才调用模型，忙碌和失败状态明确显示。结果通过安全 `Markdown` 展示，复制使用公共 `copyText`，下载使用 Markdown 文件；两者均复用已有结果，不再次调用模型。结果仅保留在当前抽屉，切换轮次或关闭后不保存为服务器文档。设置、请求与迟到响应按账户隔离。
+
+样式位于 `context-manager.css`，统一使用 `context-manager-*` 命名空间、灰度表面和语义字号；完成 / 失败沿用独立绿色 / 红色并保留文字，静态区域不新增阴影。验收针对抽屉的桌面 / 手机、明暗、长内容、关闭焦点和复制 / 下载路径即可。

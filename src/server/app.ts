@@ -17,6 +17,7 @@ import * as chat from '../features/chat/server';
 import * as usage from '../features/usage/server';
 import * as prompts from '../features/prompts/server';
 import * as preferences from '../features/preferences/server';
+import * as contextManager from '../features/context-manager/server';
 export async function createApp(config: Config) {
   const kernel = new KHKernel(config.dataDir);
   try {
@@ -29,6 +30,7 @@ export async function createApp(config: Config) {
     await kernel.register(usage.manifest, usage.server);
     await kernel.register(prompts.manifest, prompts.server);
     await kernel.register(preferences.manifest, preferences.server);
+    await kernel.register(contextManager.manifest, contextManager.server);
     await kernel.ctx.start();
   } catch (error) {
     await kernel.stop();

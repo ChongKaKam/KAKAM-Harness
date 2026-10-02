@@ -1,0 +1,340 @@
+.context-manager-settings-panel {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 760px;
+  padding: var(--space-6);
+}
+.context-manager-settings-panel h2 {
+  font-size: var(--font-heading-small);
+}
+.context-manager-settings-panel p {
+  margin: 0;
+  font-size: var(--font-ui);
+  line-height: 1.7;
+}
+.context-manager-settings-panel label,
+.context-manager-handoff label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-ui);
+}
+.context-manager-settings-panel select,
+.context-manager-handoff select {
+  width: 100%;
+  min-width: 0;
+}
+:root .modal.context-manager-drawer {
+  --context-success-ink: #166534;
+  --context-success-fill: #eaf6ee;
+  --context-error-ink: #a51d2d;
+  --context-error-fill: #fdecef;
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(1040px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+:root .modal.context-manager-drawer[open] {
+  display: flex;
+  flex-direction: column;
+}
+:root[data-theme='dark'] .modal.context-manager-drawer {
+  --context-success-ink: #8adca9;
+  --context-success-fill: #173b28;
+  --context-error-ink: #ffa0a8;
+  --context-error-fill: #482329;
+}
+.context-manager-drawer > .modal-heading {
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+.context-manager-body {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.context-manager-history,
+.context-manager-detail {
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.context-manager-history {
+  padding: var(--space-4);
+  border-right: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+.context-manager-history-heading,
+.context-manager-kicker,
+.context-manager-handoff-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.context-manager-history-heading {
+  justify-content: space-between;
+}
+.context-manager-history-heading h3 {
+  margin: 0;
+  font-size: var(--font-ui);
+  font-weight: 600;
+}
+.context-manager-history-heading h3 span {
+  margin-left: var(--space-1);
+  font-weight: 400;
+  color: var(--muted);
+}
+.context-manager-caption,
+.context-manager-commit-meta,
+.context-manager-usage {
+  margin: var(--space-2) 0;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.context-manager-timeline {
+  padding: 0;
+  margin: var(--space-4) 0 0;
+  list-style: none;
+}
+.context-manager-timeline li {
+  position: relative;
+  margin-left: var(--space-2);
+  padding: 0 0 var(--space-3) var(--space-3);
+  border-left: 1px solid var(--line);
+}
+.context-manager-commit {
+  display: grid;
+  gap: var(--space-1);
+  position: relative;
+  width: 100%;
+  padding: var(--space-3);
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+.context-manager-commit[aria-current],
+.context-manager-commit:hover {
+  border-color: var(--line);
+  background: var(--surface);
+}
+.context-manager-commit[aria-current] {
+  border-color: var(--muted);
+}
+.context-manager-node {
+  position: absolute;
+  left: -24px;
+  top: 12px;
+  background: var(--surface-alt);
+  color: var(--muted);
+}
+.context-manager-commit[aria-current] .context-manager-node {
+  color: var(--ink);
+}
+.context-manager-commit-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--font-ui);
+  font-weight: 500;
+  line-height: 1.5;
+}
+.context-manager-commit-meta {
+  display: block;
+  margin: 0;
+}
+.context-manager-commit-meta code,
+.context-manager-kicker code {
+  font-size: var(--font-caption);
+}
+.context-manager-status {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-hover);
+  background: var(--soft);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.8;
+}
+.context-manager-status.is-complete {
+  color: var(--context-success-ink);
+  background: var(--context-success-fill);
+}
+.context-manager-status.is-error {
+  color: var(--context-error-ink);
+  background: var(--context-error-fill);
+}
+.context-manager-detail {
+  padding: var(--space-6);
+}
+.context-manager-snapshot-heading h3,
+.context-manager-handoff h3 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--font-heading-small);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.context-manager-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-6) 0 var(--space-3);
+  padding: var(--space-4) 0;
+  border-block: 1px solid var(--line);
+}
+.context-manager-totals dt {
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+.context-manager-totals dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-heading-small);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.context-manager-sections {
+  margin-top: var(--space-6);
+}
+.context-manager-section,
+.context-manager-response {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+}
+.context-manager-section > summary,
+.context-manager-response > summary {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-alt);
+  cursor: pointer;
+  font-size: var(--font-ui);
+}
+.context-manager-section-name {
+  font-weight: 500;
+}
+.context-manager-section > summary > .context-manager-caption {
+  display: block;
+  margin: var(--space-1) 0 0 var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+.context-manager-section-content {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+.context-manager-response-content {
+  max-height: 420px;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.context-manager-entry {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--font-ui);
+  overflow-wrap: anywhere;
+}
+.context-manager-entry > summary {
+  cursor: pointer;
+  line-height: 1.6;
+}
+.context-manager-entry pre {
+  max-height: 320px;
+  padding: var(--space-3);
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface-alt);
+  font-size: var(--font-code);
+  line-height: 1.7;
+}
+.context-manager-entry ul {
+  padding-left: var(--space-6);
+}
+.context-manager-handoff {
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+.context-manager-handoff label {
+  margin: var(--space-4) 0;
+}
+.context-manager-handoff-result {
+  margin-top: var(--space-6);
+}
+.context-manager-handoff-actions {
+  flex-wrap: wrap;
+}
+.context-manager-handoff-markdown {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  :root .modal.context-manager-drawer {
+    width: 100vw;
+    border: 0;
+  }
+  .context-manager-drawer > .modal-heading {
+    padding: var(--space-2) var(--space-4);
+  }
+  .context-manager-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .context-manager-history {
+    flex-shrink: 0;
+    max-height: 28dvh;
+    padding: var(--space-3) var(--space-4);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .context-manager-detail {
+    flex: 1;
+    padding: var(--space-4);
+  }
+  .context-manager-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .context-manager-drawer .icon-button,
+  .context-manager-drawer .button,
+  .context-manager-drawer select,
+  .context-manager-settings .button,
+  .context-manager-settings select,
+  .context-manager-entry > summary,
+  .context-manager-trigger {
+    min-height: 44px;
+  }
+  .context-manager-drawer .icon-button {
+    min-width: 44px;
+  }
+  .context-manager-entry > summary {
+    padding-block: var(--space-2);
+  }
+  .context-manager-settings-panel {
+    padding: var(--space-4);
+  }
+}

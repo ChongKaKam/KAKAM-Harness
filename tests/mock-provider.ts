@@ -16,6 +16,8 @@ The Fibonacci sequence:
   '\n```\n';
 function extensionText(content: unknown): string | undefined {
   if (typeof content !== 'string') return;
+  if (content.startsWith('Create a hand-off prompt'))
+    return '# Hand-off\n\n## 用户意图轨迹\n用户希望整理项目交接资料。\n\n## 目前进度\n已检查对话中提供的资料；尚未验证的内容需继续确认。\n\n## 后续方向\n继续核对需求并完成剩余工作。\n\n## 相关文档资料\n以交接证据中实际提供的文档路径和链接为准。';
   if (content.startsWith('Write a short introduction for this prompt-library card'))
     return content.includes('[empty-description]')
       ? '   '

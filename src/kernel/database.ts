@@ -222,6 +222,23 @@ export class Database extends Service {
       )
     )
       this.connection.exec('ALTER TABLE models ADD COLUMN tool_calling INTEGER NOT NULL DEFAULT 0');
+    // Snapshots belong to the conversation, not the replaceable assistant message.
+    // Keep edited/retried attempts until their owner deletes the conversation.
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS context_preferences (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        handoff_model_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS context_snapshots (
+        message_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        snapshot TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_context_snapshots_owner
+        ON context_snapshots(user_id, conversation_id);
+    `);
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

@@ -1,4 +1,5 @@
 import { skillSelections } from '../extensions/skill-runtime';
+import type { ContextRecorder } from '../extensions/context-observer';
 import type { SelectedSkill, SkillRead } from '../skills/types';
 import { generateReply, aggregateCalls } from './skill-generation';
 import { generationDeadline } from './generation-deadline';
@@ -373,6 +374,7 @@ export const server = {
           createdAt: now,
         },
       };
+      let recorder: ContextRecorder | undefined;
       ctx.db.transaction(() => {
         if (input.replaceLastMessageId) {
           ctx.db.run('DELETE FROM messages WHERE id=? AND conversation_id=?', latest[0].id, id);
@@ -434,6 +436,18 @@ export const server = {
           input.content.slice(0, 40) || '图片对话',
           id,
         );
+        recorder = ctx.extensions.observeContext({
+          user,
+          conversationId: id,
+          messageId,
+          modelId: input.modelId,
+          modelName: model.label,
+          createdAt: now,
+          reasoningEffort: input.reasoningEffort,
+          replacesMessageId: latest[0]?.id,
+          history,
+          current: { role: 'user', content: input.content, images: input.images },
+        });
       });
       active.set(id, generation);
       userActive.add(user.id);
@@ -492,6 +506,7 @@ export const server = {
             messages: prepared,
             signal,
             session,
+            recorder,
             effort: input.reasoningEffort,
             calls: generation.message.calls!,
             progress: (skillReads: SkillRead[], calls: ExtensionCall[]) => {
@@ -559,6 +574,7 @@ export const server = {
                 id,
               );
             });
+            recorder?.finish(generation.message);
             broadcast({ type: 'done', message: { ...generation.message } });
           } finally {
             active.delete(id);

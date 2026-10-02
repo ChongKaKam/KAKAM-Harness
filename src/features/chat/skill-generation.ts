@@ -3,6 +3,7 @@ import type { Context } from 'cordis';
 import type { ExtensionCall, User, ReasoningEffort } from '../../shared/types';
 import type { ProviderMessage, ToolStep, ToolTurn } from '../../adapters/registry';
 import type { SkillSession } from '../extensions/skill-runtime';
+import type { ContextRecorder } from '../extensions/context-observer';
 import { skillLimits, type SkillRead } from '../skills/types';
 import { HttpError } from '../../kernel/http';
 
@@ -28,6 +29,7 @@ export async function generateReply(
     effort: ReasoningEffort;
     signal: AbortSignal;
     session?: SkillSession;
+    recorder?: ContextRecorder;
     calls: ExtensionCall[];
     text(text: string): void;
     progress(reads: SkillRead[], calls: ExtensionCall[]): void;
@@ -35,7 +37,7 @@ export async function generateReply(
 ) {
   const { user, session, calls, signal, messageId } = options;
   const tools = session?.tools() ?? [];
-  const steps: ToolStep[] = [];
+  const steps: (ToolStep & { text: string })[] = [];
   // Pin the protocol/endpoint for this turn; opaque continuation must never cross providers.
   const model = ctx.models.authorize(user, options.modelId, 'llm');
   const connection = ctx.models.connection(model.providerId);
@@ -69,7 +71,14 @@ export async function generateReply(
     const publish = () => options.progress(session?.reads ?? [], calls);
     publish();
     let turn: ToolTurn | undefined;
+    let visibleText = '';
     try {
+      options.recorder?.request({
+        callId: call.id,
+        messages: options.messages,
+        tools,
+        steps: steps.map(({ text, turn, results }) => ({ text, calls: turn.calls, results })),
+      });
       const events = tools.length
         ? adapter.generateTurn!(
             connection,
@@ -84,8 +93,10 @@ export async function generateReply(
       for await (const event of events) {
         signal.throwIfAborted();
         if (event.type === 'usage') call.usage = event.usage;
-        else if (event.type === 'text') options.text(event.text);
-        else turn = event.turn;
+        else if (event.type === 'text') {
+          visibleText += event.text;
+          options.text(event.text);
+        } else turn = event.turn;
       }
       signal.throwIfAborted();
       if (tools.length && !turn) throw new HttpError(502, '模型工具回复未完整结束');
@@ -107,7 +118,7 @@ export async function generateReply(
     }
     if (!turn?.calls.length) return;
     const results = turn.calls.map((tool) => ({ id: tool.id, output: session!.execute(tool) }));
-    steps.push({ turn, results });
+    steps.push({ turn, results, text: visibleText });
     publish();
   }
   throw new HttpError(502, '已达到本轮工具调用轮数上限，已保留生成内容');
