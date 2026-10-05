@@ -82,7 +82,7 @@ export const server = {
         settingsId: 'search',
         ready: () => !!settings().encryptedKey,
         decisionInstructions:
-          'Does answering the latest user request benefit from web search? Enable for recent facts, news, prices, source verification, external references, or an explicit request to search. Disable for greetings, rewriting supplied text, translation, creative writing, or questions fully answerable from the provided conversation.',
+          'Does answering the latest user request require web search to obtain, verify or update external information? Interpret intent in any language using relevant conversation context, including follow-up references. Apply these rules in order: (1) Disable if the user explicitly forbids web access. (2) Enable if the user explicitly requests web search or verification of external facts. (3) Enable when the answer needs current or changing facts (such as news, prices, availability or software versions), external sources not supplied in the conversation, or up-to-date information for recommendations. (4) Otherwise disable for greetings, stable general knowledge, or tasks fully answerable from supplied material, including analysis, code review, rewriting, translation and creative writing. Translation or creative writing still needs search when an earlier rule applies. Do not treat casual phrases such as "看看", "查一下", "check" or "look at" alone as a request for web search; distinguish inspecting supplied material from seeking external information. Do not enable merely because search might add optional background.',
         async execute(scope) {
           const config = settings();
           if (!config.encryptedKey) throw new HttpError(400, 'Search 尚未配置 API Key');

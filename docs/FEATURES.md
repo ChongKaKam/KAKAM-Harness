@@ -324,6 +324,8 @@ interface ModelAdapter {
 4. execute 接收 `ExtensionScope`，使用 `scope.llm(stage, prompt, zodSchema)` 生成并校验 JSON；使用 `scope.track(stage, modelName, work)` 记录其他上游调用。必须传递 `scope.signal`，不得另配辅助模型凭据或自行绕过授权。通过 `run` 与 `update()` 保存查询、来源及状态，返回追加给最终回答的上下文。
 5. capability 的 client 使用 `placement: 'settings'` 与 `settingsParent: 'extensions'` 注册自己的设置页，由托管页链接访问，不新增 Shell 导航。服务端配置路由必须 requireAdmin。
 
+Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭；明确要求联网搜索或核实外部事实时开启；回答需要当前 / 易变事实、对话中未提供的外部资料或推荐所需的最新信息时开启；其余稳定知识、问候及仅凭已提供材料即可完成的分析、代码检查、改写、翻译和创作关闭。翻译或创作包含前述检索需求时仍开启。中英文口语中的“看看 / 查一下 / check / look at”需结合对象和上下文判断，不单凭词语触发，也不因联网可能补充背景而开启。这些是模型判断指令，不是程序强制规则；LLM + Jev 的英文预处理要求保留联网意愿、材料是否已提供及追问指代，实际判断仍受模型和最近六条消息上下文限制。此标准仅适用于 Auto。
+
 当前接口：
 
 | API                                 | 权限与内容                                                                                                                   |
