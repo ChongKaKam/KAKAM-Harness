@@ -37,7 +37,7 @@ test('context history and selected-turn handoff work in the responsive drawer', 
       .getByRole('combobox', { name: '默认 Hand-off 模型', exact: true })
       .selectOption(model.id);
     await page.getByRole('button', { name: '保存设置', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Hand-off 模型已保存');
+    await expect(page.getByRole('status')).toContainText('上下文设置已保存');
 
     const firstPrompt = '先梳理项目目标 🧭';
     const firstId = randomUUID();

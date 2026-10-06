@@ -349,7 +349,7 @@ export const server = {
       )
         throw new HttpError(400, '此对话包含图片，请选择支持图片的模型');
       if (
-        history.length > 200 ||
+        history.length > 2000 ||
         history.reduce(
           (n, message) =>
             n +
@@ -523,11 +523,29 @@ export const server = {
             };
           const memoryInput = appendMemoryBlocks(prepared.at(-1)!.content, memory?.blocks ?? []);
           prepared[prepared.length - 1] = { ...prepared.at(-1)!, content: memoryInput.content };
+          const processed = await ctx.extensions.prepareContext({
+            user,
+            conversationId: id,
+            messageId,
+            modelId: input.modelId,
+            modelName: model.label,
+            createdAt: now,
+            reasoningEffort: input.reasoningEffort,
+            history,
+            current: context.at(-1)!,
+            messages: prepared,
+            signal,
+          });
+          deadline.touch();
+          signal.throwIfAborted();
+          if (processed.messages.length > 201)
+            throw new HttpError(400, '对话较长，压缩未能缩减历史；请调整上下文压缩设置或新建对话');
           await generateReply(ctx, {
             user,
             modelId: input.modelId,
             messageId,
-            messages: prepared,
+            messages: processed.messages,
+            compression: processed.compression,
             signal,
             session,
             recorder,
@@ -602,6 +620,13 @@ export const server = {
             });
             recorder?.finish(generation.message);
             broadcast({ type: 'done', message: { ...generation.message } });
+            ctx.extensions.completeContext({
+              user,
+              conversationId: id,
+              messageId,
+              current: input.content,
+              response: { ...generation.message },
+            });
             ctx.extensions.completeMemory({
               user,
               conversationId: id,

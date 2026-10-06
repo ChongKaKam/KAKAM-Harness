@@ -405,7 +405,9 @@ Adapter 的 generate 保持文本/用量接口；可选 generateTurn 接受 tool
 
 Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare / complete / invalidate / removeScope / applied；基础 chat 不注入可停用的 MemoryManager。独立 PostgreSQL/pgvector 的三层记忆、默认 LLM + Prompt 策略、管理 API、模型和索引配置详见 [Memory API](MEMORY_API.md)，构建期策略与专属设置 UI 的双注册见 [Memory Agent 指南](MEMORY_AGENTS.md)。平台 SQLite 的集中迁移规则不适用于 Memory 的独立 PostgreSQL 表，后者由 `kernel/memory-database.ts` 初始化迁移；专属 schema / 扩展由管理员准备，迁移 CLI、连接恢复、独立数据库健康接口和共享 Compose 接入见 [Memory 数据库](MEMORY_DATABASE.md)。
 
-`context-manager` 是可停用的普通插件，页面位于设置；每轮回复的查看入口由聊天页接入。插件向 `extensions` 核心注册 `ContextObserver`，契约位于 [`context-observer.ts`](../src/features/extensions/context-observer.ts)：`begin` 接收当前用户、本轮 ID、被替换轮次、历史和当前输入，返回 `request` / `finish` recorder。`request` 观察每次回答模型请求的消息、工具定义、续接中的可见助手正文与调用 / 结果，`finish` 保存回复、状态、错误与实际用量。观察器只记录，不修改模型输入；chat 不注入 context-manager 服务。
+自动压缩、轨迹节点摘要、完整设置与手动重试 API 以 [上下文管理指南](CONTEXT_MANAGER.md) 为主要说明。
+
+`context-manager` 是可停用的普通插件，页面位于设置；每轮回复的查看入口由聊天页接入。插件向 `extensions` 核心注册 `ContextObserver`，契约位于 [`context-observer.ts`](../src/features/extensions/context-observer.ts)：`begin` 接收当前用户、本轮 ID、被替换轮次、历史和当前输入，返回 `request` / `finish` recorder。`request` 观察每次回答模型请求的消息、工具定义、续接中的可见助手正文与调用 / 结果，`finish` 保存回复、状态、错误与实际用量。观察器只记录，不修改模型输入；压缩使用另行注册的 `ContextProcessor`，chat 不注入 context-manager 服务。
 
 快照按本轮助手消息 ID 保存，编辑末问或重试生成新的快照并保留替换关联。带记忆元数据的新快照展示五个部分：System prompt、长期记忆、分组记忆、Session 记忆、当前 prompt；旧快照兼容原四分区。Session 部分包含最近一次回答模型请求实际发送的历史、Skill 主指令 / 读取结果、Search 上下文和工具定义；当前 prompt 单独呈现。`requestCount` 为去重后的回答模型请求数；为 0 时仍是尚未发送的输入。当前聊天没有系统消息，System 明确为空。Memory provider 的范围元数据将实际注入正文分入长期 / 分组 / Session，不能靠字符串猜测、重复计入当前 prompt 或把 Skill / 记忆的用户级指令标成 system。图片只保存名称、大小等元数据，协议不透明推理与供应商凭据不进入快照。快照持久化的统计仍为 UTF-16 字符数、UTF-8 文本字节数和图片数量；真实 Token 沿用上游上报值。
 
@@ -413,11 +415,11 @@ Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare 
 
 | API                                                           | 输入与行为                                                                                                       |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `GET/PATCH /api/context-manager/preferences`                  | 当前账户的 `handoffModelId`；保存模型时验证启用、LLM 类型与授权                                                  |
+| `GET/PATCH /api/context-manager/preferences`                  | 当前账户的交接 / 压缩 / 轨迹摘要设置；部分合并，模型和预算校验见上下文管理指南                                   |
 | `GET /api/context-manager/conversations/:id/turns`            | 当前账户对话的已捕获轮次摘要，包含状态、模型、数量统计与替换关联                                                 |
 | `GET /api/context-manager/conversations/:id/turns/:messageId` | 指定轮次的分区上下文、回复、错误与数量统计；未捕获的历史轮次不事后重建                                           |
 | `POST /api/context-manager/conversations/:id/handoff`         | `{ messageId, modelId? }`，只使用截至指定轮次的证据生成 Markdown；模型省略时使用当前账户偏好，返回文本与真实用量 |
 
-所有接口由 `requireUser` 保护，同时检查对话和账户归属；管理员不能读取他人快照。对话删除级联清理记录。停用撤销 API、停止新轮次捕获并取消 hand-off 调用，已有聊天和已接收的 recorder 仍可完成；重新启用保留数据，并按持久化消息状态整理未完成记录。
+所有接口由 `requireUser` 保护，同时检查对话和账户归属；管理员不能读取他人快照。对话删除级联清理记录。停用撤销 API、停止新轮次捕获并取消交接、压缩与轨迹摘要调用，已有聊天和已接收的 recorder 仍可完成；重新启用保留数据，并按持久化消息状态整理未完成记录。
 
 Hand-off 使用 `registerUtility` 托管的显式辅助调用，不加入聊天 Auto / On / Off 菜单。该接口可选第三个参数 `{ maxCharacters, timeoutMs }`，缺省仍为 4000 / 60000；hand-off 使用 32000 字符输出上限与 120000ms 超时。完整交接输入超过 240000 个 UTF-16 字符时明确拒绝，不静默丢弃历史。模型逐次执行当前账户授权，真实用量计入统计；历史文本仅作待总结证据，指令要求交接用户意图变化、进度、后续方向、文档资料与不确定事项。输出只返回浏览器，供复制或下载 Markdown；关闭抽屉、切换选中轮次、插件停用或服务关闭会取消尚未完成的辅助调用，不停止原聊天。

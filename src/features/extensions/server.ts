@@ -4,6 +4,12 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { SkillSession, type SkillProvider, type SkillPlan } from './skill-runtime';
 import type { ContextObserver, ContextRecorder, ContextTurn } from './context-observer';
+import type {
+  ContextProcessor,
+  ContextProcessingInput,
+  ContextProcessingResult,
+  ContextCompletedTurn,
+} from './context-processor';
 import type { MemoryProvider } from './memory-provider';
 import type {
   MemoryCompletedTurn,
@@ -81,6 +87,47 @@ export class ExtensionsService extends Service {
   private stopping = false;
   private skills?: { provider: SkillProvider; abort: AbortController };
   private contextObserver?: ContextObserver;
+  private contextProcessor?: ContextProcessor;
+  private contextCalls = new Set<Promise<unknown>>();
+  registerContextProcessor(processor: ContextProcessor) {
+    if (this.contextProcessor) throw new Error('Context processor already registered');
+    this.contextProcessor = processor;
+    return () => {
+      if (this.contextProcessor === processor) this.contextProcessor = undefined;
+    };
+  }
+  async prepareContext(input: ContextProcessingInput): Promise<ContextProcessingResult> {
+    if (!this.contextProcessor || this.stopping) return { messages: input.messages };
+    try {
+      return await this.contextProcessor.prepare(input);
+    } catch {
+      input.signal.throwIfAborted();
+      const characters = input.messages.reduce((n, message) => n + message.content.length, 0);
+      return {
+        messages: input.messages,
+        compression: {
+          status: 'error',
+          beforeCharacters: characters,
+          afterCharacters: characters,
+          compressedMessages: 0,
+          retainedMessages: input.history.length,
+          threshold: 0,
+          modelName: null,
+          durationMs: 0,
+          usage: null,
+          error: '上下文压缩失败，本轮使用原历史',
+        },
+      };
+    }
+  }
+  completeContext(input: ContextCompletedTurn) {
+    if (!this.contextProcessor || this.stopping || input.response.status !== 'complete') return;
+    const work = this.contextProcessor
+      .complete(input)
+      .catch(() => console.error('Context summary failed'));
+    this.contextCalls.add(work);
+    void work.finally(() => this.contextCalls.delete(work));
+  }
   private memory?: MemoryProvider;
   private memoryRegistration?: string;
   private memoryCalls = new Set<Promise<unknown>>();
@@ -204,6 +251,7 @@ export class ExtensionsService extends Service {
         for (const utility of this.utilities.values()) utility.abort.abort();
         await Promise.allSettled(this.utilityCalls.values());
         await Promise.allSettled(this.memoryCalls);
+        await Promise.allSettled(this.contextCalls);
       }),
     );
   }

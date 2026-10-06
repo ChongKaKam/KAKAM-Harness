@@ -16,6 +16,16 @@ The Fibonacci sequence:
   '\n```\n';
 function extensionText(content: unknown): string | undefined {
   if (typeof content !== 'string') return;
+  if (content.startsWith('Compress conversation history'))
+    return '用户正在完善 Drift Space 的记忆与上下文管理；保留原聊天，按阈值压缩历史，下一步核对设置及实际请求。';
+  if (content.startsWith('Summarize one completed conversation turn'))
+    return content.includes('[bad-trajectory-json]')
+      ? 'not JSON'
+      : JSON.stringify({
+          title: '完善记忆与上下文管理',
+          intent: '希望整理设置并保持对话连续性',
+          answerSummary: '助手说明了记忆召回、历史压缩和后续验证步骤，结论需核对原文。',
+        });
   if (content.startsWith('Select useful saved memories')) {
     const candidates = JSON.parse(content.slice(content.indexOf('Candidates: ') + 12)) as {
       id: string;

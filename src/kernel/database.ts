@@ -254,7 +254,25 @@ export class Database extends Service {
       );
       CREATE INDEX IF NOT EXISTS idx_context_snapshots_owner
         ON context_snapshots(user_id, conversation_id);
+      CREATE TABLE IF NOT EXISTS context_compressions (
+        conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL,
+        settings_hash TEXT NOT NULL,
+        source_hash TEXT NOT NULL,
+        source_count INTEGER NOT NULL CHECK(source_count > 0),
+        summary TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(context_preferences)').some(
+        (c) => c.name === 'config',
+      )
+    )
+      this.connection.exec(
+        "ALTER TABLE context_preferences ADD COLUMN config TEXT NOT NULL DEFAULT '{}'",
+      );
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

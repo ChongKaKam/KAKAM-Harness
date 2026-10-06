@@ -92,6 +92,8 @@ function summary(snapshot: ContextSnapshot): ContextSummary {
     imageCount: snapshot.imageCount,
     requestCount: snapshot.requestCount,
     usage: snapshot.usage,
+    compression: snapshot.compression,
+    trajectory: snapshot.trajectory,
   };
 }
 
@@ -260,6 +262,15 @@ export class ContextStore implements ContextObserver {
         }
         snapshot.sections = sections(session, current, memories, !!request.memory);
         snapshot.memory = request.memory ? structuredClone(request.memory) : undefined;
+        snapshot.compression = request.compression
+          ? structuredClone(request.compression)
+          : undefined;
+        if (
+          request.compression &&
+          ['compressed', 'reused'].includes(request.compression.status) &&
+          session[0]
+        )
+          session[0].label = '历史压缩摘要';
         Object.assign(snapshot, totals(snapshot.sections));
         requests.add(request.callId);
         snapshot.requestCount = requests.size;

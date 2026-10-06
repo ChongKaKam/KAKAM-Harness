@@ -13,6 +13,7 @@
 | [FEATURES.md](FEATURES.md)               | 如何添加一个包含 server / client 的功能，如何扩展服务与 Adapter？ |
 | [UI_GUIDE.md](UI_GUIDE.md)               | 如何新增 UI 组件并继承颜色、字号、布局与交互规范？                |
 | [RELEASE.md](RELEASE.md)                 | 如何规范提交、推送并把指定提交安全部署到当前远端服务器？          |
+| [CONTEXT_MANAGER.md](CONTEXT_MANAGER.md) | 自动压缩、轨迹摘要、用户设置、缓存与手动摘要 API                  |
 | [MEMORY_API.md](MEMORY_API.md)           | 三层记忆的 HTTP API、输入限制、权限、幂等、索引和操作状态         |
 | [MEMORY_AGENTS.md](MEMORY_AGENTS.md)     | 如何新增带配套设置 UI 的记忆策略 / Agent，如何复用托管模型调用？  |
 | [MEMORY_DATABASE.md](MEMORY_DATABASE.md) | 如何接入共享 PostgreSQL、迁移、诊断、备份与恢复？                 |

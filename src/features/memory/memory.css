@@ -17,7 +17,7 @@
   font-size: var(--font-ui);
 }
 .memory-tabs {
-  margin-top: var(--space-6);
+  margin-top: var(--space-3);
   flex-wrap: wrap;
 }
 .memory-settings-form,
@@ -29,10 +29,55 @@
 }
 .memory-settings-section {
   display: grid;
-  gap: var(--space-4);
-  padding-block: var(--space-6);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
   border-bottom: 1px solid var(--line);
   min-width: 0;
+}
+.memory-settings-layout {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  min-width: 0;
+}
+.memory-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.memory-scope-settings {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.memory-scope-settings h3 {
+  margin: 0;
+  font-size: var(--font-ui);
+}
+.memory-prompt-settings {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+}
+.memory-prompt-settings > summary {
+  cursor: pointer;
+  font-size: var(--font-ui);
+}
+.memory-prompt-fields {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+.memory-prompt-fields > .button {
+  justify-self: start;
+}
+@media (min-width: 1200px) {
+  .memory-settings-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    align-items: start;
+  }
 }
 .memory-settings-section h2,
 .memory-indexes h2 {
@@ -57,10 +102,12 @@
   gap: var(--space-2);
   min-width: 0;
   font-size: var(--font-ui);
+  margin: 0;
 }
 .memory-page label.memory-check,
 .memory-editor label.memory-check {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--space-2);
 }
@@ -75,6 +122,8 @@
 }
 .memory-check input {
   margin: 0;
+  width: auto;
+  flex-shrink: 0;
 }
 .memory-strategy-fields,
 .memory-editor-fields {
@@ -179,7 +228,8 @@
   margin-top: var(--space-6);
 }
 @media (max-width: 760px) {
-  .memory-form-grid {
+  .memory-form-grid,
+  .memory-scope-grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .memory-toolbar {

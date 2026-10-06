@@ -6,6 +6,7 @@ import { Empty, ErrorNote, Modal, Spinner } from '../../client/components';
 import { useWorkspace } from '../../client/context';
 import { Markdown } from '../../client/markdown';
 import { CharacterComposition } from './character-composition';
+import { ContextAutomation } from './automation';
 import { MemoryAfterTurn, MemoryTrace } from './memory-trace';
 import type { MessageUsage } from '../../shared/types';
 import type {
@@ -83,10 +84,14 @@ function DrawerContent({
     return () => controller.abort();
   }, [path, revision]);
   useEffect(() => {
-    if (selectedTurn?.status !== 'streaming') return;
+    if (
+      selectedTurn?.status !== 'streaming' &&
+      !turns?.some((turn) => turn.trajectory?.status === 'pending')
+    )
+      return;
     const timer = window.setTimeout(() => setRevision((value) => value + 1), 3000);
     return () => window.clearTimeout(timer);
-  }, [selectedTurn, revision]);
+  }, [selectedTurn, turns, revision]);
   return (
     <div className="context-manager-body">
       <aside className="context-manager-history" aria-label="上下文历史">
@@ -121,7 +126,16 @@ function DrawerContent({
                   size={20}
                   aria-hidden="true"
                 />
-                <span className="context-manager-commit-title">{turn.prompt || '图片提问'}</span>
+                <span className="context-manager-commit-title">
+                  {turn.trajectory?.status === 'ready'
+                    ? turn.trajectory.title
+                    : turn.prompt || '图片提问'}
+                </span>
+                {turn.trajectory?.status === 'ready' && (
+                  <span className="context-manager-commit-intent">
+                    意图 · {turn.trajectory.intent}
+                  </span>
+                )}
                 <span className="context-manager-commit-meta">
                   <code>{turn.messageId.slice(0, 7)}</code> · 记录 {index + 1}
                 </span>
@@ -151,6 +165,7 @@ function DrawerContent({
             revision={revision}
             status={selectedTurn.status}
             conversationId={conversationId}
+            refreshed={() => setRevision((value) => value + 1)}
           />
         ) : (
           turns && (
@@ -170,12 +185,14 @@ function SnapshotContent({
   revision,
   status,
   conversationId,
+  refreshed,
 }: {
   path: string;
   selected: string;
   revision: number;
   status: ContextSummary['status'];
   conversationId: string;
+  refreshed(): void;
 }) {
   const { features } = useWorkspace();
   const [snapshot, setSnapshot] = useState<ContextSnapshot>();
@@ -207,7 +224,11 @@ function SnapshotContent({
                 {statusLabels[snapshot.status]}
               </span>
             </div>
-            <h3>{snapshot.prompt || '图片提问'}</h3>
+            <h3>
+              {snapshot.trajectory?.status === 'ready'
+                ? snapshot.trajectory.title
+                : snapshot.prompt || '图片提问'}
+            </h3>
             <p className="context-manager-caption">
               {snapshot.modelName} · {date(snapshot.createdAt)}
             </p>
@@ -236,6 +257,7 @@ function SnapshotContent({
               为本轮回答模型各次请求的上报合计。
             </p>
           </header>
+          <ContextAutomation snapshot={snapshot} path={path} refreshed={refreshed} />
           <CharacterComposition snapshot={snapshot} />
           {snapshot.memory && (
             <MemoryTrace memory={snapshot.memory} conversationId={conversationId} />

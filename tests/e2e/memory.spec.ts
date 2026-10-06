@@ -123,6 +123,7 @@ test('memory settings, paired strategy panel and manual CRUD work on desktop and
     await expect(page.getByRole('heading', { name: '策略内部设置', exact: true })).toBeVisible();
     await page.getByRole('spinbutton', { name: '检索候选数量', exact: true }).fill('24');
     const recallPrompt = page.getByRole('textbox', { name: '检索 Prompt', exact: true });
+    await page.getByText('Prompt 微调', { exact: true }).click();
     await recallPrompt.fill('Edited prompt with {{context}} and {{candidates}} for a test.');
     await page.getByRole('button', { name: '恢复默认检索 Prompt', exact: true }).click();
     await expect(recallPrompt).toHaveValue(originalConfig.config.recallPrompt);

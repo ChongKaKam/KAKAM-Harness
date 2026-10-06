@@ -94,52 +94,57 @@ export function DefaultMemorySettings({
           </select>
         </label>
       </div>
-      <label>
-        检索 Prompt
-        <textarea
-          className="memory-prompt-editor"
-          rows={10}
-          minLength={20}
-          maxLength={20000}
-          required
-          value={config.recallPrompt}
-          onChange={(event) => update('recallPrompt', event.target.value)}
-        />
-      </label>
-      <p className="memory-caption">
-        保留 {'{{context}}'} 与 {'{{candidates}}'} 占位符，可用 {'{{maxItems}}'}。输出 JSON selected
-        数组，每项为候选 id 和 reason。
-      </p>
-      <button
-        type="button"
-        className="button"
-        onClick={() => update('recallPrompt', defaults.recallPrompt)}
-      >
-        恢复默认检索 Prompt
-      </button>
-      <label>
-        抽取 Prompt
-        <textarea
-          className="memory-prompt-editor"
-          rows={10}
-          minLength={20}
-          maxLength={20000}
-          required
-          value={config.extractPrompt}
-          onChange={(event) => update('extractPrompt', event.target.value)}
-        />
-      </label>
-      <p className="memory-caption">
-        保留 {'{{context}}'}。输出 JSON memories 数组，每项包含 scope、kind、content、evidence 和
-        tags；写入模式由上方设置决定。
-      </p>
-      <button
-        type="button"
-        className="button"
-        onClick={() => update('extractPrompt', defaults.extractPrompt)}
-      >
-        恢复默认抽取 Prompt
-      </button>
+      <details className="memory-prompt-settings">
+        <summary>Prompt 微调</summary>
+        <div className="memory-prompt-fields">
+          <label>
+            检索 Prompt
+            <textarea
+              className="memory-prompt-editor"
+              rows={10}
+              minLength={20}
+              maxLength={20000}
+              required
+              value={config.recallPrompt}
+              onChange={(event) => update('recallPrompt', event.target.value)}
+            />
+          </label>
+          <p className="memory-caption">
+            保留 {'{{context}}'} 与 {'{{candidates}}'} 占位符，可用 {'{{maxItems}}'}。输出 JSON
+            selected 数组，每项为候选 id 和 reason。
+          </p>
+          <button
+            type="button"
+            className="button"
+            onClick={() => update('recallPrompt', defaults.recallPrompt)}
+          >
+            恢复默认检索 Prompt
+          </button>
+          <label>
+            抽取 Prompt
+            <textarea
+              className="memory-prompt-editor"
+              rows={10}
+              minLength={20}
+              maxLength={20000}
+              required
+              value={config.extractPrompt}
+              onChange={(event) => update('extractPrompt', event.target.value)}
+            />
+          </label>
+          <p className="memory-caption">
+            保留 {'{{context}}'}。输出 JSON memories 数组，每项包含 scope、kind、content、evidence
+            和 tags；写入模式由上方设置决定。
+          </p>
+          <button
+            type="button"
+            className="button"
+            onClick={() => update('extractPrompt', defaults.extractPrompt)}
+          >
+            恢复默认抽取 Prompt
+          </button>
+        </div>
+      </details>
     </fieldset>
   );
 }

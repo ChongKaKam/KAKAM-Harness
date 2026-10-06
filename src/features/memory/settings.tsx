@@ -17,12 +17,44 @@ export function MemorySettings({
   saved(): void;
 }) {
   const [preferences, setPreferences] = useState(initial);
+  const [persisted, setPersisted] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const selected = strategies.find((item) => item.id === preferences.strategyId);
   const paired = selected && memoryStrategyClient(selected);
   const available = models.filter((model) => model.enabled);
+  const dirty = JSON.stringify(preferences) !== JSON.stringify(persisted);
+  const prerequisites =
+    !preferences.embeddingModelId || !preferences.recallModelId
+      ? '启用前请选择 Embedding 和记忆检索 LLM。'
+      : Object.values(preferences.writeModes).some((mode) => mode !== 'off') &&
+          !preferences.extractModelId
+        ? '启用抽取前请选择记忆抽取 LLM。'
+        : '';
+  async function persist(next: MemoryPreferences) {
+    if (busy) return;
+    if (next.enabled && (!paired || prerequisites)) {
+      setError(!paired ? '此策略缺少配套设置界面，请重新选择。' : prerequisites);
+      return;
+    }
+    setBusy(true);
+    setPreferences(next);
+    setError('');
+    setMessage('');
+    try {
+      const result = await patch<MemoryPreferences>('/memory/v1/preferences', next);
+      setPreferences(result);
+      setPersisted(result);
+      setMessage('记忆设置已保存');
+      saved();
+    } catch (error) {
+      setPreferences({ ...next, enabled: persisted.enabled });
+      setError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   const modelField = (
     key: 'embeddingModelId' | 'recallModelId' | 'extractModelId',
     label: string,
@@ -58,154 +90,149 @@ export function MemorySettings({
       </label>
     );
   };
-  const missing = [
-    preferences.embeddingModelId,
-    preferences.recallModelId,
-    preferences.extractModelId,
-  ].some((id) => !!id && !available.some((model) => model.id === id));
   return (
-    <>
+    <div className="memory-settings-layout">
       <form
         className="memory-settings-form"
-        onSubmit={async (event) => {
+        onSubmit={(event) => {
           event.preventDefault();
-          if (busy || missing || !paired) return;
-          setBusy(true);
-          setError('');
-          setMessage('');
-          try {
-            await patch('/memory/v1/preferences', preferences);
-            setMessage('记忆设置已保存');
-            saved();
-          } catch (error) {
-            setError((error as Error).message);
-          } finally {
-            setBusy(false);
-          }
+          void persist(preferences);
         }}
       >
-        <section className="memory-settings-section">
-          <h2>对话记忆</h2>
+        <section className="memory-settings-section memory-overview">
+          <div className="memory-item-heading">
+            <div>
+              <h2>对话记忆</h2>
+              <p className="memory-caption" role="status">
+                {busy
+                  ? '正在保存对话记忆设置…'
+                  : persisted.enabled
+                    ? '对话记忆已启用'
+                    : '对话记忆已关闭'}
+                {dirty ? ' · 模型与策略配置有未保存修改' : ''}
+              </p>
+            </div>
+            <button className="button primary" type="submit" disabled={busy || !dirty}>
+              {busy ? '保存中…' : '保存记忆设置'}
+            </button>
+          </div>
           <label className="memory-check">
             <input
               type="checkbox"
               checked={preferences.enabled}
               disabled={busy}
-              onChange={(event) =>
-                setPreferences({ ...preferences, enabled: event.target.checked })
-              }
+              onChange={(event) => void persist({ ...preferences, enabled: event.target.checked })}
             />
             启用对话召回与抽取
           </label>
-          <p className="muted">
-            发送前召回已保存的记忆，回答完成后抽取新记忆。辅助 LLM 与 embedding 调用计入实际用量。
+          <p className="memory-caption">
+            开关立即保存并从下一次发送生效；模型与策略修改需点击保存。发送前召回，回答完成后抽取，辅助模型调用计入实际用量。
           </p>
-          <div className="memory-form-grid">
+          <ErrorNote text={error} />
+          {prerequisites && !error && <p className="memory-caption">{prerequisites}</p>}
+          {message && (
+            <span role="status" className="memory-caption">
+              {message}
+            </span>
+          )}
+        </section>
+        <section className="memory-settings-section">
+          <h2>模型与策略</h2>
+          <div className="memory-form-grid memory-model-grid">
             {modelField('embeddingModelId', 'Embedding 模型', 'embedding')}
             {modelField('recallModelId', '记忆检索 LLM', 'llm')}
             {modelField('extractModelId', '记忆抽取 LLM', 'llm')}
+            <label>
+              当前策略
+              <select
+                value={preferences.strategyId}
+                disabled={busy}
+                onChange={(event) =>
+                  setPreferences({ ...preferences, strategyId: event.target.value })
+                }
+              >
+                {!selected && (
+                  <option value={preferences.strategyId} disabled>
+                    原策略不可用，请重新选择
+                  </option>
+                )}
+                {strategies.map((strategy) => (
+                  <option
+                    key={strategy.id}
+                    value={strategy.id}
+                    disabled={!memoryStrategyClient(strategy)}
+                  >
+                    {strategy.name} · v{strategy.version}
+                    {!memoryStrategyClient(strategy) ? '（缺少设置界面）' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <p className="memory-caption">
-            供应商、密钥和模型授权在现有模型管理中设置。Embedding
-            模型切换后需重建新向量空间；旧向量不会混用。
+            {selected?.description}。供应商与授权沿用模型管理；切换 Embedding 后需重建索引。
           </p>
-        </section>
-        <section className="memory-settings-section">
-          <h2>记忆策略 / Agent</h2>
-          <label>
-            当前策略
-            <select
-              value={preferences.strategyId}
-              disabled={busy}
-              onChange={(event) =>
-                setPreferences({ ...preferences, strategyId: event.target.value })
-              }
-            >
-              {!selected && (
-                <option value={preferences.strategyId} disabled>
-                  原策略不可用，请重新选择
-                </option>
-              )}
-              {strategies.map((strategy) => (
-                <option
-                  key={strategy.id}
-                  value={strategy.id}
-                  disabled={!memoryStrategyClient(strategy)}
-                >
-                  {strategy.name} · v{strategy.version}
-                  {!memoryStrategyClient(strategy) ? '（缺少设置界面）' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="muted">{selected?.description}</p>
-          {!paired && <ErrorNote text="此策略没有配套设置界面，无法启用。请选用完整注册的策略。" />}
         </section>
         <section className="memory-settings-section">
           <h2>抽取与保留</h2>
-          <div className="memory-form-grid">
+          <div className="memory-scope-grid">
             {(['user', 'group', 'session'] as const).map((scope) => (
-              <label key={scope}>
-                {{ user: '长期记忆', group: '分组记忆', session: 'Session 记忆' }[scope]}写入方式
-                <select
-                  value={preferences.writeModes[scope]}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setPreferences({
-                      ...preferences,
-                      writeModes: {
-                        ...preferences.writeModes,
-                        [scope]: event.target.value as MemoryWriteMode,
-                      },
-                    })
-                  }
-                >
-                  <option value="off">不抽取</option>
-                  <option value="confirm">抽取候选，确认后保存</option>
-                  <option value="auto">自动保存</option>
-                </select>
-              </label>
-            ))}
-            {(['group', 'session'] as const).map((scope) => (
-              <label key={scope}>
-                {scope === 'group' ? '分组' : 'Session'}闲置保留（天）
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  max={3650}
-                  disabled={busy}
-                  value={preferences.retentionDays[scope]}
-                  onChange={(event) =>
-                    setPreferences({
-                      ...preferences,
-                      retentionDays: {
-                        ...preferences.retentionDays,
-                        [scope]: Number(event.target.value),
-                      },
-                    })
-                  }
-                />
-              </label>
+              <div className="memory-scope-settings" key={scope}>
+                <h3>{{ user: '长期记忆', group: '分组记忆', session: 'Session 记忆' }[scope]}</h3>
+                <label>
+                  {{ user: '长期记忆', group: '分组记忆', session: 'Session 记忆' }[scope]}写入方式
+                  <select
+                    value={preferences.writeModes[scope]}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setPreferences({
+                        ...preferences,
+                        writeModes: {
+                          ...preferences.writeModes,
+                          [scope]: event.target.value as MemoryWriteMode,
+                        },
+                      })
+                    }
+                  >
+                    <option value="off">不抽取</option>
+                    <option value="confirm">候选确认后保存</option>
+                    <option value="auto">自动保存</option>
+                  </select>
+                </label>
+                {scope === 'user' ? (
+                  <p className="memory-caption">默认长期保留</p>
+                ) : (
+                  <label>
+                    {scope === 'group' ? '分组' : 'Session'}闲置保留（天）
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={3650}
+                      disabled={busy}
+                      value={preferences.retentionDays[scope]}
+                      onChange={(event) =>
+                        setPreferences({
+                          ...preferences,
+                          retentionDays: {
+                            ...preferences.retentionDays,
+                            [scope]: Number(event.target.value),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                )}
+              </div>
             ))}
           </div>
           <p className="memory-caption">
-            长期记忆默认长期保留。分组与 Session
-            记忆按照范围的最近活动时间清理；召回近期窗口单独设置。
+            分组与 Session 按最近活动时间清理；召回近期窗口由策略单独设置。
           </p>
         </section>
-        <ErrorNote text={error} />
-        <div className="memory-actions">
-          <span role="status" className="memory-caption">
-            {message}
-          </span>
-          <button className="button primary" type="submit" disabled={busy || missing || !paired}>
-            {busy ? '保存中…' : '保存记忆设置'}
-          </button>
-        </div>
       </form>
       {selected && paired && <StrategyConfiguration key={selected.id} strategy={selected} />}
-    </>
+    </div>
   );
 }
 

@@ -199,9 +199,10 @@ test('snapshots preserve exact sections, private ownership and replaced attempts
 
   assert.equal((await request(handoffPath(id), 'POST', { messageId: first })).status, 400);
   await json('/context-manager/preferences', 'PATCH', { handoffModelId: models.get('test-text') });
-  assert.deepEqual(await json('/context-manager/preferences', 'GET', undefined, admin), {
-    handoffModelId: null,
-  });
+  assert.equal(
+    (await json('/context-manager/preferences', 'GET', undefined, admin)).handoffModelId,
+    null,
+  );
   const handoff = await json(handoffPath(id), 'POST', { messageId: first });
   assert.equal(handoff.throughMessageId, first);
   assert.match(handoff.markdown, /意图|进度/);

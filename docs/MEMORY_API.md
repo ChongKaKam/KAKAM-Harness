@@ -64,7 +64,7 @@ preferences 默认：
 }
 ```
 
-启用必须选择可用 embedding 和检索 LLM；任一写入模式不为 off 时还需抽取 LLM。保存模型 ID 和每次调用都校验启用、类型、用户授权。保留天数为 1–3650；长期默认 expiresAt=null，分组 / Session 清理由最近活动和此设置控制。启用 / 停用的是本用户聊天召回与自动抽取，显式管理、搜索、提取和重建 API 仍可使用。
+设置页的对话记忆开关立即提交并显示服务器生效状态，失败回退并在开关附近说明原因；其他配置显式保存。启用必须选择可用 embedding 和检索 LLM；任一写入模式不为 off 时还需抽取 LLM。保存模型 ID 和每次调用都校验启用、类型、用户授权。保留天数为 1–3650；长期默认 expiresAt=null，分组 / Session 清理由最近活动和此设置控制。启用 / 停用的是本用户聊天召回与自动抽取，显式管理、搜索、提取和重建 API 仍可使用。
 
 策略 info 含 id、name、description、version、configVersion、capabilities、settingsKey、defaultConfig。新增策略必须配套设置 UI；HTTP 不装载 React，不提供在线新增策略接口。未知策略读取为 404，preferences 选择未注册策略为 400。策略 config 序列化长度最多 64000 字符；版本冲突为 409，不覆盖草稿。default 的 scopeLimits 支持局部合并，其他自定义策略的嵌套合并由其配置设计决定。
 

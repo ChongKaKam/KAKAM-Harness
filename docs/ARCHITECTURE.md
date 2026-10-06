@@ -47,7 +47,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `usage`           | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
 | `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
 | `prompts`         | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入    | 工作区                         |
-| `context-manager` | plugin | 每轮上下文快照、交互轨迹与 LLM hand-off           | 回复抽屉 / 设置                |
+| `context-manager` | plugin | 历史压缩、上下文快照、节点摘要与 LLM hand-off     | 回复抽屉 / 设置                |
 | `memory`          | plugin | 三层记忆、pgvector 召回、LLM 抽取、策略配置和 API | 设置；上下文抽屉展示实际注入   |
 
 Models 的管理页受管理员限制，但已授权模型列表 API 向普通用户开放；不能把整个 models feature 的 HTTP 接口统一锁成管理员专用。Core / Plugin 是生命周期分类，`adminOnly` 是目录可见性，两者不是同一个维度。
@@ -243,7 +243,7 @@ chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可�
 
 ## 上下文快照与交接
 
-`context-manager` 向 extensions 注册只读观察器，由 chat 在接受一轮、每次回答模型请求前、生成结束时通知。核心只持有观察契约，不依赖可选插件；记录与 hand-off 都不改变后续聊天的输入，也不负责记忆注入；记忆注入由独立 Memory provider 完成。原始历史 / 当前提问先形成快照，之后替换为最近一次回答模型请求的组成，含实际发送的 Skill、Search 和可见工具上下文；请求计数为 0 时表示输入尚未发送。供应商续接的 reasoning / thinking 签名等不透明数据仍只留在当前生成内存，不进入快照或交接模型。观察器持久化失败只记录通用错误，不使正常聊天失败。
+`context-manager` 向 extensions 注册只读观察器，由 chat 在接受一轮、每次回答模型请求前、生成结束时通知。核心持有观察与可选处理契约，不依赖插件服务；观察器和 Hand-off 不改变输入，压缩由独立 `ContextProcessor.prepare` 在发送前替换历史前缀，Memory 注入仍由独立 provider 完成。完成回答后 `complete` 调度节点摘要，辅助调用与关闭过程由 extensions 托管。设置、缓存来源校验、失败降级和 API 见 [上下文管理](CONTEXT_MANAGER.md)。原始历史 / 当前提问先形成快照，之后替换为最近一次回答模型请求的组成，含实际发送的 Skill、Search 和可见工具上下文；请求计数为 0 时表示输入尚未发送。供应商续接的 reasoning / thinking 签名等不透明数据仍只留在当前生成内存，不进入快照或交接模型。观察器持久化失败只记录通用错误，不使正常聊天失败。
 
 快照是用户私有的对话审计记录。编辑 / 重试以新助手消息 ID 保存新轮次，旧快照保留，关联到被替换轮次；删除对话时级联删除。查询与 hand-off 同时限定用户与对话，管理员权限不能绕过。停用只撤销观察器以阻止新捕获，已接受轮次的 recorder 可继续保存结果，普通聊天不受影响；重启不恢复生成，重新启用根据持久化消息状态整理遗留记录。没有捕获的历史不凭当前聊天伪造过去快照。
 

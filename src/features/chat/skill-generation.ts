@@ -4,6 +4,7 @@ import type { ExtensionCall, User, ReasoningEffort } from '../../shared/types';
 import type { ProviderMessage, ToolStep, ToolTurn } from '../../adapters/registry';
 import type { SkillSession } from '../extensions/skill-runtime';
 import type { ContextRecorder } from '../extensions/context-observer';
+import type { ContextCompression } from '../../shared/context';
 import type { MemoryPreparation, MemoryContextRange } from '../../shared/memory';
 import { skillLimits, type SkillRead } from '../skills/types';
 import { HttpError } from '../../kernel/http';
@@ -31,6 +32,7 @@ export async function generateReply(
     signal: AbortSignal;
     session?: SkillSession;
     recorder?: ContextRecorder;
+    compression?: ContextCompression;
     memory?: MemoryPreparation;
     memoryRanges?: MemoryContextRange[];
     calls: ExtensionCall[];
@@ -83,6 +85,7 @@ export async function generateReply(
         steps: steps.map(({ text, turn, results }) => ({ text, calls: turn.calls, results })),
         memory: options.memory,
         memoryRanges: options.memoryRanges,
+        compression: options.compression,
       });
       if (round === 0 && options.memory?.operationId)
         void ctx.extensions.memoryApplied(user, options.memory.operationId);

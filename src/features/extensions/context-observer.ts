@@ -1,6 +1,7 @@
 import type { ProviderMessage, ToolDefinition } from '../../adapters/registry';
 import type { Message, ReasoningEffort, User } from '../../shared/types';
 import type { MemoryContextRange, MemoryPreparation } from '../../shared/memory';
+import type { ContextCompression } from '../../shared/context';
 
 /** Optional, synchronous audit observer. It never modifies provider input. */
 export interface ContextTurn {
@@ -17,6 +18,7 @@ export interface ContextTurn {
 }
 
 export interface ContextRequest {
+  compression?: ContextCompression;
   memory?: MemoryPreparation;
   memoryRanges?: MemoryContextRange[];
   callId: string;
