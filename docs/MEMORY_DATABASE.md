@@ -109,11 +109,11 @@ docker compose --env-file .env config --quiet
 curl --fail --silent http://127.0.0.1:3600/api/health/memory
 ```
 
-`deploy.sh` 构建镜像，发现 `.env` 配置 Memory 后以应用账号运行一次迁移，再更新 app，并执行只读数据库检查。首次分配失败会在替换应用前停止。若手动拆分同一流程：
+`deploy.sh` 构建镜像，发现 `.env` 配置 Memory 后以应用账号非交互运行一次迁移，再更新 app，并执行只读数据库检查。迁移命令禁用 TTY 且标准输入来自 `/dev/null`，避免批量 SSH 部署吞掉后续核验命令。首次分配失败会在替换应用前停止。若手动拆分同一流程：
 
 ```bash
 docker compose --env-file .env build app
-docker compose --env-file .env run --rm --no-deps app node dist/server/memory-db.js migrate
+docker compose --env-file .env run --rm --no-deps -T app node dist/server/memory-db.js migrate < /dev/null
 docker compose --env-file .env up -d --wait app
 docker compose --env-file .env exec -T app node dist/server/memory-db.js check
 ```

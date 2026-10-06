@@ -41,7 +41,7 @@ if grep -Eq '^MEMORY_DATABASE_URL=.+$' .env; then
     "${drift_compose[@]}" up -d --wait --wait-timeout 180 memory-db
   fi
   # Runs with the application role on its configured network before replacing the app.
-  "${drift_compose[@]}" run --rm --no-deps app node dist/server/memory-db.js migrate
+  "${drift_compose[@]}" run --rm --no-deps -T app node dist/server/memory-db.js migrate < /dev/null
 fi
 "${drift_compose[@]}" up -d --wait --wait-timeout 180
 if grep -Eq '^MEMORY_DATABASE_URL=.+$' .env; then
