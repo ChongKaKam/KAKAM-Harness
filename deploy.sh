@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Deployment is non-interactive; nested Compose commands must not consume an SSH batch script.
+exec < /dev/null
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 command -v docker >/dev/null || { echo '请先安装 Docker Engine / Docker Desktop。' >&2; exit 1; }
 docker compose version >/dev/null

@@ -109,13 +109,13 @@ docker compose --env-file .env config --quiet
 curl --fail --silent http://127.0.0.1:3600/api/health/memory
 ```
 
-`deploy.sh` 构建镜像，发现 `.env` 配置 Memory 后以应用账号非交互运行一次迁移，再更新 app，并执行只读数据库检查。迁移命令禁用 TTY 且标准输入来自 `/dev/null`，避免批量 SSH 部署吞掉后续核验命令。首次分配失败会在替换应用前停止。若手动拆分同一流程：
+`deploy.sh` 构建镜像，发现 `.env` 配置 Memory 后以应用账号非交互运行一次迁移，再更新 app，并执行只读数据库检查。部署脚本整体关闭标准输入，数据库命令禁用 TTY，避免 Compose run / exec 吞掉批量 SSH 部署的后续核验命令。首次分配失败会在替换应用前停止。若手动拆分同一流程：
 
 ```bash
 docker compose --env-file .env build app
 docker compose --env-file .env run --rm --no-deps -T app node dist/server/memory-db.js migrate < /dev/null
 docker compose --env-file .env up -d --wait app
-docker compose --env-file .env exec -T app node dist/server/memory-db.js check
+docker compose --env-file .env exec -T app node dist/server/memory-db.js check < /dev/null
 ```
 
 通过现有设置页进行一次手动记忆保存、读取、编辑和删除，确认属于当前用户；在配置授权的 Embedding 后验证实际维度与召回（实际模型调用可能产生费用，不用生产模型作为自动测试夹具）。在 Monitor 数据库管理页核对专属数据库、受限账号授权、app 容器及当前连接；等待约 5–10 秒采样后刷新。短连接没有出现在采样快照里不等于故障。
