@@ -152,6 +152,8 @@ npm run format:check
 
 `npm run build` 已包含类型检查。Node 测试位于 `tests/*.test.ts(x)`，使用临时目录。Playwright 通过 `tests/e2e-server.ts` 启动隔离应用（3210）与模拟模型（3211），客户端读取 **已构建的 `dist/client`**；改 UI 后不重建会测到旧页面。
 
+依赖或锁文件变化时，额外使用部署镜像所用的 npm 版本运行 `npm ci --dry-run --ignore-scripts --no-audit --no-fund`，检查干净安装的依赖闭包；已有 node_modules 下构建通过不能证明锁文件完整。若本机 npm 与镜像版本不同，应使用对应版本的临时 npm CLI 校验，不通过修改服务器工作树或跳过 `npm ci` 解决缺项。
+
 默认浏览器为已安装的 Chrome，配置在 `playwright.config.ts`；可用 `npx playwright install chromium` 后执行 `PW_CHANNEL=chromium npm run test:e2e`。E2E 默认顺序执行，有共享初始化与限速约束，不应随意增加并发。模型选择等共用浏览器操作放 `tests/e2e/controls.ts`。
 
 `tests/streaming-latency.test.ts` 验证文本先于结束事件交付；`tests/e2e/model-connections.spec.ts` 验证来源草稿探测、紧凑列表、模型诊断与明暗 / 字号 / 手机布局。自动回归使用模拟服务；用户授权的真实供应商耗时测量单独执行，不能将密钥写入测试或日志。
