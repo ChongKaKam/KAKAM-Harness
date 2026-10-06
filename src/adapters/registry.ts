@@ -1,5 +1,11 @@
 import { Service, type Context } from 'cordis';
-import type { Attachment, ApiMode, ReasoningEffort, MessageUsage } from '../shared/types';
+import type {
+  Attachment,
+  ApiMode,
+  ReasoningEffort,
+  MessageUsage,
+  EmbeddingResult,
+} from '../shared/types';
 import type { ProviderDiagnostics } from './diagnostics';
 export interface ProviderConnection {
   baseUrl: string;
@@ -40,6 +46,13 @@ export interface DecisionInput {
 export type DecisionEvent =
   { type: 'decision'; enabled: boolean } | { type: 'usage'; usage: TokenUsage };
 export interface ModelAdapter {
+  embed?(
+    connection: ProviderConnection,
+    model: string,
+    inputs: string[],
+    signal: AbortSignal,
+    dimensions?: number,
+  ): Promise<EmbeddingResult>;
   generateTurn?(
     connection: ProviderConnection,
     model: string,

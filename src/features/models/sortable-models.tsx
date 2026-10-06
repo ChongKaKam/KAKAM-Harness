@@ -62,7 +62,9 @@ function ModelCells({
       <td data-label="来源">{model.providerName}</td>
       <td data-label="能力">
         <span className="badge">
-          {model.kind === 'jev' ? (
+          {model.kind === 'embedding' ? (
+            `Embedding · ${model.validatedDimensions ?? '未验证'}${model.validatedDimensions ? ' 维' : ''}`
+          ) : model.kind === 'jev' ? (
             'Jev 决策'
           ) : model.vision ? (
             <>
@@ -181,7 +183,7 @@ export function SortableModels({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const defaultId = items.find((model) => model.enabled && model.kind !== 'jev')?.id;
+  const defaultId = items.find((model) => model.enabled && model.kind === 'llm')?.id;
   const rowProps = { disabled: saving, onEdit, onDelete, reducedMotion };
   const label = (id: string | number) => items.find((m) => m.id === id)?.label ?? '模型';
   const announcements: Announcements = {

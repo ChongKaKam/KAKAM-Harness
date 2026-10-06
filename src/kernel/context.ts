@@ -1,4 +1,5 @@
 import type { ExtensionsService } from '../features/extensions/server';
+import type { MemoryManager } from '../features/memory/manager';
 import type { Database } from './database';
 import type { HttpService } from './http';
 import type { AuthService } from '../features/auth/server';
@@ -9,6 +10,7 @@ declare module 'cordis' {
   interface Context {
     db: Database;
     extensions: ExtensionsService;
+    memory: MemoryManager;
     http: HttpService;
     auth: AuthService;
     models: ModelsService;

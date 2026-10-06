@@ -4,6 +4,8 @@ import type { ProviderMessage } from '../../adapters/registry';
 import type { ExtensionCall, Message, MessageUsage } from '../../shared/types';
 import type { ContextObserver, ContextRequest, ContextTurn } from '../extensions/context-observer';
 import type { ContextEntry, ContextSection, ContextSnapshot, ContextSummary } from './types';
+import { splitMemoryContext } from './memory-sections';
+import { redactMemorySnapshot } from '../extensions/memory-context';
 
 interface StoredSnapshot extends ContextSnapshot {
   evidence: Pick<Message, 'skills' | 'skillReads' | 'extensions' | 'calls'>;
@@ -37,20 +39,35 @@ function section(
     imageCount: entries.reduce((sum, item) => sum + item.images.length, 0),
   };
 }
-function sections(session: ContextEntry[], current: ContextEntry): ContextSection[] {
+function sections(
+  session: ContextEntry[],
+  current: ContextEntry,
+  memories: ContextEntry[] = [],
+  hasMemory = false,
+): ContextSection[] {
   return [
     section('system', 'System prompt', '应用当前未向模型注入独立 System prompt。', []),
     section(
       'long-term',
       '长期记忆',
-      '当前未实现长期记忆注入；已保存的对话轨迹不会自动注入模型。',
-      [],
+      '本轮实际注入的用户长期记忆；未选中的记忆不在此处展示。',
+      memories.filter((item) => item.memoryScope === 'user'),
     ),
+    ...(hasMemory
+      ? [
+          section(
+            'group',
+            '分组记忆',
+            '本轮实际注入的当前分组记忆。',
+            memories.filter((item) => item.memoryScope === 'group'),
+          ),
+        ]
+      : []),
     section(
       'session',
       'Session 记忆',
       '实际发送的历史消息、本轮 Skill / Search 追加内容及工具定义、调用和结果；不含供应商私有推理。',
-      session,
+      [...memories.filter((item) => item.memoryScope === 'session'), ...session],
     ),
     section('current', '当前 prompt', '本轮原始用户输入；图片只保存名称和文件字节数。', [current]),
   ];
@@ -80,6 +97,7 @@ function summary(snapshot: ContextSnapshot): ContextSummary {
 
 /** Audit storage only: this observer never changes a provider request. */
 export class ContextStore implements ContextObserver {
+  private redactedIds = new Map<string, Set<string>>();
   constructor(private db: Database) {
     // Chat marks interrupted messages before this plugin starts. Re-enabling the plugin
     // while an accepted turn is still running must leave its recorder intact.
@@ -177,7 +195,8 @@ export class ContextStore implements ContextObserver {
       input.createdAt,
       JSON.stringify(snapshot),
     );
-    const save = () =>
+    const save = () => {
+      for (const id of this.redactedIds.get(input.user.id) ?? []) this.eraseMemory(snapshot, id);
       this.db.run(
         'UPDATE context_snapshots SET snapshot=? WHERE message_id=? AND conversation_id=? AND user_id=?',
         JSON.stringify(snapshot),
@@ -185,6 +204,7 @@ export class ContextStore implements ContextObserver {
         input.conversationId,
         input.user.id,
       );
+    };
     const requests = new Set<string>();
     return {
       request: (request: ContextRequest) => {
@@ -192,10 +212,11 @@ export class ContextStore implements ContextObserver {
         const session = request.messages
           .slice(0, -1)
           .map((message, index) => entry(`历史消息 ${index + 1}`, message));
+        const memories: ContextEntry[] = [];
         if (last) {
-          const appended = last.content.startsWith(current.content)
-            ? last.content.slice(current.content.length)
-            : last.content;
+          const split = splitMemoryContext(last.content, current.content, request.memoryRanges);
+          memories.push(...split.entries);
+          const appended = split.appended;
           if (appended)
             session.push({
               label: last.content.startsWith(current.content)
@@ -237,7 +258,8 @@ export class ContextStore implements ContextObserver {
               images: [],
             });
         }
-        snapshot.sections = sections(session, current);
+        snapshot.sections = sections(session, current, memories, !!request.memory);
+        snapshot.memory = request.memory ? structuredClone(request.memory) : undefined;
         Object.assign(snapshot, totals(snapshot.sections));
         requests.add(request.callId);
         snapshot.requestCount = requests.size;
@@ -257,6 +279,29 @@ export class ContextStore implements ContextObserver {
         save();
       },
     };
+  }
+
+  redactMemory(userId: string, memoryId: string) {
+    const ids = this.redactedIds.get(userId) ?? new Set<string>();
+    ids.add(memoryId);
+    this.redactedIds.set(userId, ids);
+    for (const row of this.db.all<{ messageId: string; snapshot: string }>(
+      'SELECT message_id AS messageId,snapshot FROM context_snapshots WHERE user_id=?',
+      userId,
+    )) {
+      const snapshot: StoredSnapshot = JSON.parse(row.snapshot);
+      if (!this.eraseMemory(snapshot, memoryId)) continue;
+      this.db.run(
+        'UPDATE context_snapshots SET snapshot=? WHERE message_id=? AND user_id=?',
+        JSON.stringify(snapshot),
+        row.messageId,
+        userId,
+      );
+    }
+  }
+
+  private eraseMemory(snapshot: StoredSnapshot, memoryId: string) {
+    return redactMemorySnapshot(snapshot, memoryId);
   }
 
   own(userId: string, conversationId: string) {

@@ -1,5 +1,6 @@
 import type { ProviderMessage, ToolDefinition } from '../../adapters/registry';
 import type { Message, ReasoningEffort, User } from '../../shared/types';
+import type { MemoryContextRange, MemoryPreparation } from '../../shared/memory';
 
 /** Optional, synchronous audit observer. It never modifies provider input. */
 export interface ContextTurn {
@@ -16,6 +17,8 @@ export interface ContextTurn {
 }
 
 export interface ContextRequest {
+  memory?: MemoryPreparation;
+  memoryRanges?: MemoryContextRange[];
   callId: string;
   messages: ProviderMessage[];
   tools: ToolDefinition[];
@@ -34,4 +37,6 @@ export interface ContextRecorder {
 
 export interface ContextObserver {
   begin(input: ContextTurn): ContextRecorder;
+  /** Removes copied memory text from audit snapshots after a user deletes a memory. */
+  redactMemory?(userId: string, memoryId: string): void;
 }

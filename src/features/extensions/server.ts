@@ -4,6 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { SkillSession, type SkillProvider, type SkillPlan } from './skill-runtime';
 import type { ContextObserver, ContextRecorder, ContextTurn } from './context-observer';
+import type { MemoryProvider } from './memory-provider';
+import type {
+  MemoryCompletedTurn,
+  MemoryPreparation,
+  MemoryScope,
+  MemoryTurnInput,
+} from '../../shared/memory';
+import { redactMemorySnapshots } from './memory-context';
 import type { SkillSelection } from '../skills/types';
 import { HttpError, requireAdmin, requireUser } from '../../kernel/http';
 import type { ProviderMessage, TokenUsage } from '../../adapters/registry';
@@ -73,6 +81,73 @@ export class ExtensionsService extends Service {
   private stopping = false;
   private skills?: { provider: SkillProvider; abort: AbortController };
   private contextObserver?: ContextObserver;
+  private memory?: MemoryProvider;
+  private memoryRegistration?: string;
+  private memoryCalls = new Set<Promise<unknown>>();
+  registerMemoryProvider(provider: MemoryProvider) {
+    if (this.memory) throw new Error('Memory provider already registered');
+    const registration = randomUUID();
+    this.memory = provider;
+    this.memoryRegistration = registration;
+    return () => {
+      // Cordis may expose a Service through a scoped proxy; compare the registration token.
+      if (this.memoryRegistration === registration) {
+        this.memory = undefined;
+        this.memoryRegistration = undefined;
+      }
+    };
+  }
+  async prepareMemory(input: MemoryTurnInput): Promise<MemoryPreparation | undefined> {
+    if (!this.memory || this.stopping) return undefined;
+    try {
+      return await this.memory.prepare(input);
+    } catch {
+      input.signal.throwIfAborted();
+      return {
+        operationId: null,
+        strategyId: '',
+        strategyVersion: '',
+        status: 'error',
+        blocks: [],
+        durationMs: 0,
+        error: '记忆召回失败，本轮继续聊天',
+        omittedIds: [],
+      };
+    }
+  }
+  completeMemory(input: MemoryCompletedTurn) {
+    if (!this.memory || this.stopping || input.response.status !== 'complete') return;
+    const work = this.memory.complete(input).catch(() => {
+      console.error('Memory extraction failed');
+    });
+    this.memoryCalls.add(work);
+    void work.finally(() => this.memoryCalls.delete(work));
+  }
+  async invalidateMemory(user: User, conversationId: string, messageId: string) {
+    try {
+      await this.memory?.invalidate(user, conversationId, messageId);
+    } catch {
+      console.error('Memory source invalidation failed');
+    }
+  }
+  async removeMemoryScope(user: User, scope: MemoryScope, scopeId: string) {
+    try {
+      await this.memory?.removeScope(user, scope, scopeId);
+    } catch {
+      console.error('Memory scope cleanup failed');
+    }
+  }
+  async memoryApplied(user: User, operationId: string) {
+    try {
+      await this.memory?.applied?.(user, operationId);
+    } catch {
+      console.error('Memory operation recording failed');
+    }
+  }
+  redactMemoryContext(userId: string, memoryId: string) {
+    this.contextObserver?.redactMemory?.(userId, memoryId);
+    redactMemorySnapshots(this.ctx.db, userId, memoryId);
+  }
   registerContextObserver(observer: ContextObserver) {
     if (this.contextObserver) throw new Error('Context observer already registered');
     this.contextObserver = observer;
@@ -128,6 +203,7 @@ export class ExtensionsService extends Service {
         this.stopping = true;
         for (const utility of this.utilities.values()) utility.abort.abort();
         await Promise.allSettled(this.utilityCalls.values());
+        await Promise.allSettled(this.memoryCalls);
       }),
     );
   }
@@ -150,12 +226,26 @@ export class ExtensionsService extends Service {
       this.utilities.delete(id);
     };
   }
-  generateUtility(user: User, id: string, modelId: string, prompt: string, signal: AbortSignal) {
+  generateUtility(
+    user: User,
+    id: string,
+    modelId: string,
+    prompt: string,
+    signal: AbortSignal,
+    options: { operationKey?: string } = {},
+  ) {
     if (this.stopping) throw new HttpError(503, '服务正在重启，请稍后重试');
     const entry = this.utilities.get(id);
     if (!entry) throw new HttpError(409, '此功能已停用，请刷新后重试');
-    const key = `${id}:${user.id}`;
+    const prefix = `${id}:${user.id}`;
+    const key = options.operationKey ? `${prefix}:${options.operationKey}` : prefix;
     if (this.utilityCalls.has(key)) throw new HttpError(409, `${entry.name}正在生成，请稍后重试`);
+    if (
+      [...this.utilityCalls.keys()].filter(
+        (call) => call === prefix || call.startsWith(`${prefix}:`),
+      ).length >= 4
+    )
+      throw new HttpError(429, `${entry.name}任务过多，请稍后重试`);
     const operationSignal = AbortSignal.any([
       signal,
       entry.abort.signal,

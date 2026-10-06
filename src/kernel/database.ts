@@ -222,6 +222,22 @@ export class Database extends Service {
       )
     )
       this.connection.exec('ALTER TABLE models ADD COLUMN tool_calling INTEGER NOT NULL DEFAULT 0');
+    if (!this.all<{ name: string }>('PRAGMA table_info(models)').some((c) => c.name === 'kind')) {
+      this.transaction(() => {
+        this.connection.exec(
+          "ALTER TABLE models ADD COLUMN kind TEXT NOT NULL DEFAULT 'llm' CHECK(kind IN ('llm','jev','embedding'))",
+        );
+        this.run(
+          "UPDATE models SET kind='jev' WHERE provider_id IN (SELECT id FROM providers WHERE api_mode='jev')",
+        );
+      });
+    }
+    for (const column of ['embedding_dimensions', 'validated_dimensions']) {
+      if (!this.all<{ name: string }>('PRAGMA table_info(models)').some((c) => c.name === column))
+        this.connection.exec(
+          `ALTER TABLE models ADD COLUMN ${column} INTEGER CHECK(${column} IS NULL OR ${column} BETWEEN 1 AND 16000)`,
+        );
+    }
     // Snapshots belong to the conversation, not the replaceable assistant message.
     // Keep edited/retried attempts until their owner deletes the conversation.
     this.connection.exec(`

@@ -1,0 +1,23 @@
+# Production Memory overlay. Infrastructure owns this existing database and network.
+# Do not combine with compose.memory.yaml; retain the base project name and SQLite volume.
+services:
+  app:
+    environment:
+      MEMORY_DATABASE_URL: '${MEMORY_DATABASE_URL:?Set the assigned application connection URL in .env}'
+      MEMORY_DB_SCHEMA: '${MEMORY_DB_SCHEMA:-drift_memory}'
+      MEMORY_DB_HOST: '${MEMORY_DB_HOST:-kakamlab-db}'
+      MEMORY_DB_PORT: '${MEMORY_DB_PORT:-5656}'
+      MEMORY_DB_NAME: '${MEMORY_DB_NAME:-kakamlab_drift_memory_db}'
+      MEMORY_DB_USER: '${MEMORY_DB_USER:-kakamlab_drift_memory}'
+    labels:
+      kakamlab.db.host: '${MEMORY_DB_HOST:-kakamlab-db}'
+      kakamlab.db.port: '${MEMORY_DB_PORT:-5656}'
+      kakamlab.db.database: '${MEMORY_DB_NAME:-kakamlab_drift_memory_db}'
+      kakamlab.db.user: '${MEMORY_DB_USER:-kakamlab_drift_memory}'
+    networks:
+      - default
+      - database
+networks:
+  database:
+    external: true
+    name: kakamlab-db-net

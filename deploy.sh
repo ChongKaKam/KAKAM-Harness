@@ -33,9 +33,21 @@ if grep -q 'replace-with-' .env; then
   echo '.env 中仍含占位凭据，请先替换 APP_SECRET。' >&2
   exit 1
 fi
-docker compose config --quiet
-docker compose up -d --build --wait --wait-timeout 180
+drift_compose=(docker compose --env-file .env)
+"${drift_compose[@]}" config --quiet
+"${drift_compose[@]}" build app
+if grep -Eq '^MEMORY_DATABASE_URL=.+$' .env; then
+  if "${drift_compose[@]}" config --services | grep -qx memory-db; then
+    "${drift_compose[@]}" up -d --wait --wait-timeout 180 memory-db
+  fi
+  # Runs with the application role on its configured network before replacing the app.
+  "${drift_compose[@]}" run --rm --no-deps app node dist/server/memory-db.js migrate
+fi
+"${drift_compose[@]}" up -d --wait --wait-timeout 180
+if grep -Eq '^MEMORY_DATABASE_URL=.+$' .env; then
+  "${drift_compose[@]}" exec -T app node dist/server/memory-db.js check
+fi
 echo 'Drift Space 已启动并通过健康检查。'
-docker compose ps
+"${drift_compose[@]}" ps
 echo '访问 .env 中 PUBLIC_ORIGIN 配置的地址。默认：http://localhost:3600'
 echo '查看日志：docker compose logs -f app'

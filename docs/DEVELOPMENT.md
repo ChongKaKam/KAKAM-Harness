@@ -4,15 +4,18 @@
 
 ## 阅读地图
 
-| 文档                               | 负责回答的问题                                                    |
-| ---------------------------------- | ----------------------------------------------------------------- |
-| [README](../README.md)             | 用户如何运行、配置、部署、备份这个应用？                          |
-| [AGENTS.md](../AGENTS.md)          | 模型和开发者工作时必须保持哪些边界、如何验证和交付？              |
-| 本文                               | 代码在哪里、改哪一层、怎样同步规范与版本？                        |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 引擎、平台、服务、请求、数据与后台生成如何协作？                  |
-| [FEATURES.md](FEATURES.md)         | 如何添加一个包含 server / client 的功能，如何扩展服务与 Adapter？ |
-| [UI_GUIDE.md](UI_GUIDE.md)         | 如何新增 UI 组件并继承颜色、字号、布局与交互规范？                |
-| [RELEASE.md](RELEASE.md)           | 如何规范提交、推送并把指定提交安全部署到当前远端服务器？          |
+| 文档                                     | 负责回答的问题                                                    |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| [README](../README.md)                   | 用户如何运行、配置、部署、备份这个应用？                          |
+| [AGENTS.md](../AGENTS.md)                | 模型和开发者工作时必须保持哪些边界、如何验证和交付？              |
+| 本文                                     | 代码在哪里、改哪一层、怎样同步规范与版本？                        |
+| [ARCHITECTURE.md](ARCHITECTURE.md)       | 引擎、平台、服务、请求、数据与后台生成如何协作？                  |
+| [FEATURES.md](FEATURES.md)               | 如何添加一个包含 server / client 的功能，如何扩展服务与 Adapter？ |
+| [UI_GUIDE.md](UI_GUIDE.md)               | 如何新增 UI 组件并继承颜色、字号、布局与交互规范？                |
+| [RELEASE.md](RELEASE.md)                 | 如何规范提交、推送并把指定提交安全部署到当前远端服务器？          |
+| [MEMORY_API.md](MEMORY_API.md)           | 三层记忆的 HTTP API、输入限制、权限、幂等、索引和操作状态         |
+| [MEMORY_AGENTS.md](MEMORY_AGENTS.md)     | 如何新增带配套设置 UI 的记忆策略 / Agent，如何复用托管模型调用？  |
+| [MEMORY_DATABASE.md](MEMORY_DATABASE.md) | 如何接入共享 PostgreSQL、迁移、诊断、备份与恢复？                 |
 
 推荐先读本页的项目结构，再实际打开 `src/features/prompts/`；它是包含私人卡片、设置页和按需模型调用的完整插件实例。涉及登录、模型授权或流式生成时，再读对应 feature 和测试。
 
@@ -20,17 +23,17 @@
 
 Drift Space 是个人 / 小型多用户 AI Web 应用。它连接管理员配置的模型服务，本身不是大模型推理服务器。产品架构是 **Cordis 引擎 + KH-Kernel 平台层 + 按能力聚合的 features + 模型 Adapter + React Web Shell**。
 
-| 部分            | 当前技术 / 职责                                                          |
-| --------------- | ------------------------------------------------------------------------ |
-| 运行时与语言    | Node.js 24+、TypeScript strict、ES modules                               |
-| Engine          | 锁定 Cordis 3.18.1；Context、Service、依赖与生命周期                     |
-| Platform Kernel | feature 目录、Core 保护、启停串行化、关闭协调                            |
-| HTTP            | Express 5；JSON API、Cookie 会话、SSE；Zod 校验                          |
-| 存储            | Node 内置 `node:sqlite`、单数据库、WAL；无 ORM                           |
-| 前端            | React 19、Vite、hash 路由、Context / hooks；无独立全局状态库             |
-| 内容            | Tiptap 输入；react-markdown、GFM、KaTeX、Mermaid、rehype-highlight 输出  |
-| 样式            | 手写 CSS、语义变量、lucide-react 图标；无 Tailwind / UI 组件库           |
-| 构建与部署      | Vite 构建客户端，esbuild 打包服务入口；Docker Compose 单应用容器与持久卷 |
+| 部分            | 当前技术 / 职责                                                                     |
+| --------------- | ----------------------------------------------------------------------------------- |
+| 运行时与语言    | Node.js 24+、TypeScript strict、ES modules                                          |
+| Engine          | 锁定 Cordis 3.18.1；Context、Service、依赖与生命周期                                |
+| Platform Kernel | feature 目录、Core 保护、启停串行化、关闭协调                                       |
+| HTTP            | Express 5；JSON API、Cookie 会话、SSE；Zod 校验                                     |
+| 存储            | 平台使用 Node 内置 `node:sqlite` / WAL；Memory 使用独立 PostgreSQL/pgvector；无 ORM |
+| 前端            | React 19、Vite、hash 路由、Context / hooks；无独立全局状态库                        |
+| 内容            | Tiptap 输入；react-markdown、GFM、KaTeX、Mermaid、rehype-highlight 输出             |
+| 样式            | 手写 CSS、语义变量、lucide-react 图标；无 Tailwind / UI 组件库                      |
+| 构建与部署      | Vite 构建客户端，esbuild 打包服务入口；Docker Compose 单应用容器与持久卷            |
 
 当前插件随代码构建，可信且可启停。没有在线插件市场、任意代码上传、插件沙箱、多个实例共享的生成队列或自动扫描目录的插件加载器。
 
@@ -49,6 +52,8 @@ src/
     index.ts                    KHKernel 与 Cordis 作用域管理
     context.ts                  Cordis Context 的 TypeScript 类型扩充
     database.ts                 SQLite service、表结构和追加迁移
+    memory-database.ts          Memory 独立 PostgreSQL 连接与集中追加迁移
+    memory-config.ts            Memory 环境、schema / 连接池和 Monitor 元数据校验
     http.ts                     可撤销 Router registry、鉴权与 HttpError
     crypto.ts                   密码哈希、会话摘要、模型密钥加密
   adapters/                     ModelAdapter 契约、注册表、OpenAI 兼容与 Anthropic Messages 实现
@@ -80,11 +85,14 @@ compose.yaml / Dockerfile       运行和构建契约
 
 Git 与 Docker 构建上下文均排除 `.env` 及 `.env.*` 配置 / 备份，仅允许占位示例 `.env.example`；Docker 构建同时排除 `output/` 设计产物。
 
+构建同时打包 `src/server/memory-db.ts` 为独立数据库 CLI；`npm run memory:migrate` 和 `npm run memory:check` 使用构建产物，check 不执行 DDL。共享数据库部署与本地开发 overlay 分别见 [Memory 数据库接入](MEMORY_DATABASE.md)，数据库接入行为测试在 `tests/memory-database.test.ts`；需要临时 PostgreSQL/pgvector、隔离测试库与管理员测试账号，以创建仅本次测试使用的受限角色 / schema，不能使用生产共享实例。
+
 ## 应该改哪一层
 
 | 需求                               | 推荐位置                                                         | 注册 / 契约影响                                                |
 | ---------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
-| 新增私人知识、收藏、记忆等独立能力 | 新 `src/features/<id>/`，通常为 plugin                           | server + client 两个注册入口；需要存储时追加迁移               |
+| 新增私人知识、收藏等独立能力       | 新 `src/features/<id>/`，通常为 plugin                           | server + client 两个注册入口；需要存储时追加迁移               |
+| 记忆管理与策略 / Agent             | `src/features/memory/`，按 [策略开发指南](MEMORY_AGENTS.md) 扩展 | 服务端策略与客户端设置双注册；独立 PostgreSQL 集中迁移         |
 | 扩展已有聊天或账户功能             | 对应 feature；局部组件 / hooks 放同目录                          | 保持已有接口兼容，更新 DTO / 校验 / 测试                       |
 | 多个页面复用的小 UI                | `src/client/<component>.tsx`，参照 UI 指南                       | 普通组件不需要 manifest 或 Kernel 注册                         |
 | 设置中的新页面                     | feature client 的 `placement: 'settings'` 或 `settingsComponent` | 使用 `navigate('settings', id)`，不要在侧栏重复加入口          |
@@ -99,7 +107,7 @@ Git 与 Docker 构建上下文均排除 `.env` 及 `.env.*` 配置 / 备份，�
 
 1. 写清用户行为、谁可使用、数据归谁、是否可停用，以及需要的加载 / 空 / 错误状态。
 2. 先定义纯数据 DTO 和输入校验，设计数据库追加迁移与用户隔离条件。
-3. 编写 feature server、依赖和副作用清理；接入 `createApp()`。新表当前仍由 `Database` 集中初始化。
+3. 编写 feature server、依赖和副作用清理；接入 `createApp()`。平台表由 `Database` 集中初始化，Memory 表由 `MemoryDatabase` 集中迁移，不在请求中创建。
 4. 编写 feature client，复用公共 UI / API / Context；加入 `clientFeatures`。通用组件与业务操作分离。
 5. 按变更范围选择相关的端到端、权限、生命周期或持久化用例；涉及 UI 时仅检查受影响的主题与设备。
 6. 根据下方同步矩阵更新文档，交付时说明验证结果与实际支持范围。用户授权提交或发布时按 [发布手册](RELEASE.md) 操作。
@@ -189,3 +197,5 @@ git diff --check
 Skill 库兼容回归位于 `tests/prompts.test.ts`（编辑、标签校验、账户隔离、三类 LLM Adapter、真实用量、停用取消）与 `tests/e2e/prompts.spec.ts`（设置模型、生成简介、编辑 / 搜索 / 标签、明暗和四档字号）；旧库升级与重启保存在 `tests/kernel.test.ts` 验证。局部迭代运行受影响用例即可，无需每次执行全部浏览器套件。
 
 Skill 文档读取与工具循环回归在 `tests/skills.test.ts`，模型工具夹具在 `tests/skill-provider-fixture.ts`，覆盖三种协议、版本绑定、读取权限、累计用量、断线、停用和停止。迁移覆盖在 `tests/kernel.test.ts`，浏览器在 `tests/e2e/skills.spec.ts`；原提示词用例继续验证兼容接口和管理页面。后续执行环境的工作范围集中在 [Skill TODO](SKILLS_TODO.md)，这些能力尚未实现。
+
+Embedding 的针对性回归使用 `npx tsx --test tests/embedding.test.ts tests/model-diagnostics.test.ts`，包含部分真实用量、无用量、维度、乱序 / 重复 index、无效与零向量、模型授权和旧模型类型迁移。所有请求都指向本地 mock，数据库使用临时目录。Memory 集成验证使用隔离的 PostgreSQL/pgvector，不能将开发或生产连接地址用作测试夹具；具体环境和用例见 [策略开发指南](MEMORY_AGENTS.md#验证)。

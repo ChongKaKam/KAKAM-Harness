@@ -35,7 +35,7 @@ export interface FeatureManifest {
   enabled?: boolean;
 }
 export interface Model {
-  kind: 'llm' | 'jev';
+  kind: 'llm' | 'jev' | 'embedding';
   id: string;
   providerId: string;
   providerName: string;
@@ -44,6 +44,10 @@ export interface Model {
   vision: boolean;
   toolCalling?: boolean;
   enabled: boolean;
+  /** Requested embedding dimensions. Null means the provider default. */
+  embeddingDimensions?: number | null;
+  /** Dimensions returned by the most recent successful validation. */
+  validatedDimensions?: number | null;
 }
 export interface Provider {
   id: string;
@@ -63,9 +67,23 @@ export interface ModelConnectionTest {
   firstTextMs: number | null;
   latencyMs: number;
   textChunks: number;
-  usage: MessageUsage | null;
+  usage: MessageUsage | EmbeddingUsage | null;
+  kind?: Model['kind'];
+  configuredDimensions?: number | null;
+  actualDimensions?: number | null;
+  dimensionsMatch?: boolean | null;
   diagnostics: ModelDiagnosticLog;
   error?: string;
+}
+export interface EmbeddingUsage {
+  input: number | null;
+  output: number | null;
+  total: number | null;
+}
+export interface EmbeddingResult {
+  vectors: number[][];
+  dimensions: number;
+  usage: EmbeddingUsage | null;
 }
 /** Ephemeral, credential-redacted log returned only by the admin connection test. */
 export interface ModelDiagnosticLog {

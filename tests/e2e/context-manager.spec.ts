@@ -65,7 +65,7 @@ test('context history and selected-turn handoff work in the responsive drawer', 
     const drawer = page.getByRole('dialog', { name: '对话上下文', exact: true });
     await expect(drawer).toBeVisible();
     await expect(drawer.locator('.context-manager-commit')).toHaveCount(2);
-    await expect(drawer.locator('.context-manager-section')).toHaveCount(4);
+    await expect(drawer.locator('.context-manager-section')).toHaveCount(5);
     const characterChart = drawer.locator('.context-manager-character-composition');
     const characterGrid = characterChart.getByRole('img', { name: /上下文字符组成/ });
     const characterLegend = characterChart.getByRole('group', { name: '高亮上下文分区' });
@@ -87,7 +87,7 @@ test('context history and selected-turn handoff work in the responsive drawer', 
       characterGrid.locator('.context-manager-character-cell:not([data-section])'),
     ).toHaveCount(224 - Math.ceil(sessionSize / 64) - 1);
     await expect(characterChart).toContainText('每格 ≤ 64 字符');
-    await expect(characterLegend.getByRole('button')).toHaveCount(4);
+    await expect(characterLegend.getByRole('button')).toHaveCount(5);
     await expect(characterLegend.getByRole('button', { name: /^System prompt/ })).toHaveAttribute(
       'aria-label',
       /0 字符，占 0%，未注入/,
@@ -127,7 +127,7 @@ test('context history and selected-turn handoff work in the responsive drawer', 
       );
       await page.reload();
       await trigger.click();
-      await expect(drawer.locator('.context-manager-section')).toHaveCount(4);
+      await expect(drawer.locator('.context-manager-section')).toHaveCount(5);
       await expect(characterGrid).toBeVisible();
       const bounds = (await drawer.boundingBox())!;
       expect(bounds.x).toBeGreaterThanOrEqual(0);

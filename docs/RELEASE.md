@@ -2,7 +2,7 @@
 
 本页是 Drift Space 的发布操作手册，供开发者和 Agent 执行。产品使用 GitHub `main` 作为当前生产代码来源，`deploy.sh` 是唯一部署入口。实现任务完成并不自动意味着可以提交、推送或部署；按当前请求及会话中已有的用户授权执行。用户一次提出「commit、push、部署」即授权完整流程，无需每一步重复确认。提交、推送、部署是三个独立结果，交付时分别报告。
 
-当前生产目标（2026-10-01 核对）：SSH `chris@ssh.kakamlab.com`，仓库 `~/workspace/KAKAM-Harness`，公开地址 `https://drift.kakamlab.com`，Compose 项目 `kakam-harness`，应用监听宿主机 `127.0.0.1:3600`。目标如有变更，先核对真实部署状态并同步本页；不要把登录密钥或真实 `.env` 写进仓库。
+当前生产目标（2026-10-06 核对）：SSH `chris@ssh.kakamlab.com`，仓库 `~/workspace/KAKAM-Harness`，公开地址 `https://drift.kakamlab.com`，Compose 项目 `kakam-harness`，应用监听宿主机 `127.0.0.1:3600`。共享 Memory 身份已分配，生产 `.env` 保存 `COMPOSE_FILE=compose.yaml:compose.memory-shared.yaml`；数据库接入与备份见 [Memory 数据库](MEMORY_DATABASE.md)。目标如有变更，先核对真实部署状态并同步本页；不要把登录密钥或真实 `.env` 写进仓库。
 
 ## Git 提交规范
 
@@ -51,6 +51,8 @@ docker volume inspect kakam-harness_kakam-data --format '{{.Name}}'
 
 ### 2. 备份配置与数据
 
+启用 Memory 的部署还需在应用暂停写入的同一窗口导出 PostgreSQL，配套保存原 `MEMORY_NAMESPACE`、`.env` 和 SQLite；下面的基础脚本只复制平台数据。共享接入使用 `export COMPOSE_FILE=compose.yaml:compose.memory-shared.yaml`；可选本地数据库沿用 `compose.yaml:compose.memory.yaml`。所有 Compose 命令使用 `--env-file .env`。按 [Memory 数据库备份与恢复](MEMORY_DATABASE.md#备份隔离恢复与回滚)增加 `pg_dump -Fc`；Monitor 的备份不覆盖 Drift 业务库。Memory dump 失败同样停止部署，不能仅凭 SQLite 备份继续。
+
 继续在远端仓库目录执行下列块。它短暂停止应用，复制完整 `/app/data` 与 `.env` 到仓库外的私有目录，并在退出时恢复原本运行的服务。备份路径要记入本次部署记录，不放进 Git 或聊天日志中的文件内容。
 
 ```bash
@@ -79,6 +81,8 @@ docker volume inspect kakam-harness_kakam-data --format '{{.Name}}'
 任何备份步骤失败都停止部署，先确认服务恢复。`.env` 中的 `APP_SECRET` 必须与数据库配套保留；建议把备份另存到服务器外的私有位置。不要运行 `docker compose down -v`，也不要为更新重新生成 `.env`。数据、密钥和卷的关系见 [README 的备份说明](../README.md#备份与重新构建)。
 
 ### 3. 拉取指定提交并部署
+
+共享 Memory 同一次预检、备份和部署始终使用 `COMPOSE_FILE=compose.yaml:compose.memory-shared.yaml`，保留项目名、SQLite 卷、分配的库 / schema 和 namespace；本地可选数据库使用 `compose.yaml:compose.memory.yaml` 并保留 Memory 卷。不要混合或省略当前 overlay。`deploy.sh` 构建后先运行应用账号的集中迁移，启动后执行只读检查；基础健康检查不能代替 `/api/health/memory`。首次接入需先由管理员分配身份并安装扩展；可执行步骤见 [数据库接入](MEMORY_DATABASE.md#发布与验收)。
 
 在同一远端仓库目录，将占位符替换为本地已推送的**完整** SHA。以下块会在拉取到别的提交、`.env` 改变或部署失败时停止。正常更新使用快进拉取，不改 Compose 项目名和卷名。
 

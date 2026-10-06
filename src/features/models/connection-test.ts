@@ -2,6 +2,7 @@ import type { ModelAdapter, ProviderConnection } from '../../adapters/registry';
 import { HttpError } from '../../kernel/http';
 import type { ModelConnectionTest, ReasoningEffort } from '../../shared/types';
 import { ProviderDiagnostics } from '../../adapters/diagnostics';
+import { EmbeddingError, validateEmbeddingResponse } from '../../adapters/embeddings';
 
 /** Probe the same streaming path as chat, without persisting a conversation. */
 export async function testModelConnection(
@@ -72,5 +73,73 @@ export async function testModelConnection(
   }
   result.latencyMs = elapsed();
   result.diagnostics = diagnostics.finish(failure ?? result.error);
+  return result;
+}
+
+/** Probe the saved embedding endpoint; no chat or vector-index mutation is performed. */
+export async function testEmbeddingConnection(
+  adapter: ModelAdapter,
+  connection: ProviderConnection,
+  model: string,
+  dimensions: number | null,
+  signal = AbortSignal.timeout(60_000),
+): Promise<ModelConnectionTest> {
+  const started = performance.now();
+  const diagnostics = new ProviderDiagnostics(connection);
+  const result: ModelConnectionTest = {
+    ok: false,
+    model,
+    kind: 'embedding',
+    apiMode: connection.apiMode ?? 'chat-completions',
+    reasoningEffort: 'none',
+    firstTextMs: null,
+    latencyMs: 0,
+    textChunks: 0,
+    usage: null,
+    configuredDimensions: dimensions,
+    actualDimensions: null,
+    dimensionsMatch: null,
+    diagnostics: { output: '', truncated: false },
+  };
+  let failure: unknown;
+  try {
+    if (!adapter.embed || !['chat-completions', 'responses'].includes(result.apiMode))
+      throw new HttpError(400, 'Anthropic / Jev 来源协议不支持 Embedding');
+    const embedded = await adapter.embed(
+      { ...connection, diagnostics },
+      model,
+      ['Drift Space embedding connectivity test.'],
+      signal,
+      dimensions ?? undefined,
+    );
+    result.usage = embedded.usage;
+    result.actualDimensions = embedded.dimensions;
+    validateEmbeddingResponse(
+      embedded.vectors.map((embedding, index) => ({ embedding, index })),
+      1,
+      embedded.usage,
+      dimensions ?? undefined,
+    );
+    result.dimensionsMatch = dimensions === null ? null : embedded.dimensions === dimensions;
+    diagnostics.text(
+      JSON.stringify({ dimensions: embedded.dimensions, vectors: embedded.vectors.length }),
+    );
+    result.ok = true;
+  } catch (error) {
+    failure = error;
+    if (error instanceof EmbeddingError) {
+      result.usage = error.usage;
+      result.actualDimensions = error.dimensions;
+      result.dimensionsMatch =
+        dimensions === null || error.dimensions === null ? null : dimensions === error.dimensions;
+    }
+    result.error = signal.aborted
+      ? 'Embedding 连接测试超时，请检查上游响应。'
+      : error instanceof HttpError
+        ? error.message
+        : 'Embedding 连接测试失败，请检查来源地址、密钥和响应格式。';
+  }
+  result.latencyMs = Math.round(performance.now() - started);
+  result.diagnostics = diagnostics.finish(failure);
   return result;
 }

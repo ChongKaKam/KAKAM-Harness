@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { readMemoryConfig, type MemoryDatabaseOptions } from '../kernel/memory-config';
 export interface Config {
   port: number;
   host: string;
@@ -8,8 +9,12 @@ export interface Config {
   secureCookies: boolean;
   trustProxy: number;
   clientDir?: string;
+  memoryDatabaseUrl?: string;
+  memoryNamespace?: string;
+  memoryDatabaseOptions?: MemoryDatabaseOptions;
 }
 export function readConfig(): Config {
+  const memory = readMemoryConfig();
   const e = z
     .object({
       PORT: z.coerce.number().int().min(1).max(65535).default(3600),
@@ -30,5 +35,8 @@ export function readConfig(): Config {
     secureCookies: e.COOKIE_SECURE === 'true',
     trustProxy: e.TRUST_PROXY,
     clientDir: 'dist/client',
+    memoryDatabaseUrl: memory.databaseUrl,
+    memoryNamespace: memory.namespace,
+    memoryDatabaseOptions: memory.databaseOptions,
   };
 }

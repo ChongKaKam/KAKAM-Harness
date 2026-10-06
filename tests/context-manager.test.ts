@@ -136,14 +136,18 @@ test('snapshots preserve exact sections, private ownership and replaced attempts
   assert.deepEqual(original.usage, { input: 23, output: 42, total: 65 });
   assert.deepEqual(
     original.sections.map((part) => part.id),
-    ['system', 'long-term', 'session', 'current'],
+    ['system', 'long-term', ...(original.memory ? ['group'] : []), 'session', 'current'],
   );
-  assert.ok(original.sections.slice(0, 3).every((part) => part.entries.length === 0));
+  assert.ok(
+    original.sections
+      .filter((part) => part.id !== 'current')
+      .every((part) => part.entries.length === 0),
+  );
   assert.equal(original.characters, firstPrompt.length);
   assert.equal(original.bytes, Buffer.byteLength(firstPrompt));
   assert.equal(original.imageCount, 1);
   assert.equal(
-    original.sections[3].entries[0].images[0].bytes,
+    original.sections.find((part) => part.id === 'current')!.entries[0].images[0].bytes,
     Buffer.from(imageData.split(',')[1], 'base64').length,
   );
   assert.equal(original.response, reply.content);
@@ -177,11 +181,13 @@ test('snapshots preserve exact sections, private ownership and replaced attempts
   assert.equal(list[2].replacesMessageId, failed);
   const last: ContextSnapshot = await json(`${turnsPath(id)}/${retried}`);
   assert.deepEqual(
-    last.sections[2].entries.map((item) => item.content),
+    last.sections.find((part) => part.id === 'session')!.entries.map((item) => item.content),
     [firstPrompt, reply.content],
   );
   assert.equal(
-    (await json(`${turnsPath(id)}/${failed}`)).sections[3].entries[0].content,
+    (await json(`${turnsPath(id)}/${failed}`)).sections.find(
+      (part: { id: string }) => part.id === 'current',
+    ).entries[0].content,
     '后来方向：实施插件',
   );
   await json(`/conversations/${id}/messages`, 'POST', {
@@ -247,7 +253,7 @@ test('Skill context keeps visible results once; plugin disable preserves accepte
   });
   await done(id);
   const snapshot: ContextSnapshot = await json(`${turnsPath(id)}/${messageId}`);
-  const session = snapshot.sections[2].entries;
+  const session = snapshot.sections.find((part) => part.id === 'session')!.entries;
   assert.equal(snapshot.requestCount, 3);
   assert.equal(session.filter((item) => item.label.startsWith('工具定义')).length, 1);
   assert.equal(session.filter((item) => item.role === 'tool').length, 2);

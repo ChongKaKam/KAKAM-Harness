@@ -1,7 +1,13 @@
 import type { Message, MessageUsage } from '../../shared/types';
+import type { MemoryPreparation, MemoryScope } from '../../shared/memory';
 
-export type ContextSectionId = 'system' | 'long-term' | 'session' | 'current';
+export type ContextSectionId = 'system' | 'long-term' | 'group' | 'session' | 'current';
 export interface ContextEntry {
+  memoryId?: string;
+  memoryVersion?: number;
+  memoryScope?: MemoryScope;
+  memoryReason?: string;
+  memoryDeleted?: boolean;
   label: string;
   role?: 'user' | 'assistant' | 'tool';
   content: string;
@@ -30,6 +36,8 @@ export interface ContextSummary {
   usage: MessageUsage | null;
 }
 export interface ContextSnapshot extends ContextSummary {
+  /** Recall trace captured before this request; post-turn extraction is fetched separately. */
+  memory?: MemoryPreparation;
   sections: ContextSection[];
   response: string;
   error: string | null;

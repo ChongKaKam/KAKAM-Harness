@@ -6,6 +6,7 @@ import { Empty, ErrorNote, Modal, Spinner } from '../../client/components';
 import { useWorkspace } from '../../client/context';
 import { Markdown } from '../../client/markdown';
 import { CharacterComposition } from './character-composition';
+import { MemoryAfterTurn, MemoryTrace } from './memory-trace';
 import type { MessageUsage } from '../../shared/types';
 import type {
   ContextHandoff,
@@ -149,6 +150,7 @@ function DrawerContent({
             selected={selected}
             revision={revision}
             status={selectedTurn.status}
+            conversationId={conversationId}
           />
         ) : (
           turns && (
@@ -167,12 +169,15 @@ function SnapshotContent({
   selected,
   revision,
   status,
+  conversationId,
 }: {
   path: string;
   selected: string;
   revision: number;
   status: ContextSummary['status'];
+  conversationId: string;
 }) {
+  const { features } = useWorkspace();
   const [snapshot, setSnapshot] = useState<ContextSnapshot>();
   const [error, setError] = useState('');
   useEffect(() => {
@@ -232,6 +237,9 @@ function SnapshotContent({
             </p>
           </header>
           <CharacterComposition snapshot={snapshot} />
+          {snapshot.memory && (
+            <MemoryTrace memory={snapshot.memory} conversationId={conversationId} />
+          )}
           <div className="context-manager-sections">
             {snapshot.sections.map((section) => (
               <Section key={section.id} section={section} />
@@ -252,6 +260,12 @@ function SnapshotContent({
               )}
             </div>
           </details>
+          {snapshot.status !== 'streaming' &&
+            snapshot.memory &&
+            snapshot.memory.status !== 'skipped' &&
+            features.some((feature) => feature.id === 'memory' && feature.enabled) && (
+              <MemoryAfterTurn conversationId={conversationId} messageId={snapshot.messageId} />
+            )}
           <Handoff path={path} snapshot={snapshot} />
         </>
       )}
@@ -262,6 +276,7 @@ function SnapshotContent({
 const sectionNames = {
   system: 'System prompt',
   'long-term': '长期记忆',
+  group: '分组记忆',
   session: 'Session 记忆',
   current: '当前 prompt',
 };
@@ -279,7 +294,9 @@ function Section({ section }: { section: ContextSection }) {
         <p className="context-manager-caption">{section.description}</p>
         {!section.entries.length && (
           <p className="context-manager-caption">
-            {section.id === 'system' || section.id === 'long-term' ? '未注入' : '暂无内容'}
+            {section.id === 'system' || section.id === 'long-term' || section.id === 'group'
+              ? '未注入'
+              : '暂无内容'}
           </p>
         )}
         {section.entries.map((entry, index) => (
@@ -288,6 +305,13 @@ function Section({ section }: { section: ContextSection }) {
               {entry.label}
               {entry.role && <span className="context-manager-caption"> · {entry.role}</span>}
             </summary>
+            {entry.memoryId && (
+              <p className="context-manager-caption">
+                {entry.memoryDeleted
+                  ? '此记忆已删除，快照正文已清理。'
+                  : `记忆 ${entry.memoryId.slice(0, 8)} · v${entry.memoryVersion}${entry.memoryReason ? ` · ${entry.memoryReason}` : ''}`}
+              </p>
+            )}
             {entry.content && <pre>{entry.content}</pre>}
             {!!entry.images.length && (
               <ul>

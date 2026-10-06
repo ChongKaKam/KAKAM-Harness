@@ -1,5 +1,6 @@
 import { skillSelections } from '../extensions/skill-runtime';
 import type { ContextRecorder } from '../extensions/context-observer';
+import { appendMemoryBlocks } from '../extensions/memory-context';
 import type { SelectedSkill, SkillRead } from '../skills/types';
 import { generateReply, aggregateCalls } from './skill-generation';
 import { generationDeadline } from './generation-deadline';
@@ -270,11 +271,12 @@ export const server = {
       });
       res.json({ ok: true });
     });
-    router.delete('/conversations/:id', (req, res) => {
+    router.delete('/conversations/:id', async (req, res) => {
       const id = String(req.params.id);
       own(id, req.user!.id);
       if (active.has(id)) throw new HttpError(409, '请先停止当前回复');
       ctx.db.run('DELETE FROM conversations WHERE id=? AND user_id=?', id, req.user!.id);
+      await ctx.extensions.removeMemoryScope(req.user!, 'session', id);
       res.json({ ok: true });
     });
     router.post('/conversations/:id/stop', (req, res) => {
@@ -358,6 +360,12 @@ export const server = {
       )
         throw new HttpError(400, '对话较长，请新建对话后继续');
       const now = new Date().toISOString();
+      const groupId =
+        ctx.db.get<{ groupId: string | null }>(
+          'SELECT group_id AS groupId FROM conversations WHERE id=? AND user_id=?',
+          id,
+          user.id,
+        )?.groupId ?? null;
       const generation: Generation = {
         abort: new AbortController(),
         listeners: new Set(),
@@ -477,6 +485,20 @@ export const server = {
         const deadline = generationDeadline(generation.abort.signal, skillPlan?.signal);
         try {
           const signal = deadline.signal;
+          if (input.replaceLastMessageId) {
+            await ctx.extensions.invalidateMemory(user, id, input.replaceLastMessageId);
+            if (latest[0]?.id) await ctx.extensions.invalidateMemory(user, id, latest[0].id);
+          }
+          const memory = await ctx.extensions.prepareMemory({
+            user,
+            conversationId: id,
+            messageId,
+            groupId,
+            history,
+            current: input.content,
+            signal,
+          });
+          deadline.touch();
           const prepared = await ctx.extensions.prepare(
             user,
             extensionPlan,
@@ -499,6 +521,8 @@ export const server = {
               ...prepared[prepared.length - 1],
               content: `${prepared[prepared.length - 1].content}\n\n${skillContext}`,
             };
+          const memoryInput = appendMemoryBlocks(prepared.at(-1)!.content, memory?.blocks ?? []);
+          prepared[prepared.length - 1] = { ...prepared.at(-1)!, content: memoryInput.content };
           await generateReply(ctx, {
             user,
             modelId: input.modelId,
@@ -507,6 +531,8 @@ export const server = {
             signal,
             session,
             recorder,
+            memory,
+            memoryRanges: memoryInput.ranges,
             effort: input.reasoningEffort,
             calls: generation.message.calls!,
             progress: (skillReads: SkillRead[], calls: ExtensionCall[]) => {
@@ -576,6 +602,15 @@ export const server = {
             });
             recorder?.finish(generation.message);
             broadcast({ type: 'done', message: { ...generation.message } });
+            ctx.extensions.completeMemory({
+              user,
+              conversationId: id,
+              messageId,
+              groupId,
+              history,
+              current: input.content,
+              response: { ...generation.message },
+            });
           } finally {
             active.delete(id);
             userActive.delete(user.id);

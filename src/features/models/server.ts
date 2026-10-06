@@ -4,15 +4,16 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { HttpError, requireUser, requireAdmin } from '../../kernel/http';
 import { SecretVault } from '../../kernel/crypto';
-import { testModelConnection } from './connection-test';
+import { testModelConnection, testEmbeddingConnection } from './connection-test';
+import { EmbeddingError, validateEmbeddingResponse } from '../../adapters/embeddings';
 import { nextSourceProbeDelay } from './probe-schedule';
-import type { Model, User, ApiMode } from '../../shared/types';
+import type { Model, User, ApiMode, EmbeddingResult, EmbeddingUsage } from '../../shared/types';
 export { manifest } from './manifest';
-const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.tool_calling AS toolCalling,m.enabled,CASE WHEN p.api_mode='jev' THEN 'jev' ELSE 'llm' END AS kind`;
+const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.tool_calling AS toolCalling,m.enabled,m.kind,m.embedding_dimensions AS embeddingDimensions,m.validated_dimensions AS validatedDimensions`;
 const normalize = (m: Model) => ({
   ...m,
-  vision: m.kind !== 'jev' && Boolean(m.vision),
-  toolCalling: m.kind !== 'jev' && Boolean(m.toolCalling),
+  vision: m.kind === 'llm' && Boolean(m.vision),
+  toolCalling: m.kind === 'llm' && Boolean(m.toolCalling),
   enabled: Boolean(m.enabled),
 });
 export const baseUrl = z.url().refine((v) => {
@@ -60,7 +61,24 @@ const modelSchema = z.object({
   label: z.string().trim().min(1).max(100),
   vision: z.boolean().default(false),
   toolCalling: z.boolean().default(false),
+  kind: z.enum(['llm', 'jev', 'embedding']).optional(),
+  embeddingDimensions: z.number().int().min(1).max(16000).nullable().default(null),
 });
+const embeddingInputs = z
+  .array(z.string().min(1).max(100_000))
+  .min(1)
+  .max(128)
+  .refine((inputs) => inputs.every((input) => input.trim().length > 0), 'Embedding 输入不能为空')
+  .refine(
+    (inputs) => inputs.reduce((total, input) => total + input.length, 0) <= 512_000,
+    'Embedding 输入总长度超过限制',
+  );
+function validateKind(mode: ApiMode, kind: Model['kind']) {
+  if (kind === 'embedding' && !['chat-completions', 'responses'].includes(mode))
+    throw new HttpError(400, 'Embedding 仅支持 OpenAI-compatible 来源，Anthropic / Jev 不支持');
+  if ((kind === 'jev') !== (mode === 'jev'))
+    throw new HttpError(400, 'Jev 模型必须使用 Jev 来源协议');
+}
 export class ModelsService extends Service {
   static inject = ['db', 'adapters'];
   private vault: SecretVault;
@@ -80,7 +98,14 @@ export class ModelsService extends Service {
     const model = this.list(user).find((m) => m.id === id);
     if (!model) throw new HttpError(403, '模型未启用或未向你授权');
     if (kind && model.kind !== kind)
-      throw new HttpError(400, kind === 'llm' ? '请选择 LLM 模型' : '请选择 Jev 决策模型');
+      throw new HttpError(
+        400,
+        kind === 'llm'
+          ? '请选择 LLM 模型'
+          : kind === 'embedding'
+            ? '请选择 Embedding 模型'
+            : '请选择 Jev 决策模型',
+      );
     return model;
   }
   connection(id: string) {
@@ -105,6 +130,73 @@ export class ModelsService extends Service {
           ? 'anthropic-messages'
           : 'openai-compatible',
     );
+  }
+  async embed(
+    user: User,
+    modelId: string,
+    inputs: string[],
+    signal: AbortSignal,
+    options: { dimensions?: number; expectedDimensions?: number; purpose?: string } = {},
+  ): Promise<EmbeddingResult> {
+    const model = this.authorize(user, modelId, 'embedding');
+    embeddingInputs.parse(inputs);
+    for (const value of [options.dimensions, options.expectedDimensions])
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < 1 || value > 16000))
+        throw new HttpError(400, 'Embedding 维度必须为 1 至 16000 的整数');
+    const connection = this.connection(model.providerId);
+    validateKind(connection.apiMode, 'embedding');
+    const adapter = this.adapter(connection.apiMode);
+    if (!adapter.embed) throw new HttpError(400, '此来源协议不支持 Embedding');
+    const dimensions = options.dimensions ?? model.embeddingDimensions ?? undefined;
+    if (
+      options.dimensions !== undefined &&
+      model.embeddingDimensions !== null &&
+      model.embeddingDimensions !== undefined &&
+      options.dimensions !== model.embeddingDimensions
+    )
+      throw new HttpError(400, '请求维度与模型配置维度不一致，请先修改模型配置');
+    const expected =
+      options.expectedDimensions ?? dimensions ?? model.validatedDimensions ?? undefined;
+    let usage: EmbeddingUsage | null = null;
+    let status = 'error';
+    try {
+      const result = await adapter.embed(connection, model.name, inputs, signal, dimensions);
+      usage = result.usage;
+      const validated = validateEmbeddingResponse(
+        result.vectors.map((embedding, index) => ({ embedding, index })),
+        inputs.length,
+        usage,
+        expected,
+      );
+      status = 'complete';
+      if (options.dimensions === undefined || options.dimensions === model.embeddingDimensions)
+        this.ctx.db.run(
+          "UPDATE models SET validated_dimensions=? WHERE id=? AND kind='embedding' AND name=? AND embedding_dimensions IS ? AND EXISTS(SELECT 1 FROM providers WHERE id=models.provider_id AND base_url=? AND api_mode=?)",
+          validated.dimensions,
+          model.id,
+          model.name,
+          model.embeddingDimensions ?? null,
+          connection.baseUrl,
+          connection.apiMode,
+        );
+      return validated;
+    } catch (error) {
+      if (error instanceof EmbeddingError) usage = error.usage;
+      status = signal.aborted ? 'cancelled' : 'error';
+      throw error;
+    } finally {
+      this.ctx.db.run(
+        'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
+        randomUUID(),
+        user.id,
+        `[Embedding${options.purpose ? ` · ${options.purpose.slice(0, 60)}` : ''}] ${model.name}`,
+        usage?.input ?? null,
+        usage?.output ?? null,
+        usage?.total ?? null,
+        status,
+        new Date().toISOString(),
+      );
+    }
   }
 }
 export function modelsFeature(secret: string) {
@@ -156,7 +248,7 @@ export function modelsFeature(secret: string) {
         queueMicrotask(probeAll);
         router.get('/models', requireUser, (req, res) => {
           const { kind } = z
-            .object({ kind: z.enum(['llm', 'jev', 'all']).default('llm') })
+            .object({ kind: z.enum(['llm', 'jev', 'embedding', 'all']).default('llm') })
             .parse(req.query);
           res.json(
             ctx.models.list(req.user!).filter((model) => kind === 'all' || model.kind === kind),
@@ -214,17 +306,34 @@ export function modelsFeature(secret: string) {
             .parse(req.body ?? {});
           // Administrators may test a disabled model before making it available to users.
           const model = ctx.db.get<Model>(
-            'SELECT id,provider_id AS providerId,name FROM models WHERE id=?',
+            `SELECT ${columns} FROM models m JOIN providers p ON p.id=m.provider_id WHERE m.id=?`,
             String(req.params.id),
           );
           if (!model) throw new HttpError(404, '模型不存在');
           const connection = ctx.models.connection(model.providerId);
-          const result = await testModelConnection(
-            ctx.models.adapter(connection.apiMode),
-            connection,
-            model.name,
-            reasoningEffort,
-          );
+          const result =
+            model.kind === 'embedding'
+              ? await testEmbeddingConnection(
+                  ctx.models.adapter(connection.apiMode),
+                  connection,
+                  model.name,
+                  model.embeddingDimensions ?? null,
+                )
+              : await testModelConnection(
+                  ctx.models.adapter(connection.apiMode),
+                  connection,
+                  model.name,
+                  reasoningEffort,
+                );
+          if (model.kind === 'embedding' && result.ok)
+            ctx.db.run(
+              "UPDATE models SET validated_dimensions=? WHERE id=? AND kind='embedding' AND embedding_dimensions IS ? AND EXISTS(SELECT 1 FROM providers WHERE id=models.provider_id AND base_url=? AND api_mode=?)",
+              result.actualDimensions!,
+              model.id,
+              model.embeddingDimensions ?? null,
+              connection.baseUrl,
+              connection.apiMode,
+            );
           ctx.db.run(
             'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
             randomUUID(),
@@ -245,6 +354,14 @@ export function modelsFeature(secret: string) {
             .parse(req.body);
           const id = String(req.params.id);
           ctx.models.connection(id);
+          if (
+            !['chat-completions', 'responses'].includes(input.apiMode) &&
+            ctx.db.get("SELECT id FROM models WHERE provider_id=? AND kind='embedding'", id)
+          )
+            throw new HttpError(
+              400,
+              '此来源已配置 Embedding 模型，不能改为不支持 Embedding 的协议',
+            );
           ctx.db.run(
             'UPDATE providers SET name=?,base_url=?,api_mode=? WHERE id=?',
             input.name,
@@ -260,6 +377,12 @@ export function modelsFeature(secret: string) {
               ctx.models.encrypt(input.apiKey),
               id,
             );
+          ctx.db.run(
+            "UPDATE models SET kind=CASE WHEN ?='jev' THEN 'jev' ELSE 'llm' END WHERE provider_id=? AND kind!='embedding'",
+            input.apiMode,
+            id,
+          );
+          ctx.db.run('UPDATE models SET validated_dimensions=NULL WHERE provider_id=?', id);
           void probe(id);
           res.json({ ok: true });
         });
@@ -293,7 +416,9 @@ export function modelsFeature(secret: string) {
         );
         router.post('/admin/models', (req, res) => {
           const input = modelSchema.parse(req.body);
-          ctx.models.connection(input.providerId);
+          const mode = ctx.models.connection(input.providerId).apiMode;
+          const kind = input.kind ?? (mode === 'jev' ? 'jev' : 'llm');
+          validateKind(mode, kind);
           if (
             ctx.db.get(
               'SELECT id FROM models WHERE provider_id=? AND name=?',
@@ -304,13 +429,15 @@ export function modelsFeature(secret: string) {
             throw new HttpError(409, '此模型已在白名单中');
           const id = randomUUID();
           ctx.db.run(
-            'INSERT INTO models(id,provider_id,name,label,vision,tool_calling,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM models))',
+            'INSERT INTO models(id,provider_id,name,label,vision,tool_calling,kind,embedding_dimensions,sort_order) VALUES(?,?,?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM models))',
             id,
             input.providerId,
             input.name,
             input.label,
-            Number(input.vision && ctx.models.connection(input.providerId).apiMode !== 'jev'),
-            Number(input.toolCalling && ctx.models.connection(input.providerId).apiMode !== 'jev'),
+            Number(input.vision && kind === 'llm'),
+            Number(input.toolCalling && kind === 'llm'),
+            kind,
+            kind === 'embedding' ? input.embeddingDimensions : null,
           );
           res.status(201).json({ id });
         });
@@ -338,29 +465,43 @@ export function modelsFeature(secret: string) {
               toolCalling: z.boolean().optional(),
               label: z.string().trim().min(1).max(100),
               userIds: z.array(z.string().uuid()).max(1000),
+              kind: z.enum(['llm', 'jev', 'embedding']).optional(),
+              embeddingDimensions: z.number().int().min(1).max(16000).nullable().optional(),
             })
             .parse(req.body);
           const id = String(req.params.id);
-          const savedModel = ctx.db.get<{ providerId: string; toolCalling: number }>(
-            'SELECT tool_calling AS toolCalling,provider_id AS providerId FROM models WHERE id=?',
+          const savedModel = ctx.db.get<{
+            providerId: string;
+            toolCalling: number;
+            kind: Model['kind'];
+            embeddingDimensions: number | null;
+          }>(
+            'SELECT tool_calling AS toolCalling,provider_id AS providerId,kind,embedding_dimensions AS embeddingDimensions FROM models WHERE id=?',
             id,
           );
           if (!savedModel) throw new HttpError(404, '模型不存在');
+          const kind = input.kind ?? savedModel.kind;
+          validateKind(ctx.models.connection(savedModel.providerId).apiMode, kind);
+          const dimensions =
+            kind === 'embedding'
+              ? input.embeddingDimensions === undefined
+                ? savedModel.embeddingDimensions
+                : input.embeddingDimensions
+              : null;
           ctx.db.transaction(() => {
             for (const userId of input.userIds)
               if (!ctx.db.get('SELECT id FROM users WHERE id=?', userId))
                 throw new HttpError(400, '授权用户不存在');
             ctx.db.run(
-              'UPDATE models SET enabled=?,vision=?,tool_calling=?,label=? WHERE id=?',
+              'UPDATE models SET enabled=?,vision=?,tool_calling=?,label=?,kind=?,embedding_dimensions=?,validated_dimensions=CASE WHEN kind=? AND embedding_dimensions IS ? THEN validated_dimensions ELSE NULL END WHERE id=?',
               Number(input.enabled),
-              Number(
-                input.vision && ctx.models.connection(savedModel.providerId).apiMode !== 'jev',
-              ),
-              Number(
-                (input.toolCalling ?? savedModel.toolCalling) &&
-                  ctx.models.connection(savedModel.providerId).apiMode !== 'jev',
-              ),
+              Number(input.vision && kind === 'llm'),
+              Number((input.toolCalling ?? savedModel.toolCalling) && kind === 'llm'),
               input.label,
+              kind,
+              dimensions,
+              kind,
+              dimensions,
               id,
             );
             ctx.db.run('DELETE FROM model_grants WHERE model_id=?', id);

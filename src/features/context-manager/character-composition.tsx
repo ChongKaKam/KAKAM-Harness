@@ -7,6 +7,7 @@ import './character-composition.css';
 const sectionNames: Record<ContextSectionId, string> = {
   system: 'System prompt',
   'long-term': '长期记忆',
+  group: '分组记忆',
   session: 'Session 记忆',
   current: '当前 prompt',
 };
@@ -31,7 +32,8 @@ export function CharacterComposition({ snapshot }: { snapshot: ContextSnapshot }
   const highlighted = hovered ?? focused ?? selected;
   const parts = snapshot.sections.map((section, index) => {
     const empty =
-      !section.entries.length && (section.id === 'system' || section.id === 'long-term')
+      !section.entries.length &&
+      (section.id === 'system' || section.id === 'long-term' || section.id === 'group')
         ? '未注入'
         : !section.entries.length && section.id === 'session'
           ? '暂无历史'

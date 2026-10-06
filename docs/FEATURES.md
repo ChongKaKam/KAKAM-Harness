@@ -256,7 +256,7 @@ import { manifest as bookmarks } from '../features/bookmarks/manifest';
 
 同一个 feature 刚创建 Service 后才注册依赖它的路由，可参照 models 中的 `ctx.inject(['models', 'db', 'http'], ...)`。**类型声明不会创建运行时服务**；缺依赖时 Kernel 会拒绝将 feature 视为成功激活。
 
-必需依赖要明确声明。若 A 是可选插件而 B 是 core，不要让 B 硬依赖可随时停用的 A；应将稳定契约放在基础服务或 B 提供的注册表中，由 A 注册贡献并返回 disposer。当前已有 HTTP / Adapter、托管 LLM 能力、Skill 与上下文观察注册接口，没有 Memory / RAG 注入总线；新扩展点需单独设计和验证。
+必需依赖要明确声明。若 A 是可选插件而 B 是 core，不要让 B 硬依赖可随时停用的 A；应将稳定契约放在基础服务或 B 提供的注册表中，由 A 注册贡献并返回 disposer。当前已有 HTTP / Adapter、托管 LLM 能力、Skill、上下文观察与 Memory provider 注册接口。记忆使用现有 MemoryManager 契约，不另建并行注入总线；其他新扩展点需单独设计和验证。
 
 事件、定时器、订阅等都必须有清理路径：
 
@@ -277,6 +277,13 @@ ctx.effect(() => {
 
 ```ts
 interface ModelAdapter {
+  embed?(
+    connection: ProviderConnection,
+    model: string,
+    inputs: string[],
+    signal: AbortSignal,
+    dimensions?: number,
+  ): Promise<EmbeddingResult>;
   discover(connection: ProviderConnection): Promise<string[]>;
   generate(
     connection: ProviderConnection,
@@ -289,6 +296,10 @@ interface ModelAdapter {
 ```
 
 `ProviderEvent` 是 `{ type: 'text', text }` 或 `{ type: 'usage', usage: { input, output, total } }`；相关类型均从该契约文件导入，`ReasoningEffort` 来自共享 DTO。Adapter 必须处理取消、协议错误、流结束及真实用量，不能将无 usage 伪造成零。
+
+Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dimensions: number, usage: EmbeddingUsage | null }`，其中 usage 的三个字段分别允许 null。OpenAI-compatible 在 Chat Completions / Responses 来源下都调用 `/embeddings`，发送 `encoding_format: 'float'`，仅在指定时发送 dimensions；Anthropic / Jev 不支持。协议依据 [OpenAI Embeddings API](https://developers.openai.com/api/reference/resources/embeddings/methods/create)。`ModelsService.embed(user, modelId, inputs, signal, options?)` 托管逐调用授权、数量 / index / 有限 float32 数值 / 非零 / 维度校验与 SQLite 用量写入；策略和插件不要绕过该入口。输入为 1–128 个非空字符串，每条最多 100000 字符、合计最多 512000 字符，维度为 1–16000。可选 options 含 `expectedDimensions`（锁定既有向量空间）、`dimensions`（不得与模型已配置维度冲突）和固定业务 `purpose` 标签。
+
+模型级 `kind: 'llm' | 'jev' | 'embedding'` 独立保存；旧模型迁移时从 Jev 来源初始化类型。`embeddingDimensions` 是配置维度，`validatedDimensions` 是最近成功验证的维度，未指定 / 未验证为 null。`GET /api/models` 默认只返回可用 LLM，可显式查询 `kind=embedding / jev / all`。管理员模型创建 / 修改接口支持 kind 和 embeddingDimensions，Embedding 不具备 vision / toolCalling。改维度或来源配置清空旧验证值，记忆索引重建见 [Memory API](MEMORY_API.md#向量索引)。
 
 在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible`、`anthropic-messages` 和 `jev`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `chat-completions` / `responses`，`anthropic-messages` 处理原生 Messages，`jev` 处理 TypeSafe System One。来源表保留 `api_mode`，旧来源迁移默认 Chat Completions。
 
@@ -304,6 +315,7 @@ interface ModelAdapter {
 - `POST /admin/providers/discover` 接收未保存的 `{ baseUrl, apiMode, apiKey?, id? }`。编辑来源时，省略 apiKey 会沿用 id 对应的已存密钥；显式空字符串表示免鉴权。只调用 Adapter.discover，不写来源、白名单或用量。现有来源也可调用 `POST /admin/providers/:id/discover`。
 - `POST /admin/models/:id/test` 替代旧的 `/admin/providers/test`。仅管理员可调用，body 只允许可选 `reasoningEffort`，默认 none。模型 API 名称、来源与协议从数据库读取，不接受任意临时模型或连接覆盖；停用模型也可在启用前测试，不改变权限。
 - `features/models/connection-test.ts` 对 LLM 调用与聊天相同的 generate 流，对 Jev 调用原生 decide，单次简短请求，60 秒截止。DTO `ModelConnectionTest` 包含 ok、model、apiMode、reasoningEffort、firstTextMs（未收到则 null）、latencyMs、textChunks、usage、可选脱敏 error 与 diagnostics（请求、HTTP 响应、模型输出、错误、截断标志）。已有有效用量在后续失败时保留，累计值取最新。
+- Embedding 测试通过同文件的 `testEmbeddingConnection` 发送一条固定短文本；额外返回 kind、configuredDimensions、actualDimensions、dimensionsMatch。自动维度的 dimensionsMatch 为 null，成功时实际维度仍保存；配置不匹配、无效或零向量判失败，已上报用量仍保留。管理页显示配置 / 实际维度、校验、耗时和逐字段 Token；不把缺失 output_tokens 补成零。
 - 显式管理员测试才创建 `ProviderDiagnostics`，通过 `ProviderConnection.diagnostics` 与 `providerFetch` 观察实际适配器请求和已消费的响应字节，不使用第二次请求或全局 fetch 拦截。请求、响应和输出各保留最多 32,768 字符；已知密钥、URL 凭据 / 查询值和敏感字段脱敏，响应头只保留类型、请求 ID 和重试提示。普通聊天仍不暴露原始上游错误。日志只返回当前管理员浏览器，不写数据库 / 控制台；HTML、非 JSON、半截流、超时也保留已获得的诊断信息。
 - API 校验 / 权限错误仍使用 HTTP 错误码；完成诊断后返回 HTTP 200，客户端必须检查 ok，不能仅凭 HTTP 成功或收到 usage 判定模型连接成功。无可显示文字的流判为失败。每次真正开始生成的测试记录当前管理员的用量，独立于聊天，不保存测试文本。
 - 前端来源表单探测后展示列表，保存成功再打开白名单添加弹窗。输入地址、密钥或协议变化即清除过期结果；取消不能保存配置或自动添加模型。
@@ -358,7 +370,7 @@ Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭�
 | `PATCH /api/conversations/:id`        | 增加可选 `groupId`，null 移出分组，可与 title 同时修改；保留旧 colorSlot 输入兼容                    |
 | `GET /api/conversations`              | 每项增加 `groupId: string \| null`；按更新时间降序返回全部私人对话                                   |
 
-`icon` 为 `folder / book / code / briefcase / sparkles` 或一个 emoji 字素（最长 32 个 UTF-16 code units，支持肤色、旗帜与 ZWJ 组合），以共享 `groups.ts` 验证；`colorSlot` 为 null 或 0–63 整数。跨账户分组 / 对话返回 404，未登录返回 401，输入错误返回 400。分组仅整理已有对话，不建立共享上下文或影响模型请求。
+`icon` 为 `folder / book / code / briefcase / sparkles` 或一个 emoji 字素（最长 32 个 UTF-16 code units，支持肤色、旗帜与 ZWJ 组合），以共享 `groups.ts` 验证；`colorSlot` 为 null 或 0–63 整数。跨账户分组 / 对话返回 404，未登录返回 401，输入错误返回 400。分组整理已有对话；启用 Memory 后，其分组记忆可在同一账户的成员对话中召回，移动对话只影响后续轮次，旧分组记忆不自动迁移。
 
 ## Skill 库 API
 
@@ -391,9 +403,11 @@ Adapter 的 generate 保持文本/用量接口；可选 generateTurn 接受 tool
 
 ## 对话 context-manager
 
+Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare / complete / invalidate / removeScope / applied；基础 chat 不注入可停用的 MemoryManager。独立 PostgreSQL/pgvector 的三层记忆、默认 LLM + Prompt 策略、管理 API、模型和索引配置详见 [Memory API](MEMORY_API.md)，构建期策略与专属设置 UI 的双注册见 [Memory Agent 指南](MEMORY_AGENTS.md)。平台 SQLite 的集中迁移规则不适用于 Memory 的独立 PostgreSQL 表，后者由 `kernel/memory-database.ts` 初始化迁移；专属 schema / 扩展由管理员准备，迁移 CLI、连接恢复、独立数据库健康接口和共享 Compose 接入见 [Memory 数据库](MEMORY_DATABASE.md)。
+
 `context-manager` 是可停用的普通插件，页面位于设置；每轮回复的查看入口由聊天页接入。插件向 `extensions` 核心注册 `ContextObserver`，契约位于 [`context-observer.ts`](../src/features/extensions/context-observer.ts)：`begin` 接收当前用户、本轮 ID、被替换轮次、历史和当前输入，返回 `request` / `finish` recorder。`request` 观察每次回答模型请求的消息、工具定义、续接中的可见助手正文与调用 / 结果，`finish` 保存回复、状态、错误与实际用量。观察器只记录，不修改模型输入；chat 不注入 context-manager 服务。
 
-快照按本轮助手消息 ID 保存，编辑末问或重试生成新的快照并保留替换关联。展示四个固定部分：System prompt、长期记忆、Session 记忆、当前 prompt。Session 部分包含最近一次回答模型请求实际发送的历史、Skill 主指令 / 读取结果、Search 上下文和工具定义；当前 prompt 单独呈现。`requestCount` 为去重后的回答模型请求数；为 0 时仍是尚未发送的输入。当前聊天没有系统消息或长期记忆注入服务，相应部分明确为空；不能将 Skill 用户级指令标成 system。图片只保存名称、大小等元数据，协议不透明推理与供应商凭据不进入快照。快照持久化的统计仍为 UTF-16 字符数、UTF-8 文本字节数和图片数量；真实 Token 沿用上游上报值。
+快照按本轮助手消息 ID 保存，编辑末问或重试生成新的快照并保留替换关联。带记忆元数据的新快照展示五个部分：System prompt、长期记忆、分组记忆、Session 记忆、当前 prompt；旧快照兼容原四分区。Session 部分包含最近一次回答模型请求实际发送的历史、Skill 主指令 / 读取结果、Search 上下文和工具定义；当前 prompt 单独呈现。`requestCount` 为去重后的回答模型请求数；为 0 时仍是尚未发送的输入。当前聊天没有系统消息，System 明确为空。Memory provider 的范围元数据将实际注入正文分入长期 / 分组 / Session，不能靠字符串猜测、重复计入当前 prompt 或把 Skill / 记忆的用户级指令标成 system。图片只保存名称、大小等元数据，协议不透明推理与供应商凭据不进入快照。快照持久化的统计仍为 UTF-16 字符数、UTF-8 文本字节数和图片数量；真实 Token 沿用上游上报值。
 
 抽屉的「上下文字符分布」直接读取快照各分区已有的 `characters`，以各分区之和为总量和占比分母，无需分词器、Worker、新 API、数据库字段或模型调用，已有快照同样适用。计数沿用 UTF-16 字符口径（JavaScript 字符串长度），包含空格、换行以及快照中已捕获的工具定义、结果和续接可见正文；补充平面字符（如部分 emoji）计为 2，空字符串计为 0。图片、消息角色与协议序列化开销、供应商不透明推理不计入；快照中的条目标签与图片元数据不作为正文统计。没有文本时显示 0 与空图，不虚构占比。图表描述所选快照最近一次请求的输入文本（`requestCount` 为 0 时为待发送输入），不含回答输出，也不累加本轮多次请求；字符数量不换算为 Token，不覆盖供应商上报或充当计费数据。图表与交互见 [UI 指南](UI_GUIDE.md#上下文抽屉与交接)。
 
@@ -401,7 +415,7 @@ Adapter 的 generate 保持文本/用量接口；可选 generateTurn 接受 tool
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `GET/PATCH /api/context-manager/preferences`                  | 当前账户的 `handoffModelId`；保存模型时验证启用、LLM 类型与授权                                                  |
 | `GET /api/context-manager/conversations/:id/turns`            | 当前账户对话的已捕获轮次摘要，包含状态、模型、数量统计与替换关联                                                 |
-| `GET /api/context-manager/conversations/:id/turns/:messageId` | 指定轮次的四部分上下文、回复、错误与数量统计；未捕获的历史轮次不事后重建                                         |
+| `GET /api/context-manager/conversations/:id/turns/:messageId` | 指定轮次的分区上下文、回复、错误与数量统计；未捕获的历史轮次不事后重建                                           |
 | `POST /api/context-manager/conversations/:id/handoff`         | `{ messageId, modelId? }`，只使用截至指定轮次的证据生成 Markdown；模型省略时使用当前账户偏好，返回文本与真实用量 |
 
 所有接口由 `requireUser` 保护，同时检查对话和账户归属；管理员不能读取他人快照。对话删除级联清理记录。停用撤销 API、停止新轮次捕获并取消 hand-off 调用，已有聊天和已接收的 recorder 仍可完成；重新启用保留数据，并按持久化消息状态整理未完成记录。

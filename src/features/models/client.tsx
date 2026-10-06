@@ -17,7 +17,7 @@ import { apiModeLabels } from '../../shared/types';
 import { SortableModels, type ManagedModel } from './sortable-models';
 import { ModelConnectionProbe } from './model-connection-test';
 import './models.css';
-import type { Provider, User } from '../../shared/types';
+import type { Provider, User, Model } from '../../shared/types';
 export function ModelsPage() {
   const { refresh, notify } = useWorkspace();
   const [tab, setTab] = useState<'sources' | 'models'>('sources');
@@ -41,6 +41,7 @@ export function ModelsPage() {
     names: string[];
   }>();
   const [discovering, setDiscovering] = useState('');
+  const [discoveryKind, setDiscoveryKind] = useState<'llm' | 'embedding'>('llm');
   const providerForm = useRef<HTMLFormElement>(null);
   const [testing, setTesting] = useState(false);
   const [draftModels, setDraftModels] = useState<string[]>();
@@ -112,12 +113,19 @@ export function ModelsPage() {
       if (modelModal === 'new')
         await post('/admin/models', {
           ...values,
+          embeddingDimensions: values.embeddingDimensions
+            ? Number(values.embeddingDimensions)
+            : null,
           vision: form.has('vision'),
           toolCalling: form.has('toolCalling'),
         });
       else
         await patch(`/admin/models/${modelModal!.id}`, {
           label: values.label,
+          kind: values.kind,
+          embeddingDimensions: values.embeddingDimensions
+            ? Number(values.embeddingDimensions)
+            : null,
           vision: form.has('vision'),
           toolCalling: form.has('toolCalling'),
           enabled: form.has('enabled'),
@@ -154,9 +162,18 @@ export function ModelsPage() {
         name,
         label: name,
         vision: false,
+        ...(data?.providers.find((p) => p.id === discovery!.provider.id)?.apiMode !== 'jev'
+          ? {
+              kind: ['chat-completions', 'responses'].includes(
+                data!.providers.find((p) => p.id === discovery!.provider.id)!.apiMode,
+              )
+                ? discoveryKind
+                : 'llm',
+            }
+          : {}),
       });
       await updated();
-      notify('已加入白名单，可在模型管理中配置图片能力和用户授权');
+      notify('已加入白名单，可在模型管理中配置能力、维度和用户授权');
     } catch (e) {
       setFormError((e as Error).message);
     } finally {
@@ -233,7 +250,7 @@ export function ModelsPage() {
             <span>
               支持 OpenAI 兼容接口、Anthropic Messages 与 Jev 决策协议。Base URL 请包含 API
               前缀，例如 <code>https://api.example.com/v1</code>
-              。探测结果需要主动加入白名单才会启用。
+              。OpenAI 兼容来源也支持 Embedding。探测结果需要主动加入白名单才会启用。
             </span>
           </div>
           <div className="models-provider-list">
@@ -488,29 +505,11 @@ export function ModelsPage() {
         >
           <form onSubmit={saveModel}>
             <fieldset disabled={busy || testing}>
-              {modelModal === 'new' && (
-                <>
-                  <label>
-                    模型来源
-                    <select name="providerId" required>
-                      {data.providers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} · {p.apiMode === 'jev' ? 'Jev 决策' : 'LLM'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    模型名称（API 标识）
-                    <input
-                      name="name"
-                      required
-                      maxLength={200}
-                      placeholder="填写来源要求的精确模型名称"
-                    />
-                  </label>
-                </>
-              )}
+              <ModelConfigurationFields
+                key={modelModal === 'new' ? 'new' : modelModal.id}
+                model={modelModal}
+                providers={data.providers}
+              />
               <label>
                 显示名称
                 <input
@@ -520,26 +519,6 @@ export function ModelsPage() {
                   defaultValue={modelModal === 'new' ? '' : modelModal.label}
                 />
               </label>
-              {(modelModal === 'new' || modelModal.kind !== 'jev') && (
-                <label className="check-row">
-                  <input
-                    type="checkbox"
-                    name="vision"
-                    defaultChecked={modelModal !== 'new' && modelModal.vision}
-                  />
-                  支持图片输入
-                </label>
-              )}
-              {(modelModal === 'new' || modelModal.kind !== 'jev') && (
-                <label className="check-row">
-                  <input
-                    type="checkbox"
-                    name="toolCalling"
-                    defaultChecked={modelModal !== 'new' && modelModal.toolCalling}
-                  />
-                  支持工具调用（Skill 参考文档按需读取）
-                </label>
-              )}
               {modelModal !== 'new' && (
                 <>
                   <label className="check-row">
@@ -551,8 +530,18 @@ export function ModelsPage() {
                     modelId={modelModal.id}
                     modelName={modelModal.name}
                     apiMode={data.providers.find((p) => p.id === modelModal.providerId)!.apiMode}
+                    kind={modelModal.kind}
                     busy={busy}
                     onTesting={setTesting}
+                    onResult={(result) => {
+                      reload();
+                      if (result.kind === 'embedding' && result.ok)
+                        setModelModal((previous) =>
+                          previous && previous !== 'new' && previous.id === modelModal.id
+                            ? { ...previous, validatedDimensions: result.actualDimensions ?? null }
+                            : previous,
+                        );
+                    }}
                   />
                   <div className="divider" />
                   <h3>用户授权</h3>
@@ -597,8 +586,25 @@ export function ModelsPage() {
           close={() => !busy && setDiscovery(undefined)}
         >
           <p className="muted small">
-            发现 {discovery.names.length} 个模型。点击添加到白名单；图片能力需在模型管理中确认。
+            发现 {discovery.names.length}{' '}
+            个模型。选择模型类型后添加到白名单，可继续管理能力和用户授权。
           </p>
+          {['chat-completions', 'responses'].includes(
+            data?.providers.find((p) => p.id === discovery.provider.id)?.apiMode ??
+              'anthropic-messages',
+          ) && (
+            <label>
+              添加模型类型
+              <select
+                value={discoveryKind}
+                onChange={(event) => setDiscoveryKind(event.target.value as 'llm' | 'embedding')}
+                disabled={busy}
+              >
+                <option value="llm">LLM · 对话模型</option>
+                <option value="embedding">Embedding · 向量模型</option>
+              </select>
+            </label>
+          )}
           <ErrorNote text={formError} />
           <div className="discovery-list">
             {discovery.names.map((name) => {
@@ -635,5 +641,113 @@ export function ModelsPage() {
         </Modal>
       )}
     </div>
+  );
+}
+function ModelConfigurationFields({
+  model,
+  providers,
+}: {
+  model: ManagedModel | 'new';
+  providers: Provider[];
+}) {
+  const [providerId, setProviderId] = useState(
+    model === 'new' ? providers[0]?.id : model.providerId,
+  );
+  const provider = providers.find((item) => item.id === providerId);
+  const [kind, setKind] = useState<Model['kind']>(
+    model === 'new' ? (provider?.apiMode === 'jev' ? 'jev' : 'llm') : model.kind,
+  );
+  const supportsEmbedding =
+    provider && ['chat-completions', 'responses'].includes(provider.apiMode);
+  return (
+    <>
+      {model === 'new' && (
+        <>
+          <label>
+            模型来源
+            <select
+              name="providerId"
+              required
+              value={providerId}
+              onChange={(event) => {
+                const next = providers.find((item) => item.id === event.target.value)!;
+                setProviderId(next.id);
+                setKind(
+                  next.apiMode === 'jev'
+                    ? 'jev'
+                    : kind === 'embedding' &&
+                        ['chat-completions', 'responses'].includes(next.apiMode)
+                      ? 'embedding'
+                      : 'llm',
+                );
+              }}
+            >
+              {providers.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} · {apiModeLabels[item.apiMode]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            模型名称（API 标识）
+            <input name="name" required maxLength={200} placeholder="填写来源要求的精确模型名称" />
+          </label>
+        </>
+      )}
+      <label>
+        模型类型
+        <select
+          name="kind"
+          value={kind}
+          onChange={(event) => setKind(event.target.value as Model['kind'])}
+        >
+          {provider?.apiMode === 'jev' ? (
+            <option value="jev">Jev · 决策模型</option>
+          ) : (
+            <>
+              <option value="llm">LLM · 对话模型</option>
+              {supportsEmbedding && <option value="embedding">Embedding · 向量模型</option>}
+            </>
+          )}
+        </select>
+      </label>
+      {kind === 'embedding' && (
+        <>
+          <label>
+            配置维度
+            <input
+              name="embeddingDimensions"
+              type="number"
+              min={1}
+              max={16000}
+              step={1}
+              placeholder="自动 · 使用上游默认维度"
+              defaultValue={model === 'new' ? '' : (model.embeddingDimensions ?? '')}
+            />
+          </label>
+          <p className="small muted">
+            仅在模型支持时指定维度；更改后需要重建记忆向量空间。最近验证维度：
+            {model === 'new' ? '未验证' : (model.validatedDimensions ?? '未验证')}。
+          </p>
+        </>
+      )}
+      {kind === 'llm' && (
+        <>
+          <label className="check-row">
+            <input type="checkbox" name="vision" defaultChecked={model !== 'new' && model.vision} />
+            支持图片输入
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              name="toolCalling"
+              defaultChecked={model !== 'new' && model.toolCalling}
+            />
+            支持工具调用（Skill 参考文档按需读取）
+          </label>
+        </>
+      )}
+    </>
   );
 }

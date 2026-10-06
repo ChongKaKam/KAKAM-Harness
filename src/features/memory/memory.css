@@ -1,0 +1,217 @@
+.memory-page {
+  --memory-gap: var(--space-4);
+}
+.memory-service-state,
+.memory-item-heading,
+.memory-meta,
+.memory-actions,
+.memory-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.memory-service-state {
+  margin-bottom: var(--space-4);
+  font-size: var(--font-ui);
+}
+.memory-tabs {
+  margin-top: var(--space-6);
+  flex-wrap: wrap;
+}
+.memory-settings-form,
+.memory-strategy-fields,
+.memory-editor-fields {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.memory-settings-section {
+  display: grid;
+  gap: var(--space-4);
+  padding-block: var(--space-6);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.memory-settings-section h2,
+.memory-indexes h2 {
+  margin: 0;
+  font-size: var(--font-heading-small);
+}
+.memory-settings-section p,
+.memory-strategy-fields p {
+  margin: 0;
+  line-height: 1.7;
+  font-size: var(--font-ui);
+}
+.memory-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  min-width: 0;
+}
+.memory-page label,
+.memory-editor label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-ui);
+}
+.memory-page label.memory-check,
+.memory-editor label.memory-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.memory-page input:not([type='checkbox']),
+.memory-page select,
+.memory-page textarea,
+.memory-editor input:not([type='checkbox']),
+.memory-editor select,
+.memory-editor textarea {
+  width: 100%;
+  min-width: 0;
+}
+.memory-check input {
+  margin: 0;
+}
+.memory-strategy-fields,
+.memory-editor-fields {
+  padding: 0;
+  border: 0;
+}
+.memory-strategy-fields legend {
+  margin-bottom: var(--space-3);
+  font-size: var(--font-ui);
+  font-weight: 600;
+}
+.memory-page .memory-caption,
+.memory-editor .memory-caption,
+.memory-proposals-compact .memory-caption {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.7;
+  margin: var(--space-2) 0;
+  overflow-wrap: anywhere;
+}
+.memory-prompt-editor {
+  font-size: var(--font-code);
+  line-height: 1.6;
+  resize: vertical;
+}
+.memory-actions {
+  justify-content: flex-end;
+}
+.memory-strategy-fields > .button {
+  justify-self: start;
+}
+.memory-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: var(--space-6) 0;
+}
+.memory-toolbar label {
+  flex: 1 1 160px;
+}
+.memory-list {
+  display: grid;
+  min-width: 0;
+}
+.memory-item {
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.memory-item-heading {
+  justify-content: space-between;
+}
+.memory-item-heading h3 {
+  font-size: var(--font-heading-small);
+  margin: 0;
+}
+.memory-meta {
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.memory-meta strong {
+  color: var(--ink);
+  font-size: var(--font-ui);
+}
+.memory-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: var(--space-3) 0;
+  font-size: var(--font-ui);
+  line-height: 1.7;
+}
+.memory-tags span {
+  background: var(--soft);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-hover);
+  font-size: var(--font-caption);
+}
+.memory-sources {
+  margin-top: var(--space-3);
+  font-size: var(--font-caption);
+}
+.memory-sources summary {
+  cursor: pointer;
+}
+.memory-editor form {
+  display: grid;
+  gap: var(--space-4);
+}
+:root .modal.memory-editor {
+  width: min(720px, calc(100vw - 32px));
+}
+.memory-proposals,
+.memory-indexes {
+  padding-top: var(--space-6);
+}
+.memory-indexes > .memory-item-heading:not(:first-child) {
+  margin-top: var(--space-8);
+}
+.memory-proposals-compact {
+  border-top: 1px solid var(--line);
+  margin-top: var(--space-6);
+}
+@media (max-width: 760px) {
+  .memory-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .memory-toolbar {
+    align-items: stretch;
+  }
+  .memory-toolbar label {
+    flex-basis: 100%;
+  }
+  .memory-page .button,
+  .memory-page .icon-button,
+  .memory-page select,
+  .memory-page input,
+  .memory-page .memory-check,
+  .memory-editor .button,
+  .memory-editor select,
+  .memory-editor input,
+  .memory-editor .memory-check {
+    min-height: 44px;
+  }
+  .memory-page input[type='checkbox'],
+  .memory-editor input[type='checkbox'] {
+    min-height: unset;
+  }
+  .memory-page .icon-button {
+    min-width: 44px;
+  }
+  :root .modal.memory-editor {
+    width: 100vw;
+    max-width: 100vw;
+  }
+  .memory-tabs > button {
+    flex: 1 1 40%;
+    min-height: 44px;
+  }
+}

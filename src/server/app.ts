@@ -18,6 +18,7 @@ import * as usage from '../features/usage/server';
 import * as prompts from '../features/prompts/server';
 import * as preferences from '../features/preferences/server';
 import * as contextManager from '../features/context-manager/server';
+import { createMemoryFeature, manifest as memory } from '../features/memory/server';
 export async function createApp(config: Config) {
   const kernel = new KHKernel(config.dataDir);
   try {
@@ -31,6 +32,14 @@ export async function createApp(config: Config) {
     await kernel.register(prompts.manifest, prompts.server);
     await kernel.register(preferences.manifest, preferences.server);
     await kernel.register(contextManager.manifest, contextManager.server);
+    await kernel.register(
+      memory,
+      createMemoryFeature({
+        databaseUrl: config.memoryDatabaseUrl,
+        namespace: config.memoryNamespace ?? 'drift-space',
+        databaseOptions: config.memoryDatabaseOptions,
+      }),
+    );
     await kernel.ctx.start();
   } catch (error) {
     await kernel.stop();
@@ -69,6 +78,17 @@ export async function createApp(config: Config) {
   app.use(express.json({ limit: '29mb' }));
   app.use(cookieParser());
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: APP_VERSION }));
+  app.get('/api/health/memory', async (_req, res) => {
+    if (!kernel.manifests(false).some((feature) => feature.id === 'memory' && feature.enabled)) {
+      res.json({ status: 'disabled', configured: !!config.memoryDatabaseUrl, ready: false });
+      return;
+    }
+    const health = await kernel.ctx.memory.repository.health();
+    res.status(health.configured && !health.ready ? 503 : 200).json({
+      status: !health.configured ? 'unconfigured' : health.ready ? 'ok' : 'unavailable',
+      ...health,
+    });
+  });
   app.use('/api', (req, _res, next) => {
     req.user = kernel.ctx.auth.resolve(req.cookies.kh_session);
     next();

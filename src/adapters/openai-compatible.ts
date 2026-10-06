@@ -4,6 +4,12 @@ import type { ModelAdapter, ProviderConnection, ProviderMessage, ProviderEvent }
 import type { ReasoningEffort } from '../shared/types';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
+import {
+  EmbeddingError,
+  embeddingUsage,
+  readEmbeddingBody,
+  validateEmbeddingResponse,
+} from './embeddings';
 const endpoint = (c: ProviderConnection, path: string) =>
   `${c.baseUrl.replace(/\/+$/, '')}/${path}`;
 const headers = (c: ProviderConnection) => ({
@@ -20,6 +26,36 @@ async function check(response: Response, connection: ProviderConnection) {
   }
 }
 export class OpenAICompatibleAdapter implements ModelAdapter {
+  async embed(
+    c: ProviderConnection,
+    model: string,
+    inputs: string[],
+    signal: AbortSignal,
+    dimensions?: number,
+  ) {
+    if (c.apiMode && !['chat-completions', 'responses'].includes(c.apiMode))
+      throw new HttpError(400, '此来源协议不支持 Embedding');
+    const response = await providerFetch(c, endpoint(c, 'embeddings'), {
+      method: 'POST',
+      headers: headers(c),
+      redirect: 'error',
+      signal,
+      body: JSON.stringify({
+        model,
+        input: inputs,
+        encoding_format: 'float',
+        ...(dimensions !== undefined ? { dimensions } : {}),
+      }),
+    });
+    const body = await readEmbeddingBody(response);
+    const usage = embeddingUsage(body.usage);
+    if (!response.ok)
+      throw new EmbeddingError(
+        `Embedding 服务返回 HTTP ${response.status}，请检查来源地址、密钥和模型名称`,
+        usage,
+      );
+    return validateEmbeddingResponse(body.data, inputs.length, usage, dimensions);
+  }
   generateTurn(
     connection: ProviderConnection,
     model: string,

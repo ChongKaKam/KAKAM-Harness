@@ -18,6 +18,8 @@ const { app, kernel } = await createApp({
   secureCookies: false,
   trustProxy: 0,
   clientDir: 'dist/client',
+  memoryDatabaseUrl: process.env.MEMORY_TEST_DATABASE_URL,
+  memoryNamespace: 'memory-e2e-test',
 });
 const server = app.listen(3210, '127.0.0.1');
 await new Promise<void>((resolve) => server.once('listening', resolve));

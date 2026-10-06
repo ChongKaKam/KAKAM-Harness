@@ -8,12 +8,13 @@
 2. 用 `git status --short` 检查已有改动，保留用户正在进行的工作。源代码与锁文件决定真实 API；文档与代码冲突时核实并修正文档，不依赖对其他框架的经验猜测接口。
 3. 按下表定位任务，优先扩展现有实现，不为一个局部功能重新建立全局状态、路由或样式系统。
 
-| 任务                                 | 首先阅读                                                                      |
-| ------------------------------------ | ----------------------------------------------------------------------------- |
-| Kernel、服务依赖、权限、聊天生命周期 | [架构](docs/ARCHITECTURE.md)、`src/kernel/`、相关 feature 的 `server.ts`      |
-| 新增 feature、API、模型协议          | [功能扩展](docs/FEATURES.md)、`src/features/prompts/`、两个注册入口           |
-| 页面、组件、主题、字号、移动端       | [UI 指南](docs/UI_GUIDE.md)、`src/client/main.tsx`、现有同类组件              |
-| 提交、推送、部署、Origin、数据备份   | [发布手册](docs/RELEASE.md)、[README](README.md)、`deploy.sh`、`compose.yaml` |
+| 任务                                 | 首先阅读                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Kernel、服务依赖、权限、聊天生命周期 | [架构](docs/ARCHITECTURE.md)、`src/kernel/`、相关 feature 的 `server.ts`                    |
+| 新增 feature、API、模型协议          | [功能扩展](docs/FEATURES.md)、`src/features/prompts/`、两个注册入口                         |
+| Memory、Embedding、记忆策略 / Agent  | [Memory API](docs/MEMORY_API.md)、[策略开发](docs/MEMORY_AGENTS.md)、`src/features/memory/` |
+| 页面、组件、主题、字号、移动端       | [UI 指南](docs/UI_GUIDE.md)、`src/client/main.tsx`、现有同类组件                            |
+| 提交、推送、部署、Origin、数据备份   | [发布手册](docs/RELEASE.md)、[README](README.md)、`deploy.sh`、`compose.yaml`               |
 
 ## 架构边界
 
@@ -26,7 +27,8 @@
 - 服务端依赖声明在 `inject`；共享服务用 Cordis `Service`，类型扩充在 `src/kernel/context.ts`。路由和其他副作用通过 `ctx.effect` 注册并返回清理函数。
 - Context 不保存当前用户。API 从 `req.user` 获取身份，跨服务调用显式传递用户。私人资源查询与修改同时限定资源 ID 和用户 ID；管理员身份不是读取他人聊天的通行证。
 - 路由内使用 Zod 验证输入、参数化 SQL 和 `HttpError`。`adminOnly` 只控制目录可见性，管理员 API 仍必须使用 `requireAdmin`。
-- 表结构与追加迁移集中在 `src/kernel/database.ts`，不要在请求处理中改 schema。数据库事务回调是同步的，不能把异步请求放进 `db.transaction()`。
+- 平台 SQLite 表结构与追加迁移集中在 `src/kernel/database.ts`；Memory 使用独立 PostgreSQL/pgvector，迁移集中在 `src/kernel/memory-database.ts`。共享数据库的专属 schema / vector 扩展由管理员准备，应用账号只迁移业务表，接入与运维见 [Memory 数据库](docs/MEMORY_DATABASE.md)。不要在请求处理中改 schema。SQLite `db.transaction()` 回调同步，不能放入异步请求；PostgreSQL 事务可异步执行数据库操作，但模型和网络调用仍在事务外。
+- Memory 只经 `extensions` 注册的 provider 接入聊天，Chat 不直接依赖可停用的 manager。策略必须实现服务端契约和同 ID / settingsKey / configVersion 的设置 UI；权限、作用域、写入模式、幂等与预算由 Manager 强制校验，策略不拿数据库连接。独立 PostgreSQL 按 `MEMORY_NAMESPACE` 和 owner 隔离，不能把 namespace 当作用户可选租户。
 - 客户端不导入 `server.ts`、Node 模块或密钥；共享 DTO 放 `src/shared/` 或 feature 的纯类型文件，用 `import type` 明确边界。
 
 ## 必须保留的行为
@@ -34,6 +36,7 @@
 - 首位注册用户成为管理员；后续用户为普通用户。使用邮箱、显示名称、密码；密码非空，不新增长度或字符组合限制，也不裁剪密码空格。
 - 聊天调用模型前执行模型白名单、启用状态和用户授权校验。Token 消耗使用来源上报数据，缺失值不能伪装成零消耗或估算账单。
 - 模型探测、连通性测试和聊天均通过 `ModelsService.adapter(apiMode)` 选择协议；用量为累计值时取最新值，不重复相加。模型排序必须保持授权过滤，默认是排序后首个可用模型，不能绕过启用与授权。
+- 模型类型为模型级 `llm / jev / embedding`；Embedding 不进入聊天选择器。通过 `ModelsService.embed(user, modelId, inputs, signal)` 逐调用授权并记录真实用量，缺失字段保留 NULL。测试必须显示配置 / 实际维度；不同来源、模型配置和向量空间不能混用，切换后重建。
 - 聊天提交与 SSE 订阅分离：离开页面、锁屏、断网、卸载组件只清理订阅，不能因此停止服务器生成任务。主动停止才调用停止 API。
 - 最后一问编辑 / 失败回复重试沿用聊天提交路由与新 requestId；仅可替换本人对话的末条问答，旧用量保留。生成按活动进度计空闲时限并有总时限，失败原因应安全地持久化。
 - 自动来源状态仅探测模型列表接口，不发送定时付费聊天；绿灯不代表每个白名单模型的生成测试已通过。
@@ -48,7 +51,7 @@
 - Quiet Precision 的公共间距、圆角、控件尺寸和表面层级以 `styles.css` token 与最后导入的 `quiet-precision.css` 为准；静态区域不用阴影，阴影只给浮层。局部状态仍放所属 feature CSS，新增固定间距遵循 4px 网格。
 - 复用 `PageHeader`、`Empty`、`Spinner`、`ErrorNote`、`Modal`、`UserAvatar`、`AssistantAvatar`、`Markdown` 与现有按钮 / 表单类。
 - 字号使用 `--font-chat/input/ui/code/caption/title` 等语义变量。保持四档字号、辅助说明至少 12px；不使用整页 `zoom` 或 `transform: scale`，不随字号放大侧栏宽度。
-- 对话分组使用 Color Pattern；普通对话条目、消息气泡和助手头像保持灰度。分组删除仅解除归属，保留对话与消息。
+- 对话分组使用 Color Pattern；普通对话条目、消息气泡和助手头像保持灰度。分组删除解除归属并清理对应 Memory，保留对话与消息。
 - 用 `usePatternColors()` 与稳定 key 分配颜色，手动颜色存 `colorSlot`。不要在 render 中随机配色或自己拼一套色板。
 - 新 CSS 优先放 feature / 组件旁，使用命名空间类和公共 token。不要追加全局 `button`、`p`、`span` 或 `.hljs-*` 覆盖去修局部显示。
 - 保留明暗模式、键盘焦点、中文输入法、手机触控与大字号布局。弹窗复用原生 dialog；轻量浮层可参照 `ModelPicker` 的 Popover，处理 Escape、关闭与焦点恢复。
@@ -70,10 +73,11 @@ npm run format:check
 
 - 按改动选择最少但有意义的检查，详见开发指南的验证矩阵。低影响、可逆的修改不必为验证而新增重复实现的测试；只改文档时检查格式、链接和示例即可。
 - E2E 使用构建后的 `dist/client`，先运行 build；默认 Chrome，桌面与 Pixel 7 两个项目。没有 Chrome 时安装 Chromium 并设置 `PW_CHANNEL=chromium`。
-- 行为测试使用临时 SQLite 和 `tests/mock-provider.ts`。不要用真实用户数据、付费模型请求或远端生产服务做测试夹具。
+- 行为测试使用临时 SQLite、临时 PostgreSQL/pgvector 和本地 mock provider。不要用真实用户数据、付费模型请求或远端生产服务做测试夹具。
 - 不把 `.env`、`.env.*` 的真实配置 / 备份、数据库、令牌、Cookie 或密钥纳入提交或打印到日志；`.env.example` 仅保存占位示例。按文件明确暂存，避免把本地设计草稿和备份顺带加入。
 - 提交、推送和部署按 [发布手册](docs/RELEASE.md) 执行，沿用当前请求及会话已有授权；用户一次要求三者时直接完成全流程，不逐步重复确认。普通实现任务不自动发布。提交采用 `type(scope): summary`，先核对分支与上游、按文件暂存并检查暂存差异；不使用 `git add .`、强推或硬重置来处理不明改动。
 - 生产部署只使用已推送到 `main` 的指定提交；先核对远端工作树并在仓库外备份 `.env` 与完整数据目录，再快进拉取、运行 `deploy.sh`、验证健康接口与公开域名。保留 `APP_SECRET`、Compose 项目名和数据卷；不能为完成测试清空用户或删除生产卷。运行中的服务并不等于当前源码已部署，报告时区分本地修改、提交、推送和部署状态。
+- 启用 Memory 时备份还包含 PostgreSQL dump；沿用 `MEMORY_NAMESPACE`、Memory 卷和每次部署的 Compose 文件组合。详见 [Memory 配置](README.md#记忆模块与-postgresql)。
 - 最终交付说明改了什么、验证了什么、仍有哪些限制；只报告实际执行并通过的检查。
 
 ## 文档同步是完成条件

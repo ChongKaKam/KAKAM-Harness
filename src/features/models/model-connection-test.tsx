@@ -3,20 +3,24 @@ import { Radio } from 'lucide-react';
 import { post } from '../../client/api';
 import { ErrorNote } from '../../client/components';
 import { apiModeLabels } from '../../shared/types';
-import type { ApiMode, ModelConnectionTest, ReasoningEffort } from '../../shared/types';
+import type { ApiMode, Model, ModelConnectionTest, ReasoningEffort } from '../../shared/types';
 
 export function ModelConnectionProbe({
   modelId,
   modelName,
   apiMode,
+  kind = 'llm',
   busy,
   onTesting,
+  onResult,
 }: {
   modelId: string;
   modelName: string;
   apiMode: ApiMode;
+  kind?: Model['kind'];
   busy: boolean;
   onTesting: (value: boolean) => void;
+  onResult?: (result: ModelConnectionTest) => void;
 }) {
   const [effort, setEffort] = useState<ReasoningEffort>('none');
   const [testing, setTesting] = useState(false);
@@ -28,11 +32,11 @@ export function ModelConnectionProbe({
     setError('');
     setResult(undefined);
     try {
-      setResult(
-        await post<ModelConnectionTest>(`/admin/models/${modelId}/test`, {
-          reasoningEffort: effort,
-        }),
-      );
+      const tested = await post<ModelConnectionTest>(`/admin/models/${modelId}/test`, {
+        reasoningEffort: effort,
+      });
+      setResult(tested);
+      onResult?.(tested);
     } catch (error) {
       setError((error as Error).message);
     } finally {
@@ -47,7 +51,8 @@ export function ModelConnectionProbe({
         {modelName} · {apiModeLabels[apiMode]}
       </p>
       <p className="small muted">
-        使用已保存的来源发送简短请求，最多等待 60 秒；实际用量计入当前管理员。
+        使用已保存的来源{kind === 'embedding' ? '发送 Embedding 请求' : '发送简短请求'}，最多等待 60
+        秒；实际用量计入当前管理员。
       </p>
       {apiMode === 'jev' && (
         <p className="small muted">
@@ -55,7 +60,7 @@ export function ModelConnectionProbe({
         </p>
       )}
       <div className="models-probe-controls">
-        {apiMode !== 'jev' && (
+        {apiMode !== 'jev' && kind !== 'embedding' && (
           <label>
             测试思考程度
             <select
@@ -82,7 +87,7 @@ export function ModelConnectionProbe({
       </div>
       {testing && (
         <p role="status" className="small muted">
-          正在等待模型完成回复…
+          {kind === 'embedding' ? '正在等待向量响应…' : '正在等待模型完成回复…'}
         </p>
       )}
       {result && (
@@ -91,33 +96,73 @@ export function ModelConnectionProbe({
             {result.ok ? '连接成功' : '连接测试未通过'} · {apiModeLabels[result.apiMode]}
           </strong>
           <dl className="models-probe-metrics">
-            <div>
-              <dt>{apiMode === 'jev' ? '决策响应' : '首段文本'}</dt>
-              <dd>
-                {apiMode === 'jev'
-                  ? result.ok
-                    ? '有效 JSON'
-                    : '未收到'
-                  : result.firstTextMs === null
-                    ? '未收到'
-                    : `${result.firstTextMs} ms`}
-              </dd>
-            </div>
+            {kind === 'embedding' ? (
+              <>
+                <div>
+                  <dt>配置维度</dt>
+                  <dd>{result.configuredDimensions ?? '自动'}</dd>
+                </div>
+                <div>
+                  <dt>实际维度</dt>
+                  <dd>{result.actualDimensions ?? '未收到'}</dd>
+                </div>
+                <div>
+                  <dt>维度校验</dt>
+                  <dd>
+                    {result.dimensionsMatch === null
+                      ? result.ok
+                        ? '已验证上游维度'
+                        : '未验证'
+                      : result.dimensionsMatch
+                        ? '一致'
+                        : '不一致'}
+                  </dd>
+                </div>
+              </>
+            ) : (
+              <div>
+                <dt>{apiMode === 'jev' ? '决策响应' : '首段文本'}</dt>
+                <dd>
+                  {apiMode === 'jev'
+                    ? result.ok
+                      ? '有效 JSON'
+                      : '未收到'
+                    : result.firstTextMs === null
+                      ? '未收到'
+                      : `${result.firstTextMs} ms`}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>总耗时</dt>
               <dd>{result.latencyMs} ms</dd>
             </div>
-            <div>
-              <dt>文本片段</dt>
-              <dd>{result.textChunks}</dd>
-            </div>
+            {kind !== 'embedding' && (
+              <div>
+                <dt>文本片段</dt>
+                <dd>{result.textChunks}</dd>
+              </div>
+            )}
             <div>
               <dt>Token</dt>
               <dd>{result.usage?.total ?? '未上报'}</dd>
             </div>
+            {kind === 'embedding' && (
+              <>
+                <div>
+                  <dt>输入 Token</dt>
+                  <dd>{result.usage?.input ?? '未上报'}</dd>
+                </div>
+                <div>
+                  <dt>输出 Token</dt>
+                  <dd>{result.usage?.output ?? '未上报'}</dd>
+                </div>
+              </>
+            )}
           </dl>
           <p className="small muted">
-            耗时从服务器发起请求开始计算，不含浏览器网络延迟。片段数量不代表 Token 数量。
+            耗时从服务器发起请求开始计算，不含浏览器网络延迟。
+            {kind !== 'embedding' && '片段数量不代表 Token 数量。'}
           </p>
           <ErrorNote text={result.error} />
           {result.diagnostics && (

@@ -10,13 +10,14 @@ flowchart TD
     App --> Kernel[KH-Kernel]
     Kernel --> Engine[Cordis Context / Service / inject / effect]
     Engine --> Core[Core: auth users models extensions chat usage preferences]
-    Engine --> Plugins[Plugin: prompts search]
+    Engine --> Plugins[Plugin: prompts search context-manager memory]
     UI[React Web Shell + Client Registry] --> HTTP[Express /api + 已验证 Request.user]
     HTTP --> Routes[HttpService / 活动 Router 列表]
     Routes --> Core
     Routes --> Plugins
     Core --> DB[SQLite / WAL]
     Plugins --> DB
+    Plugins --> MemoryDB[Memory: 独立 PostgreSQL / pgvector]
     Core --> AR[Adapter Registry]
     AR --> OA[OpenAI Compatible Adapter]
     AR --> AA[Anthropic Messages Adapter]
@@ -29,7 +30,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → search → chat → usage → prompts → preferences → context-manager 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → search → chat → usage → prompts → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
 每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
@@ -47,6 +48,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
 | `prompts`         | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入    | 工作区                         |
 | `context-manager` | plugin | 每轮上下文快照、交互轨迹与 LLM hand-off           | 回复抽屉 / 设置                |
+| `memory`          | plugin | 三层记忆、pgvector 召回、LLM 抽取、策略配置和 API | 设置；上下文抽屉展示实际注入   |
 
 Models 的管理页受管理员限制，但已授权模型列表 API 向普通用户开放；不能把整个 models feature 的 HTTP 接口统一锁成管理员专用。Core / Plugin 是生命周期分类，`adminOnly` 是目录可见性，两者不是同一个维度。
 
@@ -85,7 +87,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 - `providers.platform_url` 为可空的平台链接，仅 HTTP(S) 且不含嵌入凭据。只出现在管理员 DTO，API 连接仍只使用 baseUrl / key / apiMode。更新时省略该字段保留旧值，空字符串或 null 清空。
 - `models.sort_order` 为全局顺序。首次升级按旧的来源名称 / 模型名称排序初始化；后续启动不重排。新模型使用 MAX + 1 追加，列表按 sort_order、id 稳定排序。
-- `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一项为其默认。浏览器已明确选择且仍有权限的模型继续优先。
+- `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一个 LLM 为其聊天默认。Embedding / Jev 不参与聊天默认选择。浏览器已明确选择且仍有权限的模型继续优先。
 - `requestId = messages.id`（assistant），首个回答模型请求沿用该 ID 记入 usage，后续工具循环请求使用独立 ID。`messages.calls` 保存调用关联；历史按 usage 中的实际记录聚合，旧消息仍 LEFT JOIN 原用量。任一调用缺失上报时完整合计为 null，`Message.usage` 为 `{ input, output, total } | null`；用户消息不带此字段。最终 SSE `done.message` 也带相同值，重连 snapshot 与历史一致。查询用量前仍先校验对话所有权；此关联不会让管理员读到其他用户的私人回复。
 - `messages.duration_ms` 是可空非负整数，追加迁移保留旧数据为 null。聊天任务用服务器单调时钟从后台任务开始到结束计时，包含拓展调用、上游等待与生成；完成、失败和主动停止都持久保存。`Message.durationMs` 在 SSE done、历史与重连 snapshot 中一致，浏览器离开或幂等重试不会重置。旧消息及异常进程退出前未记录的用时不推算。
 - Anthropic 原生头为 x-api-key / anthropic-version，图片转为 base64 内容块；只向聊天正文转发 text_delta，忽略 thinking/signature 内容。message_start 与 message_delta 的 usage 按字段合并，输出为累计计数。输入加上 cache creation / cache read，message_stop 才代表协议结束；缺失结束、error、max_tokens 等保留已生成文本并报告未完成。None 不发送思考字段；非 None 使用 adaptive + output_config.effort，兼容范围和输出上限见 README。
@@ -99,20 +101,37 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 | 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages`           | 图片随消息保存在数据库，访问检查用户归属                       |
 | 用量                           | `usage`                                                      | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
 | 插件启停 / Skill               | `settings`、`skills`、`skill_versions`、`prompt_preferences` | 停用保留数据，重启恢复启停状态                                 |
+| 三层记忆 / 向量 / 策略配置     | 独立 PostgreSQL 的 memory_* 表                               | namespace + owner 隔离；备份需配套 pg_dump                     |
 | 上下文快照 / 交接模型偏好      | `context_snapshots`、`context_preferences`                   | 按账户与对话隔离，编辑 / 重试保留快照，删除对话级联清理        |
 | 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                             | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
 | 字号                           | localStorage `drift:font-size:<userId>`                      | 按账户和当前浏览器保存，不随服务器备份迁移                     |
 | 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`               | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
 
-表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。当前数据库事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
+平台 SQLite 表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。其事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。Memory 独立 PostgreSQL 表由 [`kernel/memory-database.ts`](../src/kernel/memory-database.ts) 在插件初始化时集中迁移，允许异步数据库事务，但模型 / 网络请求仍不能放入事务。两种数据库之间没有跨库外键或分布式事务。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
 
 `PUBLIC_ORIGIN` 目前只接受一个来源，比较浏览器发送的 Origin。`COOKIE_SECURE` 控制会话 Cookie 的 HTTPS 限制；`TRUST_PROXY` 控制 Express 对代理的信任，不是绕过 Origin 校验的开关。部署配置、数据库和密钥的备份规则见 [README](../README.md#备份与重新构建)。
 
 ## 取舍
 
-第一版优先支持个人部署的闭环，未引入工作区租户、跨机器事件总线、沙箱或通用任务编排。之后接入 RAG、Memory 等能力时应增加稳定服务契约或扩展点；不要让基础聊天强依赖某个可选插件。
+第一版优先支持个人部署的闭环，未引入工作区租户、跨机器事件总线、沙箱或通用任务编排。Memory 已通过 extensions 的稳定注册契约接入；之后增加其他 RAG 能力也不能让基础聊天强依赖某个可选插件。
 
 参考：[Cordis 官方仓库](https://github.com/cordiverse/cordis)。本仓库的实际行为以锁定版本、实现和集成测试为准。
+
+## 三层记忆与独立存储
+
+`memory` 插件提供 Memory Manager，并向 `extensions` 注册唯一可撤销的 MemoryProvider。Chat 在回答前准备记忆，将返回块以用户级参考文本合并到本轮输入；回答完成并保存后异步抽取，失败不会改写已完成回复。插件停用移除 API 与 provider、取消自己的辅助任务，保留 PostgreSQL 数据；SSE 订阅卸载不取消服务器任务。服务重启不续跑抽取和索引任务，遗留操作标为中断后由用户重试。
+
+SQLite 继续保存账户、原始聊天、来源、模型、授权、真实用量和 context 快照；独立 PostgreSQL/pgvector 保存记忆、来源证据、历史版本、候选、作用域状态、优先 / 排除、用户偏好、策略配置、向量空间及操作记录。连接来自 `MEMORY_DATABASE_URL`，`MEMORY_NAMESPACE` 是部署级隔离标识；所有私有查询同时限定 namespace 和 owner。外部聊天 / 用户 / 分组 ID 不建立跨数据库外键，不能声称具有分布式事务。
+
+迁移集中在 `kernel/memory-database.ts`，插件初始化时获取数据库 / schema 范围的 advisory lock 并追加业务表版本；请求不改 schema。管理员预建专属 schema、配置角色搜索路径并在 public 安装 pgvector，应用不会安装扩展或覆盖搜索路径。共享接入检查受限应用角色及 schema / 表所有权，默认连接池上限 5；初始化失败或断线后后台退避恢复。独立 `memory-db` CLI 提供迁移和只读检查，`/api/health/memory` 报告数据库就绪，平台存活检查保持独立。连接未配置或失败时聊天跳过记忆，连接串与底层错误不返回客户端。详细配置与部署见 [Memory 数据库接入](MEMORY_DATABASE.md)。
+
+作用域为 `user`（长期）、`group`（同一用户指定分组）和 `session`（持久化 conversationId）。默认个人开关关闭，配置并启用后使用 default 策略。长期记忆默认无限保留；分组 / Session 由最近活动和用户保留设置清理，显式 expiresAt 仍有效。召回的 recentDays 是偏好，不是删除期限。
+
+default 策略先 embedding 查询并执行 pgvector 精确余弦检索，再由 LLM + Prompt 返回候选 ID 和理由；Manager 校验范围、有效状态、版本、选择项和最终预算后读取保存正文。初始候选 36、相似度 0.3、最终最多 12 条 / 6000 UTF-8 字节、三个作用域各 4 条、总时限 15 秒。LLM 失败按配置降级向量结果或跳过；embedding / 数据库失败不阻止回答。没有 Redis、HNSW、自动语义冲突替换或原聊天压缩。
+
+Embedding 是模型级类型，同一供应商可接入 LLM 与 embedding。`ModelsService.embed` 逐调用授权并记录每个真实 usage 字段，缺失值为 NULL；来源、模型配置指纹和维度共同决定向量空间。修改模型、来源或维度后不能直接把新向量与旧空间混查；重建成功后切换，新旧空间隔离。索引以正文版本校验，迟到 embedding 不覆盖已编辑记录。
+
+记忆策略是可信构建期模块，服务端泛型策略与客户端专属设置面板双注册。策略得到已限定的候选和工具，不得到数据库连接、凭据或任意 owner。用户公共设置决定每类 `off / confirm / auto` 写入，默认长期确认、分组 / Session 自动；模型不能批准自己的候选。接口和后续 Agent 扩展详见 [Memory API](MEMORY_API.md) 与 [策略开发指南](MEMORY_AGENTS.md)。
 
 ## 界面偏好
 
@@ -224,10 +243,10 @@ chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可�
 
 ## 上下文快照与交接
 
-`context-manager` 向 extensions 注册只读观察器，由 chat 在接受一轮、每次回答模型请求前、生成结束时通知。核心只持有观察契约，不依赖可选插件；记录与 hand-off 都不改变后续聊天的输入，也不引入新的记忆注入服务。原始历史 / 当前提问先形成快照，之后替换为最近一次回答模型请求的组成，含实际发送的 Skill、Search 和可见工具上下文；请求计数为 0 时表示输入尚未发送。供应商续接的 reasoning / thinking 签名等不透明数据仍只留在当前生成内存，不进入快照或交接模型。观察器持久化失败只记录通用错误，不使正常聊天失败。
+`context-manager` 向 extensions 注册只读观察器，由 chat 在接受一轮、每次回答模型请求前、生成结束时通知。核心只持有观察契约，不依赖可选插件；记录与 hand-off 都不改变后续聊天的输入，也不负责记忆注入；记忆注入由独立 Memory provider 完成。原始历史 / 当前提问先形成快照，之后替换为最近一次回答模型请求的组成，含实际发送的 Skill、Search 和可见工具上下文；请求计数为 0 时表示输入尚未发送。供应商续接的 reasoning / thinking 签名等不透明数据仍只留在当前生成内存，不进入快照或交接模型。观察器持久化失败只记录通用错误，不使正常聊天失败。
 
 快照是用户私有的对话审计记录。编辑 / 重试以新助手消息 ID 保存新轮次，旧快照保留，关联到被替换轮次；删除对话时级联删除。查询与 hand-off 同时限定用户与对话，管理员权限不能绕过。停用只撤销观察器以阻止新捕获，已接受轮次的 recorder 可继续保存结果，普通聊天不受影响；重启不恢复生成，重新启用根据持久化消息状态整理遗留记录。没有捕获的历史不凭当前聊天伪造过去快照。
 
-四个分区与数量契约见 [context-manager 接口](FEATURES.md#对话-context-manager)。当前 system 与长期记忆为空，是现有输入能力的真实反映。Session 是本轮实际发送的会话上下文，不能把“曾经读过”视为后续请求仍然带有原文。文本大小只描述快照，不等于模型 tokenizer、协议封装或图片的输入 Token；图片保留元数据，避免重复存储 base64。分区字符占比直接读取快照已有的 `section.characters`，沿用 UTF-16 字符统计，与详情和总量一致；无额外分词计算，不修改观察器、快照契约、数据库或真实用量记录。
+分区与数量契约见 [context-manager 接口](FEATURES.md#对话-context-manager)。System 当前为空；启用 Memory 时长期 / 分组 / Session 按实际注入展示，否则显示为空。Session 是本轮实际发送的会话上下文，不能把“曾经读过”视为后续请求仍然带有原文。文本大小只描述快照，不等于模型 tokenizer、协议封装或图片的输入 Token；图片保留元数据，避免重复存储 base64。分区字符占比直接读取快照已有的 `section.characters`，沿用 UTF-16 字符统计，与详情和总量一致；无额外分词计算，不修改真实用量记录。
 
 交接按所选轮次截止，包含该轮之前的交互与修订证据，防止后续对话混入较早的交接点。用户主动点击才通过 extensions utility 调用已授权 LLM，不安排付费后台任务；输出说明意图轨迹、实际进展、后续方向和资料引用，并区分证据与推断。有限输入预算溢出时返回明确错误，输出只返回当前浏览器作为交接草稿，不另建服务器文档库。它不是跨进程任务恢复，也不会复制隐式供应商上下文或重新抓取文档。模型偏好、输出和真实调用用量的接口边界见功能指南。

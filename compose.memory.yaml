@@ -1,0 +1,28 @@
+# Optional local Memory database; combine with compose.yaml. Existing SQLite volume stays intact.
+services:
+  app:
+    depends_on:
+      memory-db:
+        condition: service_healthy
+  memory-db:
+    image: pgvector/pgvector:0.8.2-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: drift_memory
+      POSTGRES_USER: memory
+      POSTGRES_PASSWORD: '${MEMORY_DB_PASSWORD:?Set MEMORY_DB_PASSWORD in .env}'
+    volumes:
+      - memory-data:/var/lib/postgresql/data
+      - ./infra/memory/local-init.sql:/docker-entrypoint-initdb.d/10-vector.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U memory -d drift_memory']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+volumes:
+  memory-data:

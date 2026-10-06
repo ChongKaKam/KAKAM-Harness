@@ -16,6 +16,15 @@ The Fibonacci sequence:
   '\n```\n';
 function extensionText(content: unknown): string | undefined {
   if (typeof content !== 'string') return;
+  if (content.startsWith('Select useful saved memories')) {
+    const candidates = JSON.parse(content.slice(content.indexOf('Candidates: ') + 12)) as {
+      id: string;
+    }[];
+    return JSON.stringify({
+      selected: candidates.map(({ id }) => ({ id, reason: '本地夹具匹配' })),
+    });
+  }
+  if (content.startsWith('Extract durable user memories')) return JSON.stringify({ memories: [] });
   if (content.startsWith('Create a hand-off prompt'))
     return '# Hand-off\n\n## 用户意图轨迹\n用户希望整理项目交接资料。\n\n## 目前进度\n已检查对话中提供的资料；尚未验证的内容需继续确认。\n\n## 后续方向\n继续核对需求并完成剩余工作。\n\n## 相关文档资料\n以交接证据中实际提供的文档路径和链接为准。';
   if (content.startsWith('Write a short introduction for this prompt-library card'))
@@ -56,6 +65,18 @@ export async function mockProvider(portNumber = 0) {
   const requests: unknown[] = [];
   const searches: { query: string; max_results: number }[] = [];
   const decisions: unknown[] = [];
+  app.post('/v1/embeddings', (req, res) => {
+    requests.push(req.body);
+    const inputs = Array.isArray(req.body.input) ? req.body.input : [req.body.input];
+    const dimensions = req.body.dimensions ?? 3;
+    res.json({
+      data: inputs.map((_input: string, index: number) => ({
+        index,
+        embedding: [1, ...Array(dimensions - 1).fill(0)],
+      })),
+      usage: { prompt_tokens: inputs.length * 3, total_tokens: inputs.length * 3 },
+    });
+  });
   app.get('/jev/models', (_req, res) =>
     res.json({
       models: [{ name: 'jev-latest', description: 'Decision model', release_date: '2026-09-01' }],
