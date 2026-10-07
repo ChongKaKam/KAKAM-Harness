@@ -39,6 +39,6 @@ export interface ContextRecorder {
 
 export interface ContextObserver {
   begin(input: ContextTurn): ContextRecorder;
-  /** Removes copied memory text from audit snapshots after a user deletes a memory. */
-  redactMemory?(userId: string, memoryId: string): void;
+  /** A version cutoff removes withdrawn/reviewed copies; omission permanently removes all versions. */
+  redactMemory?(userId: string, memoryId: string, maxVersion?: number): void;
 }

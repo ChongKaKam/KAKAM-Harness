@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 export async function memoryProviderFixture() {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
-  const delays = { embedding: 0 };
+  const delays = { embedding: 0, remember: 0 };
   const requests: {
     model: string;
     input?: string[];
@@ -33,7 +33,7 @@ export async function memoryProviderFixture() {
       usage: { prompt_tokens: inputs.length * 3, total_tokens: inputs.length * 3 },
     });
   });
-  app.post('/v1/chat/completions', (req, res) => {
+  app.post('/v1/chat/completions', async (req, res) => {
     requests.push(req.body);
     if (req.body.model === 'memory-broken') {
       res.status(503).json({ error: { message: 'fixture provider unavailable' } });
@@ -41,7 +41,21 @@ export async function memoryProviderFixture() {
     }
     const text = req.body.messages.at(-1)?.content ?? '';
     let answer = '收到，本轮已使用提供的上下文。';
-    if (text.includes('Select useful saved memories')) {
+    if (text.includes('Remember it preview')) {
+      if (delays.remember) await delay(delays.remember);
+      const completed = JSON.parse(text.slice(text.indexOf('Completed turn: ') + 16));
+      answer = JSON.stringify({
+        content: '回答说明：' + completed.assistant.slice(0, 120),
+        evidence: [
+          {
+            role: 'assistant',
+            quote: completed.user.includes('[bad-remember]')
+              ? '原文不存在的虚构证据'
+              : completed.assistant.slice(0, 60),
+          },
+        ],
+      });
+    } else if (text.includes('Select useful saved memories')) {
       const candidates = JSON.parse(text.slice(text.indexOf('Candidates: ') + 12));
       answer = JSON.stringify({
         selected: [

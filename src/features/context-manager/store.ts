@@ -99,7 +99,7 @@ function summary(snapshot: ContextSnapshot): ContextSummary {
 
 /** Audit storage only: this observer never changes a provider request. */
 export class ContextStore implements ContextObserver {
-  private redactedIds = new Map<string, Set<string>>();
+  private redactedIds = new Map<string, Map<string, number>>();
   constructor(private db: Database) {
     // Chat marks interrupted messages before this plugin starts. Re-enabling the plugin
     // while an accepted turn is still running must leave its recorder intact.
@@ -198,7 +198,8 @@ export class ContextStore implements ContextObserver {
       JSON.stringify(snapshot),
     );
     const save = () => {
-      for (const id of this.redactedIds.get(input.user.id) ?? []) this.eraseMemory(snapshot, id);
+      for (const [id, version] of this.redactedIds.get(input.user.id) ?? [])
+        this.eraseMemory(snapshot, id, version);
       this.db.run(
         'UPDATE context_snapshots SET snapshot=? WHERE message_id=? AND conversation_id=? AND user_id=?',
         JSON.stringify(snapshot),
@@ -292,16 +293,17 @@ export class ContextStore implements ContextObserver {
     };
   }
 
-  redactMemory(userId: string, memoryId: string) {
-    const ids = this.redactedIds.get(userId) ?? new Set<string>();
-    ids.add(memoryId);
+  redactMemory(userId: string, memoryId: string, maxVersion?: number) {
+    const ids = this.redactedIds.get(userId) ?? new Map<string, number>();
+    const cutoff = Math.max(ids.get(memoryId) ?? 0, maxVersion ?? Infinity);
+    ids.set(memoryId, cutoff);
     this.redactedIds.set(userId, ids);
     for (const row of this.db.all<{ messageId: string; snapshot: string }>(
       'SELECT message_id AS messageId,snapshot FROM context_snapshots WHERE user_id=?',
       userId,
     )) {
       const snapshot: StoredSnapshot = JSON.parse(row.snapshot);
-      if (!this.eraseMemory(snapshot, memoryId)) continue;
+      if (!this.eraseMemory(snapshot, memoryId, cutoff)) continue;
       this.db.run(
         'UPDATE context_snapshots SET snapshot=? WHERE message_id=? AND user_id=?',
         JSON.stringify(snapshot),
@@ -311,8 +313,8 @@ export class ContextStore implements ContextObserver {
     }
   }
 
-  private eraseMemory(snapshot: StoredSnapshot, memoryId: string) {
-    return redactMemorySnapshot(snapshot, memoryId);
+  private eraseMemory(snapshot: StoredSnapshot, memoryId: string, maxVersion?: number) {
+    return redactMemorySnapshot(snapshot, memoryId, maxVersion);
   }
 
   own(userId: string, conversationId: string) {

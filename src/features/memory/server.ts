@@ -82,7 +82,7 @@ export function createMemoryFeature(options: MemoryFeatureOptions = {}) {
               scope: z.enum(scopes).optional(),
               scopeId: id.optional(),
               query: z.string().max(200).optional(),
-              status: z.enum(['active', 'review']).optional(),
+              status: z.enum(['pending', 'active', 'review']).optional(),
             })
             .parse(req.query);
           if (input.scope && input.scopeId)
@@ -110,6 +110,63 @@ export function createMemoryFeature(options: MemoryFeatureOptions = {}) {
         router.patch(`${base}/memories/:id`, async (req, res) => {
           const { version, ...patch } = memoryPatch.parse(req.body);
           res.json(await manager.update(req.user!, id.parse(req.params.id), version, patch));
+        });
+        router.get(`${base}/memories/:id/sources`, async (req, res) =>
+          res.json(await manager.sourceExcerpts(req.user!, id.parse(req.params.id))),
+        );
+        router.post(`${base}/memories/:id/admission`, async (req, res) => {
+          const input = z
+            .object({
+              version: z.number().int().positive(),
+              decision: z.enum(['include', 'withdraw']),
+            })
+            .strict()
+            .parse(req.body);
+          res.json(
+            await manager.admission(
+              req.user!,
+              id.parse(req.params.id),
+              input.version,
+              input.decision === 'include',
+            ),
+          );
+        });
+        router.post(`${base}/remember`, async (req, res) => {
+          const input = z.object({ conversationId: id, messageId: id }).strict().parse(req.body);
+          const abort = new AbortController();
+          const close = () => {
+            if (!res.writableEnded) abort.abort();
+          };
+          res.on('close', close);
+          try {
+            res.json(
+              await manager.remember(
+                req.user!,
+                input.conversationId,
+                input.messageId,
+                abort.signal,
+              ),
+            );
+          } finally {
+            res.off('close', close);
+          }
+        });
+        router.post(`${base}/remember/:id/confirm`, async (req, res) => {
+          const input = z
+            .object({
+              scope: z.enum(['user', 'group']),
+              content: z.string().trim().min(1).max(8000).optional(),
+            })
+            .strict()
+            .parse(req.body);
+          res.json(
+            await manager.confirmRemember(
+              req.user!,
+              id.parse(req.params.id),
+              input.scope,
+              input.content,
+            ),
+          );
         });
         router.delete(`${base}/memories/:id`, async (req, res) => {
           await manager.delete(req.user!, id.parse(req.params.id));

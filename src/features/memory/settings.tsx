@@ -195,12 +195,16 @@ export function MemorySettings({
                     }
                   >
                     <option value="off">不抽取</option>
-                    <option value="confirm">候选确认后保存</option>
-                    <option value="auto">自动保存</option>
+                    <option value="confirm">
+                      {scope === 'user' ? '生成候选，确认后纳入' : '候选确认后保存'}
+                    </option>
+                    <option value="auto">{scope === 'user' ? '自动存为待纳入' : '自动保存'}</option>
                   </select>
                 </label>
                 {scope === 'user' ? (
-                  <p className="memory-caption">默认长期保留</p>
+                  <p className="memory-caption">
+                    长期保留。所有新增长期记忆都需在记忆管理中确认纳入，自动保存仅保存为待纳入，不会自动进入全局召回。
+                  </p>
                 ) : (
                   <label>
                     {scope === 'group' ? '分组' : 'Session'}闲置保留（天）

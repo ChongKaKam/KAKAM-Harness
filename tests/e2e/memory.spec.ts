@@ -143,7 +143,7 @@ test('memory settings, paired strategy panel and manual CRUD work on desktop and
         .locator('option')
         .filter({ hasText: 'Memory embedding' }),
     ).toHaveCount(0);
-    await page.getByRole('tab', { name: '已保存记忆', exact: true }).click();
+    await page.getByRole('tab', { name: '记忆库', exact: true }).click();
     await page.getByRole('button', { name: '添加记忆', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '添加记忆', exact: true });
     const initialText = `UI memory ${info.project.name} 喜欢清楚的中文回答 📚`;
@@ -181,7 +181,7 @@ test('memory settings, paired strategy panel and manual CRUD work on desktop and
       user.id,
     );
     await page.reload();
-    await page.getByRole('tab', { name: '已保存记忆', exact: true }).click();
+    await page.getByRole('tab', { name: '记忆库', exact: true }).click();
     await expect(editedRow).toBeVisible();
     await editedRow.scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

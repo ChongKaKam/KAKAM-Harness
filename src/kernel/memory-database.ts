@@ -16,7 +16,7 @@ export const memoryTables = [
   'memory_selections',
   'memory_operations',
 ];
-export const memoryMigrationVersion = 2;
+export const memoryMigrationVersion = 3;
 export interface MemoryDatabaseHealth {
   configured: boolean;
   ready: boolean;
@@ -261,6 +261,13 @@ export class MemoryDatabase {
       if (!v2.rowCount) {
         await client.query(`CREATE UNIQUE INDEX memory_embedding_spaces_one_active ON memory_embedding_spaces(namespace,owner_id) WHERE state='active';
           INSERT INTO memory_schema_migrations(version) VALUES(2)`);
+      }
+      const v3 = await client.query('SELECT version FROM memory_schema_migrations WHERE version=3');
+      if (!v3.rowCount) {
+        await client.query(`ALTER TABLE memory_items DROP CONSTRAINT memory_items_status_check;
+          ALTER TABLE memory_items ADD CONSTRAINT memory_items_status_check CHECK(status IN ('active','pending','review','deleted'));
+          ALTER TABLE memory_items ADD COLUMN admitted_at timestamptz;
+          INSERT INTO memory_schema_migrations(version) VALUES(3)`);
       }
       await this.validateStructure(client);
       await client.query('COMMIT');

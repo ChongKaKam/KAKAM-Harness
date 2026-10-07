@@ -30,6 +30,7 @@
 - 平台 SQLite 表结构与追加迁移集中在 `src/kernel/database.ts`；Memory 使用独立 PostgreSQL/pgvector，迁移集中在 `src/kernel/memory-database.ts`。共享数据库的专属 schema / vector 扩展由管理员准备，应用账号只迁移业务表，接入与运维见 [Memory 数据库](docs/MEMORY_DATABASE.md)。不要在请求处理中改 schema。SQLite `db.transaction()` 回调同步，不能放入异步请求；PostgreSQL 事务可异步执行数据库操作，但模型和网络调用仍在事务外。
 - Context Manager 的只读观察器与异步处理器分别经 extensions 注册；压缩仅替换请求历史，保留原文，节点摘要在完成回答后生成。辅助模型逐调用授权并记录实际用量，契约见 [上下文管理](docs/CONTEXT_MANAGER.md)。
 - Memory 只经 `extensions` 注册的 provider 接入聊天，Chat 不直接依赖可停用的 manager。策略必须实现服务端契约和同 ID / settingsKey / configVersion 的设置 UI；权限、作用域、写入模式、幂等与预算由 Manager 强制校验，策略不拿数据库连接。独立 PostgreSQL 按 `MEMORY_NAMESPACE` 和 owner 隔离，不能把 namespace 当作用户可选租户。
+- 新长期记忆必须待用户显式纳入，自动写入、手动创建和 Remember 确认均不能跳过；正文修改重新待纳入。纳入记录真实确认时间，历史未知时间不回填。Remember 预览绑定本人已完成问答原文与哈希，确认和来源回溯重新校验；模型不能批准自己的候选。详细状态和 API 见 [Memory API](docs/MEMORY_API.md)。
 - 客户端不导入 `server.ts`、Node 模块或密钥；共享 DTO 放 `src/shared/` 或 feature 的纯类型文件，用 `import type` 明确边界。
 
 ## 必须保留的行为

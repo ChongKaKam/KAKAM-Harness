@@ -324,7 +324,7 @@ Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dime
 
 ### 工作区能力的设置页
 
-一个 feature 同时有工作区页面和设置页时，在同一条 `ClientFeature` 注册中保留 `placement: 'workspace'` 与 `component`，增加可选 `settingsComponent: ComponentType`。Shell 将其加入设置目录，`#/settings/<id>` 渲染该组件，普通 `#/<id>` 仍渲染工作区组件；无需重复 manifest、feature 实例或导航。停用、权限过滤继续使用同一个 manifest。参考 Skill 库的 `PromptsPage` / `PromptsSettings`。
+一个 feature 同时有工作区页面和设置页时，在同一条 `ClientFeature` 注册中保留 `placement: 'workspace'` 与 `component`，增加可选 `settingsComponent: ComponentType`。Shell 将其加入设置目录，`#/settings/<id>` 渲染该组件，普通 `#/<id>` 仍渲染工作区组件；无需重复 manifest、feature 实例或导航。停用、权限过滤继续使用同一个 manifest。参考 Skill 库的 `PromptsPage` / `PromptsSettings`，以及 Memory 的记忆工作区 / 策略设置；Memory 子路由 `#/memory/pending` 聚合待纳入，不新增 Kernel 实例或全局状态系统。
 
 ## 注册托管的 LLM 能力
 
@@ -403,7 +403,9 @@ Adapter 的 generate 保持文本/用量接口；可选 generateTurn 接受 tool
 
 ## 对话 context-manager
 
-Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare / complete / invalidate / removeScope / applied；基础 chat 不注入可停用的 MemoryManager。独立 PostgreSQL/pgvector 的三层记忆、默认 LLM + Prompt 策略、管理 API、模型和索引配置详见 [Memory API](MEMORY_API.md)，构建期策略与专属设置 UI 的双注册见 [Memory Agent 指南](MEMORY_AGENTS.md)。平台 SQLite 的集中迁移规则不适用于 Memory 的独立 PostgreSQL 表，后者由 `kernel/memory-database.ts` 初始化迁移；专属 schema / 扩展由管理员准备，迁移 CLI、连接恢复、独立数据库健康接口和共享 Compose 接入见 [Memory 数据库](MEMORY_DATABASE.md)。
+Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare / complete / invalidate / removeScope / applied；基础 chat 不注入可停用的 MemoryManager。回复旁的 Remember it 使用本人已完成消息 ID 调用私有 API，LLM 只生成带原文证据的摘要预览；用户选择当前分组 / 长期确认后保存，长期仍须管理页显式纳入。所有策略及直接创建路径都受 Manager 的待纳入、来源、版本与权限校验约束；纳入 / 候选批准不能注册为模型工具。
+
+独立 PostgreSQL/pgvector 的三层记忆、默认 LLM + Prompt 策略、Remember 预览 / 确认、纳入 / 撤出、来源回溯 API、模型和索引配置详见 [Memory API](MEMORY_API.md)，构建期策略与专属设置 UI 的双注册见 [Memory Agent 指南](MEMORY_AGENTS.md)。平台 SQLite 的集中迁移规则不适用于 Memory 的独立 PostgreSQL 表，后者由 `kernel/memory-database.ts` 初始化迁移；专属 schema / 扩展由管理员准备，迁移 CLI、连接恢复、独立数据库健康接口和共享 Compose 接入见 [Memory 数据库](MEMORY_DATABASE.md)。
 
 自动压缩、轨迹节点摘要、完整设置与手动重试 API 以 [上下文管理指南](CONTEXT_MANAGER.md) 为主要说明。
 

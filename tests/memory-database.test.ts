@@ -128,7 +128,7 @@ test(
     const info = await database.describe();
     assert.equal(info.user, role);
     assert.equal(info.schema, schema);
-    assert.equal(info.migrationVersion, 2);
+    assert.equal(info.migrationVersion, 3);
     const tables = (
       await admin.query('SELECT tablename,tableowner FROM pg_tables WHERE schemaname=$1', [schema])
     ).rows;
@@ -136,12 +136,13 @@ test(
     assert(tables.every((row) => row.tableowner === role));
     const repository = new PgMemoryRepository(database, `test-${suffix}`),
       owner = randomUUID();
-    const item = await repository.create(
+    const pending = await repository.create(
       owner,
       memoryInputSchema.parse({ scope: 'user', kind: 'fact', content: '共享 schema 检索验证' }),
       [],
       true,
     );
+    const item = await repository.admission(owner, pending.id, pending.version, true);
     const space = await repository.ensureSpace(owner, randomUUID(), 'test-vector', 3);
     await repository.storeVector(owner, item.id, item.version, space.id, [1, 0, 0]);
     assert.equal(
@@ -154,6 +155,24 @@ test(
     } finally {
       await check.close();
     }
+    // Recreate the persisted v2 shape only inside this disposable, randomly named schema.
+    await database.close();
+    await admin.query(`ALTER TABLE ${schema}.memory_items DROP COLUMN admitted_at;
+      ALTER TABLE ${schema}.memory_items DROP CONSTRAINT memory_items_status_check;
+      ALTER TABLE ${schema}.memory_items ADD CONSTRAINT memory_items_status_check CHECK(status IN ('active','review','deleted'));
+      DELETE FROM ${schema}.memory_schema_migrations WHERE version=3`);
+    database = new MemoryDatabase(appUrl, { schema, poolMax: 2 });
+    await database.initialized();
+    assert.equal(database.ready, true, database.error ?? 'v2 upgrade must succeed');
+    const migrated = new PgMemoryRepository(database, `test-${suffix}`);
+    const historical = await migrated.get(owner, item.id);
+    assert.equal(historical.status, 'active');
+    assert.equal(historical.content, item.content);
+    assert.equal(historical.admittedAt, null, 'upgrade must not invent a historical approval time');
+    assert.equal(
+      (await migrated.candidates(owner, [1, 0, 0], space.id, null, null, 10, 0.3))[0].id,
+      item.id,
+    );
   },
 );
 
@@ -221,7 +240,7 @@ test(
     assert.equal(database.ready, false);
     for (let i = 0; i < 100 && !database.ready; i++) await delay(100);
     assert.equal((await database.health()).ready, true, database.error ?? 'must recover');
-    assert.equal((await database.describe()).migrationVersion, 2);
+    assert.equal((await database.describe()).migrationVersion, 3);
   },
 );
 

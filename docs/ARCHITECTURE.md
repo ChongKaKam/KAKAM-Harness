@@ -36,19 +36,19 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 客户端入口 [`client/main.tsx`](../src/client/main.tsx) 创建 UiProvider 和 App。App 解析 hash 路由、加载当前用户、获取服务器 feature 状态；编译期 `clientFeatures` 与运行时目录取交集，决定可见组件。UI 隐藏不代表后端已经鉴权，后端仍独立执行权限与归属校验。
 
-| Feature ID        | kind   | 提供的能力                                        | 主要 UI 位置                   |
-| ----------------- | ------ | ------------------------------------------------- | ------------------------------ |
-| `auth`            | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像  | 登录页 / 设置中的账户设置      |
-| `users`           | core   | 管理用户、角色、停用、重置与会话撤销              | 管理员设置                     |
-| `models`          | core   | ModelsService、来源、白名单、模型授权、连通性测试 | 管理员设置；聊天可见已授权模型 |
-| `extensions`      | core   | 托管能力注册、Auto 决策、辅助模型用量             | 管理员设置；聊天能力开关       |
-| `search`          | plugin | Perplexity 搜索、查询生成与来源记录               | 拓展能力的子设置页             |
-| `chat`            | core   | 私有对话与分组、后台生成、SSE 订阅与停止          | 工作区                         |
-| `usage`           | core   | 真实用量记录、汇总与活动数据                      | 统计                           |
-| `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像             | 通用设置                       |
-| `prompts`         | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入    | 工作区                         |
-| `context-manager` | plugin | 历史压缩、上下文快照、节点摘要与 LLM hand-off     | 回复抽屉 / 设置                |
-| `memory`          | plugin | 三层记忆、pgvector 召回、LLM 抽取、策略配置和 API | 设置；上下文抽屉展示实际注入   |
+| Feature ID        | kind   | 提供的能力                                                             | 主要 UI 位置                         |
+| ----------------- | ------ | ---------------------------------------------------------------------- | ------------------------------------ |
+| `auth`            | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像                       | 登录页 / 设置中的账户设置            |
+| `users`           | core   | 管理用户、角色、停用、重置与会话撤销                                   | 管理员设置                           |
+| `models`          | core   | ModelsService、来源、白名单、模型授权、连通性测试                      | 管理员设置；聊天可见已授权模型       |
+| `extensions`      | core   | 托管能力注册、Auto 决策、辅助模型用量                                  | 管理员设置；聊天能力开关             |
+| `search`          | plugin | Perplexity 搜索、查询生成与来源记录                                    | 拓展能力的子设置页                   |
+| `chat`            | core   | 私有对话与分组、后台生成、SSE 订阅与停止                               | 工作区                               |
+| `usage`           | core   | 真实用量记录、汇总与活动数据                                           | 统计                                 |
+| `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像                                  | 通用设置                             |
+| `prompts`         | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入                         | 工作区                               |
+| `context-manager` | plugin | 历史压缩、上下文快照、节点摘要与 LLM hand-off                          | 回复抽屉 / 设置                      |
+| `memory`          | plugin | 三层记忆、pgvector 召回、LLM 抽取 / Remember、长期纳入、策略配置和 API | 工作区与设置；上下文抽屉展示实际注入 |
 
 Models 的管理页受管理员限制，但已授权模型列表 API 向普通用户开放；不能把整个 models feature 的 HTTP 接口统一锁成管理员专用。Core / Plugin 是生命周期分类，`adminOnly` 是目录可见性，两者不是同一个维度。
 
@@ -121,7 +121,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 `memory` 插件提供 Memory Manager，并向 `extensions` 注册唯一可撤销的 MemoryProvider。Chat 在回答前准备记忆，将返回块以用户级参考文本合并到本轮输入；回答完成并保存后异步抽取，失败不会改写已完成回复。插件停用移除 API 与 provider、取消自己的辅助任务，保留 PostgreSQL 数据；SSE 订阅卸载不取消服务器任务。服务重启不续跑抽取和索引任务，遗留操作标为中断后由用户重试。
 
-SQLite 继续保存账户、原始聊天、来源、模型、授权、真实用量和 context 快照；独立 PostgreSQL/pgvector 保存记忆、来源证据、历史版本、候选、作用域状态、优先 / 排除、用户偏好、策略配置、向量空间及操作记录。连接来自 `MEMORY_DATABASE_URL`，`MEMORY_NAMESPACE` 是部署级隔离标识；所有私有查询同时限定 namespace 和 owner。外部聊天 / 用户 / 分组 ID 不建立跨数据库外键，不能声称具有分布式事务。
+SQLite 继续保存账户、原始聊天、来源、模型、授权、真实用量和 context 快照；独立 PostgreSQL/pgvector 保存记忆、来源证据、历史版本、候选、长期纳入状态与时间、作用域状态、优先 / 排除、用户偏好、策略配置、向量空间及操作记录。Remember 预览也存于用户私有操作记录，在确认前不创建记忆。连接来自 `MEMORY_DATABASE_URL`，`MEMORY_NAMESPACE` 是部署级隔离标识；所有私有查询同时限定 namespace 和 owner。外部聊天 / 用户 / 分组 ID 不建立跨数据库外键，不能声称具有分布式事务。
 
 迁移集中在 `kernel/memory-database.ts`，插件初始化时获取数据库 / schema 范围的 advisory lock 并追加业务表版本；请求不改 schema。管理员预建专属 schema、配置角色搜索路径并在 public 安装 pgvector，应用不会安装扩展或覆盖搜索路径。共享接入检查受限应用角色及 schema / 表所有权，默认连接池上限 5；初始化失败或断线后后台退避恢复。独立 `memory-db` CLI 提供迁移和只读检查，`/api/health/memory` 报告数据库就绪，平台存活检查保持独立。连接未配置或失败时聊天跳过记忆，连接串与底层错误不返回客户端。详细配置与部署见 [Memory 数据库接入](MEMORY_DATABASE.md)。
 
@@ -131,7 +131,9 @@ default 策略先 embedding 查询并执行 pgvector 精确余弦检索，再由
 
 Embedding 是模型级类型，同一供应商可接入 LLM 与 embedding。`ModelsService.embed` 逐调用授权并记录每个真实 usage 字段，缺失值为 NULL；来源、模型配置指纹和维度共同决定向量空间。修改模型、来源或维度后不能直接把新向量与旧空间混查；重建成功后切换，新旧空间隔离。索引以正文版本校验，迟到 embedding 不覆盖已编辑记录。
 
-记忆策略是可信构建期模块，服务端泛型策略与客户端专属设置面板双注册。策略得到已限定的候选和工具，不得到数据库连接、凭据或任意 owner。用户公共设置决定每类 `off / confirm / auto` 写入，默认长期确认、分组 / Session 自动；模型不能批准自己的候选。接口和后续 Agent 扩展详见 [Memory API](MEMORY_API.md) 与 [策略开发指南](MEMORY_AGENTS.md)。
+记忆策略是可信构建期模块，服务端泛型策略与客户端专属设置面板双注册。策略得到已限定的候选和工具，不得到数据库连接、凭据或任意 owner。用户公共设置决定每类 `off / confirm / auto` 写入，默认长期确认、分组 / Session 自动；长期 auto、手动创建和 Remember 确认只能 pending，用户在管理页显式纳入才 active 并记录 admittedAt。模型不能批准或纳入自己的草稿。修改长期正文或撤出后回到 pending，不参与召回；历史 active 数据保持有效且未知纳入时间为 null。分组自动记忆只能属于对话的实际本人分组。
+
+Remember it 是用户对已完成回复发起的独立辅助调用：读取保存的问答 → 授权抽取 LLM 总结并提出助手原文 evidence → 持久预览 → 用户选择当前分组 / 长期并确认。确认前再次校验原文哈希、消息状态和分组，不修改原聊天。来源回溯只返回本人哈希一致的片段；changed / unavailable 不泄露修改后的或他人的内容。该流程与自动策略抽取、Context Manager 压缩 / 轨迹摘要分别存储。接口和后续 Agent 扩展详见 [Memory API](MEMORY_API.md) 与 [策略开发指南](MEMORY_AGENTS.md)。
 
 ## 界面偏好
 
@@ -246,6 +248,8 @@ chat 的 `generateReply` 驱动工具循环，协议转换留在 Adapter 的可�
 `context-manager` 向 extensions 注册只读观察器，由 chat 在接受一轮、每次回答模型请求前、生成结束时通知。核心持有观察与可选处理契约，不依赖插件服务；观察器和 Hand-off 不改变输入，压缩由独立 `ContextProcessor.prepare` 在发送前替换历史前缀，Memory 注入仍由独立 provider 完成。完成回答后 `complete` 调度节点摘要，辅助调用与关闭过程由 extensions 托管。设置、缓存来源校验、失败降级和 API 见 [上下文管理](CONTEXT_MANAGER.md)。原始历史 / 当前提问先形成快照，之后替换为最近一次回答模型请求的组成，含实际发送的 Skill、Search 和可见工具上下文；请求计数为 0 时表示输入尚未发送。供应商续接的 reasoning / thinking 签名等不透明数据仍只留在当前生成内存，不进入快照或交接模型。观察器持久化失败只记录通用错误，不使正常聊天失败。
 
 快照是用户私有的对话审计记录。编辑 / 重试以新助手消息 ID 保存新轮次，旧快照保留，关联到被替换轮次；删除对话时级联删除。查询与 hand-off 同时限定用户与对话，管理员权限不能绕过。停用只撤销观察器以阻止新捕获，已接受轮次的 recorder 可继续保存结果，普通聊天不受影响；重启不恢复生成，重新启用根据持久化消息状态整理遗留记录。没有捕获的历史不凭当前聊天伪造过去快照。
+
+Memory 撤出、正文修改和来源失效只清理指定版本及更旧的快照副本，重新纳入后新版本正常展示；彻底删除则清理所有版本。统一清理入口与 recorder 的版本上限约束见 [记忆生命周期契约](MEMORY_AGENTS.md#生命周期与证据)。
 
 分区与数量契约见 [context-manager 接口](FEATURES.md#对话-context-manager)。System 当前为空；启用 Memory 时长期 / 分组 / Session 按实际注入展示，否则显示为空。Session 是本轮实际发送的会话上下文，不能把“曾经读过”视为后续请求仍然带有原文。文本大小只描述快照，不等于模型 tokenizer、协议封装或图片的输入 Token；图片保留元数据，避免重复存储 base64。分区字符占比直接读取快照已有的 `section.characters`，沿用 UTF-16 字符统计，与详情和总量一致；无额外分词计算，不修改真实用量记录。
 

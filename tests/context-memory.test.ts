@@ -4,11 +4,119 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { KHKernel } from '../src/kernel';
+import { createApp } from '../src/server/app';
 import { ContextStore } from '../src/features/context-manager/store';
 import { splitMemoryContext } from '../src/features/context-manager/memory-sections';
 import { appendMemoryBlocks } from '../src/features/extensions/memory-context';
 import type { MemoryContextBlock, MemoryPreparation } from '../src/shared/memory';
 import type { ContextRequest, ContextTurn } from '../src/features/extensions/context-observer';
+
+test('a recorder retained across plugin disable receives withdrawal redaction and later readmission stays visible', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'kh-context-retired-'));
+  const { kernel } = await createApp({
+    dataDir: directory,
+    secret: 'local-context-retired-test-secret',
+    port: 0,
+    host: '127.0.0.1',
+    secureCookies: false,
+    trustProxy: 0,
+  });
+  try {
+    const db = kernel.ctx.db;
+    db.run(
+      "INSERT INTO users(id,username,display_name,password_hash,role) VALUES('owner','owner','Owner','unused','user')",
+    );
+    db.run(
+      "INSERT INTO conversations(id,user_id,title,updated_at) VALUES('conversation','owner','Memory test','2026-10-07T00:00:00Z')",
+    );
+    const input: ContextTurn = {
+      user: {
+        id: 'owner',
+        email: 'owner@example.test',
+        displayName: 'Owner',
+        role: 'user',
+        active: true,
+        avatar: null,
+      },
+      conversationId: 'conversation',
+      messageId: 'old-turn',
+      modelId: 'unused',
+      modelName: 'Local fixture',
+      createdAt: '2026-10-07T00:00:00Z',
+      reasoningEffort: 'none',
+      history: [],
+      current: { role: 'user', content: '当前问题' },
+    };
+    const memory: MemoryContextBlock = {
+      memoryId: 'readmitted',
+      scope: 'user',
+      version: 1,
+      content: '要撤回的旧记忆',
+      reason: '相关',
+    };
+    const request = (block: MemoryContextBlock): ContextRequest => {
+      const rendered = appendMemoryBlocks(input.current.content, [block]);
+      return {
+        callId: 'call',
+        messages: [{ role: 'user', content: rendered.content }],
+        memoryRanges: rendered.ranges,
+        tools: [],
+        steps: [],
+      };
+    };
+    const recorder = kernel.ctx.extensions.observeContext(input)!;
+    recorder.request(request(memory));
+    await kernel.toggle('context-manager', false);
+    kernel.ctx.extensions.redactMemoryContext('owner', memory.memoryId, 1);
+    recorder.request(request(memory));
+    recorder.finish({
+      id: input.messageId,
+      role: 'assistant',
+      content: '原回答',
+      status: 'complete',
+      images: [],
+      createdAt: input.createdAt,
+    });
+    const old = db.get<{ snapshot: string }>(
+      'SELECT snapshot FROM context_snapshots WHERE message_id=?',
+      input.messageId,
+    )!;
+    assert.ok(
+      !old.snapshot.includes(memory.content),
+      'late recorder must not restore a withdrawn copy after plugin disable',
+    );
+    await kernel.toggle('context-manager', true);
+    const later = kernel.ctx.extensions.observeContext({ ...input, messageId: 'new-turn' })!;
+    const readmitted = { ...memory, version: 3, content: '重新纳入的版本' };
+    later.request(request(readmitted));
+    later.finish({
+      id: 'new-turn',
+      role: 'assistant',
+      content: '新回答',
+      status: 'complete',
+      images: [],
+      createdAt: input.createdAt,
+    });
+    assert.ok(
+      db
+        .get<{ snapshot: string }>(
+          "SELECT snapshot FROM context_snapshots WHERE message_id='new-turn'",
+        )!
+        .snapshot.includes(readmitted.content),
+    );
+    kernel.ctx.extensions.redactMemoryContext('owner', memory.memoryId);
+    assert.ok(
+      !db
+        .get<{ snapshot: string }>(
+          "SELECT snapshot FROM context_snapshots WHERE message_id='new-turn'",
+        )!
+        .snapshot.includes(readmitted.content),
+    );
+  } finally {
+    await kernel.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const blocks: MemoryContextBlock[] = [
   {

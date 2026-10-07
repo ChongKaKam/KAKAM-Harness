@@ -87,6 +87,7 @@ export class ExtensionsService extends Service {
   private stopping = false;
   private skills?: { provider: SkillProvider; abort: AbortController };
   private contextObserver?: ContextObserver;
+  private contextRecorders = new Map<ContextObserver, number>();
   private contextProcessor?: ContextProcessor;
   private contextCalls = new Set<Promise<unknown>>();
   registerContextProcessor(processor: ContextProcessor) {
@@ -191,20 +192,23 @@ export class ExtensionsService extends Service {
       console.error('Memory operation recording failed');
     }
   }
-  redactMemoryContext(userId: string, memoryId: string) {
-    this.contextObserver?.redactMemory?.(userId, memoryId);
-    redactMemorySnapshots(this.ctx.db, userId, memoryId);
+  redactMemoryContext(userId: string, memoryId: string, maxVersion?: number) {
+    const observers = new Set(this.contextRecorders.keys());
+    if (this.contextObserver) observers.add(this.contextObserver);
+    for (const observer of observers) observer.redactMemory?.(userId, memoryId, maxVersion);
+    redactMemorySnapshots(this.ctx.db, userId, memoryId, maxVersion);
   }
   registerContextObserver(observer: ContextObserver) {
     if (this.contextObserver) throw new Error('Context observer already registered');
     this.contextObserver = observer;
     return () => {
       if (this.contextObserver === observer) this.contextObserver = undefined;
-      // Already accepted turns retain their recorder until completion.
+      // Accepted turns retain their recorder and receive redaction until completion.
     };
   }
   observeContext(input: ContextTurn): ContextRecorder | undefined {
     if (!this.contextObserver) return undefined;
+    const observer = this.contextObserver;
     // An optional audit feature must never interrupt an otherwise valid chat request.
     const safely = <T>(work: () => T): T | undefined => {
       try {
@@ -214,14 +218,21 @@ export class ExtensionsService extends Service {
         return undefined;
       }
     };
-    const recorder = safely(() => this.contextObserver!.begin(input));
+    const recorder = safely(() => observer.begin(input));
     if (!recorder) return undefined;
+    this.contextRecorders.set(observer, (this.contextRecorders.get(observer) ?? 0) + 1);
+    let finished = false;
     return {
       request: (request) => {
-        safely(() => recorder.request(request));
+        if (!finished) safely(() => recorder.request(request));
       },
       finish: (message) => {
+        if (finished) return;
+        finished = true;
         safely(() => recorder.finish(message));
+        const count = this.contextRecorders.get(observer)! - 1;
+        if (count) this.contextRecorders.set(observer, count);
+        else this.contextRecorders.delete(observer);
       },
     };
   }

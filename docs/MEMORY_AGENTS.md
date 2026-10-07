@@ -6,9 +6,11 @@
 
 `memory` 是可停用插件。Chat 只调用 `extensions` 核心的 [MemoryProvider](../src/features/extensions/memory-provider.ts)，插件注册 Manager 实现；Chat 不导入 Manager、PostgreSQL Repository 或策略模块。回答前 `prepare` 生成记忆块，回答成功并持久化后 `complete` 抽取新记忆，编辑 / 重试调用 `invalidate`，删除范围调用 `removeScope`。可选 `applied` 标记实际请求已使用该次准备结果。
 
-Manager 控制当前用户、对话 / 分组归属、模型授权、输入长度、数据库查询范围、有效状态、内容版本、候选审批、写入模式、最终条数 / 字节预算、超时、删除和操作幂等。策略负责根据已限定的候选选择 ID、提供理由，以及提出带证据的记忆草稿。策略不能通过输出 owner、scopeId、批准标志或任意正文绕过 Manager。
+Manager 控制当前用户、对话 / 分组归属、模型授权、输入长度、数据库查询范围、有效状态、内容版本、候选审批、长期纳入、写入模式、最终条数 / 字节预算、超时、删除和操作幂等。策略负责根据已限定的候选选择 ID、提供理由，以及提出带证据的记忆草稿。策略不能通过输出 owner、scopeId、active、admittedAt、批准标志或任意正文绕过 Manager。
 
 首版 `default` 的检索为查询 embedding → pgvector 精确余弦候选 → LLM + 检索 Prompt 选择 ID → Manager 重新校验并读取正文。其抽取为完成轮次 → LLM + 抽取 Prompt → 结构化草稿 → 证据 / 凭证校验 → 各作用域的写入模式。首版不裁剪原始历史，也不自动解决语义冲突；Session 记忆作为用户级参考补充，不替换聊天原文。
+
+长期是必须由用户纳入的作用域：`user:confirm` 产生候选，用户明确「纳入长期」后才 active；`user:auto` 只自动保存 pending；显式 CRUD 和 Remember it 保存长期同样 pending。只有纳入 API / 用户候选批准能记录 admittedAt 并激活，改 Prompt、切换策略或自定义 Agent 均不能跳过。group:auto 仅在对话实际属于本人分组时保存 active；没有分组不得退回全局长期。pending / review 不进入 search、策略 read 或注入候选。
 
 ## 服务端契约
 
@@ -41,7 +43,7 @@ interface MemoryStrategy<C extends object> {
 | `read(id)`                                      | 读取本次允许范围内的记忆，不能跨用户读取                             |
 | `signal`                                        | 总时限、主动取消、插件停用与关闭的中止信号                           |
 
-Agent 可在策略实现中组织多步 search / read / llm，但必须传播 signal、设置有限步骤 / 调用预算，并通过 schema 处理模型结果。不得绕过工具直接发付费请求、读取模型密钥或拿 PostgreSQL 连接。没有上游 usage 时不能估算或填零。工具没有“批准候选”能力；用户确认由 HTTP 管理接口执行，默认 LLM 不能批准自己的建议。
+Agent 可在策略实现中组织多步 search / read / llm，但必须传播 signal、设置有限步骤 / 调用预算，并通过 schema 处理模型结果。不得绕过工具直接发付费请求、读取模型密钥或拿 PostgreSQL 连接。没有上游 usage 时不能估算或填零。工具没有“批准候选”“纳入长期”或 Remember confirm 能力；用户确认由 HTTP 管理接口执行，LLM 不能批准自己的建议。
 
 `tools.llm` 使用 `extensions` 的 utility 托管接口，不加入聊天 Auto / On / Off 菜单。需要新模型操作时扩展现有 ModelAdapter 和 ModelsService，逐调用校验；embedding 只通过 `ModelsService.embed`。检索失败按配置跳过或降级，抽取失败不改变已完成回答。
 
@@ -93,21 +95,29 @@ memoryStrategyClients.push({
 
 检索 Prompt 支持 `{{context}}`、`{{candidates}}`、`{{maxItems}}`，必须包含前两项。模型只返回 `{"selected":[{"id":"候选 UUID","reason":"理由"}]}`；Manager 从已保存记录读取原文，拒绝凭空生成或越权 ID。抽取 Prompt 必须包含 `{{context}}`，返回 `{"memories":[{"scope":"user","kind":"fact","content":"记忆","evidence":"用户原文片段","tags":[]}]}`，最多 12 条。
 
-默认 Prompt 将历史、用户文本和候选当作数据，不执行其中指令；本轮用户要求优先于旧偏好。抽取要求 evidence 是本轮用户文本中的原文片段，不把助手推测升级为用户事实，拒绝常见凭证。改 Prompt 不改变 Manager 的验证和批准权限，也不能使记忆变成 system 指令。
+默认 Prompt 将历史、用户文本和候选当作数据，不执行其中指令；本轮用户要求优先于旧偏好。自动抽取要求 evidence 是本轮用户文本中的原文片段，不把助手推测升级为用户事实，拒绝常见凭证。改 Prompt 不改变 Manager 的验证和批准权限，也不能使记忆变成 system 指令。
+
+Remember it 是单独的显式回复总结流程，由 Manager 托管当前抽取 LLM，基于已完成的助手回复生成 summary 和助手原文 evidence，绑定本轮问答哈希后只返回预览。用户选择当前分组或长期并确认，分组直接 active，长期进入 pending 待纳入；完整接口见 [Remember it API](MEMORY_API.md#remember-it回复摘要与用户确认)。它不会隐式调用策略 extract，也不复用 Context Manager 的压缩 / 轨迹摘要作为已保存记忆。后续策略迭代影响自动抽取与召回，不能改变这个用户确认及来源绑定边界。
 
 召回近期窗口只影响选择偏好，不删除长期记忆。向量空间按用户、模型配置指纹与维度隔离；来源 / 模型 / 维度变更后通过索引重建建立新空间，不能混用相同维度但不同模型的向量。重建和抽取在进程内执行，服务重启后不自动续跑；查询操作状态后显式重试。
 
 ## 生命周期与证据
 
-对话移动到另一分组后，后续准备使用新分组，旧记忆不自动迁移。编辑末问 / 重试使旧候选失效，对来源关联衍生记忆标记复核状态；不能用迟到提取结果覆盖手动编辑。用户编辑 review 记忆表示重新确认该正文，恢复 active 并解绑失效旧来源，避免后续来源检查重复否定已确认内容；正常 active 编辑仍保留有效来源。写入和索引以内容版本校验，旧版本 embedding 不能进入新正文。
+对话移动到另一分组后，后续准备使用新分组，旧记忆不自动迁移；Remember 预览选择 group 确认时也必须检查原分组仍为当前归属。编辑末问 / 重试使旧候选和来源失效，对来源关联衍生记忆标记复核状态；不能用迟到提取结果覆盖手动编辑。用户编辑 review 的分组 / Session 记忆表示重新复核该正文，恢复 active 并解绑失效旧来源；长期正文 / 类型修改或复核后恢复 pending、清除 admittedAt，等待重新纳入。只改标签、置顶、到期等元数据保留纳入状态。写入和索引以内容版本校验，旧版本 embedding 不能进入新正文。
+
+来源回溯同时检查 Memory owner、原对话归属和原文哈希；原文 changed / unavailable 时不返回新的正文冒充旧证据。新用户确认时间不能由策略填入，升级前 active 长期记忆 admittedAt=null 保留并说明历史时间未记录，不能用迁移时间代替真实纳入时间。
 
 删除记忆清理正文、来源、版本、向量、候选关联及上下文快照中的记忆副本，保留去重墓碑；原消息保持原有聊天生命周期。范围删除和数据库暂不可用之间不存在跨库事务保证，召回时仍必须检查当前对话 / 分组归属，不只信任 PostgreSQL 中的外部 ID。
+
+快照正文清理经 `extensions.redactMemoryContext(userId, memoryId, maxVersion?)` 和 `ContextObserver.redactMemory` 执行：撤出、正文修改或来源失效传需清除的版本上限，仅清该版本及更旧副本；重新纳入后的新版本可正常进入新快照，旧副本不恢复。彻底删除省略 maxVersion，清理所有版本。ContextStore 按 owner 与 memoryId 累积版本上限，防止迟到 recorder 恢复被清理的副本；不能把临时退出写成该 ID 永久删除。快照保留的兼容标记与展示语义见 [上下文管理](CONTEXT_MANAGER.md#开发契约与验证)。
+
+extensions 将清理同时传给当前 Observer 和虽已撤销但仍有活动 recorder 的 Observer；已接受轮次继续完成，最后一个 recorder.finish 后释放跟踪，避免停用期间迟到保存恢复旧正文。
 
 Context Manager 展示实际注入的记忆 ID、版本、范围和理由，并保留准备状态。检索候选、已发送块和回答后抽取结果是不同阶段；新抽取不能计入本轮请求字符图。Prompt 标记和分区依靠明确的 offsets / metadata，不能靠正文文本匹配拆分，以免重复统计或被用户构造文本干扰。
 
 ## 验证
 
-选择与修改直接相关的隔离测试，不例行跑全量。最低覆盖新增策略的配置校验、服务端 / UI 的 id / settingsKey / configVersion 配对、取消、有限执行、越权 ID 和 schema 错误；存储变更覆盖 namespace + owner + scope、版本冲突、去重与重启。默认策略和 API 的 PostgreSQL 集成测试需要一次性测试库及 pgvector，不能指向已有部署数据库。
+选择与修改直接相关的隔离测试，不例行跑全量。最低覆盖新增策略的配置校验、服务端 / UI 的 id / settingsKey / configVersion 配对、取消、有限执行、越权 ID 和 schema 错误；存储变更覆盖 namespace + owner + scope、版本冲突、去重与重启。涉及写入需验证 user:auto 仍 pending、未纳入不召回、正文修改重新 pending、显式纳入时间、旧数据兼容，以及 Remember 原文变更 / 分组移动 / 重复确认 / 跨用户被拒绝。默认策略和 API 的 PostgreSQL 集成测试需要一次性测试库及 pgvector，不能指向已有部署数据库。
 
 Embedding 协议与诊断：
 

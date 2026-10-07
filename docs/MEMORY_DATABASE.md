@@ -81,6 +81,8 @@ docker compose --env-file .env config --quiet
 
 迁移集中在 [memory-database.ts](../src/kernel/memory-database.ts)。应用以数据库 / schema 范围的 advisory lock 串行执行追加迁移；迁移记录和业务表位于当前业务 schema。初始化只检查扩展，不执行 `CREATE EXTENSION`。迁移不在 HTTP 请求或模型调用事务中执行。
 
+当前 Memory 业务迁移版本为 **3**：允许 `memory_items.status='pending'` 并新增可空 `admitted_at`，对应 [长期待纳入与确认时间](MEMORY_API.md#类型与作用域)。已有 active 长期记忆保持有效且时间为 NULL，不用迁移时间伪造用户确认。应用严格要求数据库迁移版本与二进制一致；旧 v2 应用不能直接连接 v3 库，回滚需按下文使用升级前的配套备份。
+
 构建后提供两个独立命令，均无需启动平台、访问 SQLite 或调用模型：
 
 ```bash
@@ -149,7 +151,7 @@ docker exec -i kakamlab-db pg_restore -U kakamlab_admin -p 5656 \
 
 已有本地或其他 PostgreSQL 记忆数据时，不能只替换 URL。先冻结写入并配套导出，记录原 namespace / 用户 ID / schema；在隔离库完成 schema 映射、所有权调整、必要 pgvector 安装和导入核验后，再安排切换。默认 public schema 的旧 dump 不能直接当作 drift_memory 数据恢复；本仓库没有自动跨 schema 迁移工具。
 
-回滚应用使用已推送且兼容当前 schema 的旧提交重新构建；镜像回滚不会回滚迁移。若要回退数据库，恢复到新隔离库完成核验后协调 SQLite、`.env` 和 namespace 一起切换，保留原库与备份。首次启用失败可恢复旧环境配置和 Compose 组合继续普通聊天，不删除共享库、网络、卷或他人数据。
+回滚应用使用已推送且兼容当前 schema 的旧提交重新构建；镜像回滚不会回滚迁移。退回 v2 应用时，须从升级前 PostgreSQL dump 恢复到新隔离库，核验迁移版本与旧应用匹配，再协调同一备份窗口的 SQLite、`.env` 和原 namespace / 用户 ID 一起切换，保留原库与备份；不能只切换旧镜像或删除生产迁移记录。首次启用失败可恢复旧环境配置和 Compose 组合继续普通聊天，不删除共享库、网络、卷或他人数据。
 
 ## 本地可选数据库
 

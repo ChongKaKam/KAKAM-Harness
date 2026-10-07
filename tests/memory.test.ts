@@ -15,6 +15,8 @@ import type {
   MemoryOperation,
   MemoryPreparation,
   MemoryProposal,
+  MemoryRememberPreview,
+  MemorySourceExcerpt,
 } from '../src/shared/memory';
 import type { Message } from '../src/shared/types';
 import type { ContextSnapshot } from '../src/features/context-manager/types';
@@ -256,6 +258,8 @@ test(
     });
     assert.equal(duplicate.id, saved.id);
     assert.equal(saved.expiresAt, null);
+    assert.equal(saved.status, 'pending');
+    assert.equal(saved.admittedAt, null);
     assert.equal((await request(`${m}/memories/${saved.id}`, 'GET', undefined, admin)).status, 404);
     assert.equal(
       (
@@ -276,6 +280,13 @@ test(
       version: saved.version,
       pinned: true,
     });
+    assert.equal(saved.status, 'pending');
+    saved = await json<MemoryItem>(`${m}/memories/${saved.id}/admission`, 'POST', {
+      version: saved.version,
+      decision: 'include',
+    });
+    assert.equal(saved.status, 'active');
+    assert.ok(saved.admittedAt);
     assert.equal(
       (await request(`${m}/memories/${saved.id}`, 'PATCH', { version: 1, content: '过时版本' }))
         .status,
@@ -357,9 +368,14 @@ test(
       ['system', 'long-term', 'group', 'session', 'current'],
     );
     assert.equal(snapshot.sections.flatMap((x) => x.entries).filter((x) => x.memoryId).length, 3);
-    const upstream = fixture.requests.findLast((x) =>
-      x.messages?.at(-1)?.content.includes('<retrieved_memory'),
-    )!;
+    const upstream = fixture.requests.findLast((x) => {
+      const text = x.messages?.at(-1)?.content;
+      return (
+        text?.includes('<retrieved_memory') &&
+        !text.startsWith('Select useful saved memories') &&
+        !text.startsWith('Extract durable user memories')
+      );
+    })!;
     assert.ok(upstream);
     assert.ok(!JSON.stringify(upstream).includes(items.get('outside')!.content));
     assert.equal(
@@ -446,9 +462,9 @@ test(
       version: confirmed.memory.version,
       content: '用户复核后确认仍偏好中文回答',
     });
-    assert.equal(refreshed.status, 'active');
+    assert.equal(refreshed.status, 'pending');
     await json(`${m}/preferences`);
-    assert.equal((await json<MemoryItem>(`${m}/memories/${refreshed.id}`)).status, 'active');
+    assert.equal((await json<MemoryItem>(`${m}/memories/${refreshed.id}`)).status, 'pending');
     assert.equal(refreshed.sources.length, 0);
     await waitIndexes();
     await json(`${m}/memories/${items.get('user')!.id}`, 'DELETE');
@@ -614,6 +630,429 @@ test(
     assert.equal(
       (await json(`/conversations/${conversationId}`)).messages.at(-1).status,
       'complete',
+    );
+  },
+);
+
+async function completedTurnIn(id: string, content: string) {
+  await json(`/conversations/${id}/messages`, 'POST', {
+    requestId: randomUUID(),
+    modelId: models.get('memory-llm'),
+    content,
+  });
+  await (await request(`/conversations/${id}/events`)).text();
+  const messages: Message[] = (await json(`/conversations/${id}`)).messages;
+  assert.equal(messages.at(-1)!.status, 'complete');
+  return { userMessage: messages.at(-2)!, assistant: messages.at(-1)! };
+}
+
+test(
+  'new user memories remain pending until explicit admission; edits, withdrawal and auto extraction cannot bypass it',
+  enabled,
+  async () => {
+    await json(`${m}/preferences`, 'PATCH', {
+      enabled: true,
+      extractModelId: models.get('memory-llm'),
+      writeModes: { user: 'off', group: 'off', session: 'off' },
+    });
+    const id = (await json('/conversations', 'POST', {})).id;
+    const turn = await completedTurnIn(id, '待纳入记忆来源用于验证');
+    const source = {
+      conversationId: id,
+      messageId: turn.userMessage.id,
+      hash: digest(turn.userMessage.content),
+      evidence: '待纳入记忆来源',
+    };
+    let memory = await json<MemoryItem>(`${m}/memories`, 'POST', {
+      scope: 'user',
+      kind: 'fact',
+      content: '新的长期记忆必须人工纳入',
+      sources: [source],
+    });
+    assert.equal(memory.status, 'pending');
+    assert.equal(memory.admittedAt, null);
+    await waitIndexes();
+    const find = () =>
+      json<MemoryItem[]>(`${m}/search`, 'POST', { query: '新的长期记忆', conversationId: id });
+    assert.equal(
+      (await find()).some((x) => x.id === memory.id),
+      false,
+    );
+    assert.equal(
+      (
+        await request(`${m}/memories/${memory.id}`, 'PATCH', {
+          version: memory.version,
+          status: 'active',
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await request(
+          `${m}/memories/${memory.id}/admission`,
+          'POST',
+          { version: memory.version, decision: 'include' },
+          admin,
+        )
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await request(`${m}/memories/${memory.id}/admission`, 'POST', {
+          version: memory.version + 1,
+          decision: 'include',
+        })
+      ).status,
+      409,
+    );
+    memory = await json(`${m}/memories/${memory.id}/admission`, 'POST', {
+      version: memory.version,
+      decision: 'include',
+    });
+    assert.equal(memory.status, 'active');
+    assert.ok(memory.admittedAt);
+    const duplicate = await json<MemoryItem>(`${m}/memories/${memory.id}/admission`, 'POST', {
+      version: memory.version,
+      decision: 'include',
+    });
+    assert.equal(duplicate.version, memory.version);
+    assert.equal(duplicate.admittedAt, memory.admittedAt);
+    await waitIndexes();
+    assert.equal(
+      (await find()).some((x) => x.id === memory.id),
+      true,
+    );
+    const rememberedTurn = await completedTurnIn(id, '验证长期记忆纳入后的上下文');
+    const snapshot = await json<ContextSnapshot>(
+      `/context-manager/conversations/${id}/turns/${rememberedTurn.assistant.id}`,
+    );
+    assert.ok(JSON.stringify(snapshot).includes(memory.content));
+    memory = await json(`${m}/memories/${memory.id}/admission`, 'POST', {
+      version: memory.version,
+      decision: 'withdraw',
+    });
+    assert.equal(memory.status, 'pending');
+    assert.equal(memory.admittedAt, null);
+    assert.deepEqual(memory.sources, [source]);
+    assert.equal(
+      (await find()).some((x) => x.id === memory.id),
+      false,
+    );
+    const redacted = await json<ContextSnapshot>(
+      `/context-manager/conversations/${id}/turns/${rememberedTurn.assistant.id}`,
+    );
+    assert.ok(!JSON.stringify(redacted).includes(memory.content));
+    memory = await json(`${m}/memories/${memory.id}/admission`, 'POST', {
+      version: memory.version,
+      decision: 'include',
+    });
+    await waitIndexes();
+    const afterReadmission = await completedTurnIn(id, '重新纳入后应在新快照中出现');
+    const freshSnapshot = await json<ContextSnapshot>(
+      `/context-manager/conversations/${id}/turns/${afterReadmission.assistant.id}`,
+    );
+    assert.ok(JSON.stringify(freshSnapshot).includes(memory.content));
+    assert.ok(
+      !freshSnapshot.sections
+        .flatMap((part) => part.entries)
+        .some((entry) => entry.memoryId === memory.id && entry.memoryDeleted),
+    );
+    const edited = await json<MemoryItem>(`${m}/memories/${memory.id}`, 'PATCH', {
+      version: memory.version,
+      content: '正文改变后重新进入待纳入',
+    });
+    assert.equal(edited.status, 'pending');
+    assert.equal(edited.admittedAt, null);
+    app.kernel.ctx.db.run(
+      'UPDATE messages SET content=? WHERE id=?',
+      '原文发生改变',
+      source.messageId,
+    );
+    assert.equal(
+      (
+        await request(`${m}/memories/${edited.id}/admission`, 'POST', {
+          version: edited.version,
+          decision: 'include',
+        })
+      ).status,
+      409,
+    );
+    const changed = await json<MemorySourceExcerpt[]>(`${m}/memories/${edited.id}/sources`);
+    assert.equal(changed[0].status, 'changed');
+    assert.equal(changed[0].excerpt, null);
+    assert.equal(
+      (await request(`${m}/memories/${edited.id}/sources`, 'GET', undefined, admin)).status,
+      404,
+    );
+    const expired = await json<MemoryItem>(`${m}/memories`, 'POST', {
+      scope: 'user',
+      kind: 'fact',
+      content: '已过期不能纳入',
+      expiresAt: '2020-01-01T00:00:00Z',
+    });
+    assert.equal(
+      (
+        await request(`${m}/memories/${expired.id}/admission`, 'POST', {
+          version: expired.version,
+          decision: 'include',
+        })
+      ).status,
+      409,
+    );
+    const project = (await json('/conversation-groups', 'POST', { name: '自动记忆限定分组' })).id;
+    const grouped = (await json('/conversations', 'POST', { groupId: project })).id;
+    await json(`${m}/preferences`, 'PATCH', {
+      writeModes: { user: 'auto', group: 'auto', session: 'off' },
+    });
+    const extracted = await completedTurnIn(grouped, '我喜欢中文回答，项目使用中文说明。');
+    const ops = await waitFor(
+      () => json<MemoryOperation[]>(`${m}/operations?messageId=${extracted.assistant.id}`),
+      (rows) => rows.some((x) => x.type === 'extract' && x.state === 'complete'),
+    );
+    const extraction = ops.find((x) => x.type === 'extract')!;
+    const saved = await Promise.all(
+      (extraction.facts.savedIds as string[]).map((mid) =>
+        json<MemoryItem>(`${m}/memories/${mid}`),
+      ),
+    );
+    assert.ok(
+      saved.some((x) => x.scope === 'user' && x.status === 'pending' && x.admittedAt === null),
+    );
+    assert.ok(
+      saved.some((x) => x.scope === 'group' && x.scopeId === project && x.status === 'active'),
+    );
+    await json(`${m}/preferences`, 'PATCH', {
+      writeModes: { user: 'off', group: 'off', session: 'off' },
+    });
+  },
+);
+
+test(
+  'Remember it creates an attributable preview only, confirms scope with idempotency and rejects tampering or changed sources',
+  enabled,
+  async () => {
+    const project = (await json('/conversation-groups', 'POST', { name: 'Remember it 项目' })).id;
+    const id = (await json('/conversations', 'POST', { groupId: project })).id;
+    const turn = await completedTurnIn(id, '记住这条回答的有用结论');
+    const before = (await json<MemoryItem[]>(`${m}/memories`)).length;
+    assert.equal(
+      (
+        await request(
+          `${m}/remember`,
+          'POST',
+          { conversationId: id, messageId: turn.assistant.id },
+          admin,
+        )
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await request(`${m}/remember`, 'POST', {
+          conversationId: id,
+          messageId: turn.userMessage.id,
+        })
+      ).status,
+      400,
+    );
+    const preview = await json<MemoryRememberPreview>(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    assert.equal(preview.state, 'pending');
+    assert.equal(preview.memoryId, null);
+    assert.equal(preview.groupId, project);
+    assert.ok(
+      preview.sources.some(
+        (s) => s.messageId === turn.assistant.id && turn.assistant.content.includes(s.evidence!),
+      ),
+    );
+    assert.equal((await json<MemoryItem[]>(`${m}/memories`)).length, before);
+    assert.equal(
+      (
+        await request(`${m}/remember/${preview.id}/confirm`, 'POST', {
+          scope: 'group',
+          sources: [],
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await request(`${m}/remember/${preview.id}/confirm`, 'POST', { scope: 'group' }, admin))
+        .status,
+      404,
+    );
+    const groupMemory = await json<MemoryItem>(`${m}/remember/${preview.id}/confirm`, 'POST', {
+      scope: 'group',
+    });
+    assert.equal(groupMemory.status, 'active');
+    assert.equal(groupMemory.kind, 'episode');
+    assert.equal(groupMemory.scopeId, project);
+    const duplicate = await json<MemoryItem>(`${m}/remember/${preview.id}/confirm`, 'POST', {
+      scope: 'group',
+    });
+    assert.equal(duplicate.id, groupMemory.id);
+    assert.equal(
+      (await request(`${m}/remember/${preview.id}/confirm`, 'POST', { scope: 'user' })).status,
+      409,
+    );
+    assert.equal(
+      (
+        await request(`${m}/remember/${preview.id}/confirm`, 'POST', {
+          scope: 'group',
+          content: '另一个摘要',
+        })
+      ).status,
+      409,
+    );
+    const excerpts = await json<MemorySourceExcerpt[]>(`${m}/memories/${groupMemory.id}/sources`);
+    assert.equal(excerpts.length, 2);
+    assert.ok(excerpts.every((x) => x.status === 'available' && x.excerpt));
+    const longPreview = await json<MemoryRememberPreview>(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    const longMemory = await json<MemoryItem>(`${m}/remember/${longPreview.id}/confirm`, 'POST', {
+      scope: 'user',
+      content: '用户编辑确认的回答摘要',
+    });
+    assert.equal(longMemory.status, 'pending');
+    assert.equal(longMemory.admittedAt, null);
+    assert.equal(longMemory.content, '用户编辑确认的回答摘要');
+    assert.deepEqual(longMemory.sources, longPreview.sources);
+    const cancelled = await json<MemoryRememberPreview>(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    await json(`${m}/operations/${cancelled.id}/cancel`, 'POST', {});
+    assert.equal(
+      (await request(`${m}/remember/${cancelled.id}/confirm`, 'POST', { scope: 'user' })).status,
+      409,
+    );
+    const moved = await json<MemoryRememberPreview>(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    await json(`/conversations/${id}`, 'PATCH', { groupId: null });
+    assert.equal(
+      (await request(`${m}/remember/${moved.id}/confirm`, 'POST', { scope: 'group' })).status,
+      409,
+    );
+    await json(`/conversations/${id}`, 'PATCH', { groupId: project });
+    const changed = await json<MemoryRememberPreview>(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    app.kernel.ctx.db.run(
+      'UPDATE messages SET content=? WHERE id=?',
+      '回答原文被修改',
+      turn.assistant.id,
+    );
+    assert.equal(
+      (await request(`${m}/remember/${changed.id}/confirm`, 'POST', { scope: 'user' })).status,
+      409,
+    );
+    const sourceChanged = await json<MemorySourceExcerpt[]>(
+      `${m}/memories/${groupMemory.id}/sources`,
+    );
+    assert.ok(sourceChanged.some((x) => x.status === 'changed' && x.excerpt === null));
+    app.kernel.ctx.db.run(
+      'UPDATE messages SET content=? WHERE id=?',
+      turn.assistant.content,
+      turn.assistant.id,
+    );
+    await json(`${m}/memories/${groupMemory.id}`, 'DELETE');
+    assert.ok(
+      [404, 409].includes(
+        (await request(`${m}/remember/${preview.id}/confirm`, 'POST', { scope: 'group' })).status,
+      ),
+    );
+    assert.equal(
+      (
+        await request(`${m}/remember/${changed.id}/confirm`, 'POST', {
+          scope: 'user',
+          content: 'password: remember-private-credential',
+        })
+      ).status,
+      400,
+    );
+    const usage = app.kernel.ctx.db.all<{
+      model_name: string;
+      input_tokens: number;
+      output_tokens: number;
+    }>('SELECT model_name,input_tokens,output_tokens FROM usage WHERE user_id=?', memberId);
+    assert.ok(
+      usage.some(
+        (x) =>
+          x.model_name.includes('Remember it') && x.input_tokens === 20 && x.output_tokens === 10,
+      ),
+    );
+    await waitIndexes();
+  },
+);
+
+test(
+  'Remember it rejects fabricated evidence, disabled models, and late results after source changes or plugin stop',
+  enabled,
+  async () => {
+    const id = (await json('/conversations', 'POST', {})).id;
+    const bad = await completedTurnIn(id, '[bad-remember] 不能接受虚构证据');
+    assert.equal(
+      (await request(`${m}/remember`, 'POST', { conversationId: id, messageId: bad.assistant.id }))
+        .status,
+      502,
+    );
+    const turn = await completedTurnIn(id, '验证晚到摘要');
+    fixture.delays.remember = 200;
+    const pending = request(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    await waitFor(
+      () => json<MemoryOperation[]>(`${m}/operations?messageId=${turn.assistant.id}`),
+      (rows) => rows.some((x) => x.type === 'remember' && x.state === 'running'),
+    );
+    app.kernel.ctx.db.run(
+      'UPDATE messages SET content=? WHERE id=?',
+      '来源在LLM调用中改变',
+      turn.assistant.id,
+    );
+    assert.equal((await pending).status, 409);
+    app.kernel.ctx.db.run(
+      'UPDATE messages SET content=? WHERE id=?',
+      turn.assistant.content,
+      turn.assistant.id,
+    );
+    const stopping = request(`${m}/remember`, 'POST', {
+      conversationId: id,
+      messageId: turn.assistant.id,
+    });
+    await waitFor(
+      () => json<MemoryOperation[]>(`${m}/operations?messageId=${turn.assistant.id}`),
+      (rows) => rows.some((x) => x.type === 'remember' && x.state === 'running'),
+    );
+    await json('/features/memory', 'PATCH', { enabled: false }, admin);
+    assert.equal((await stopping).status, 409);
+    fixture.delays.remember = 0;
+    await json('/features/memory', 'PATCH', { enabled: true }, admin);
+    await json(
+      `/admin/models/${models.get('memory-llm')}`,
+      'PATCH',
+      { enabled: false, label: 'memory-llm', vision: false, userIds: [memberId] },
+      admin,
+    );
+    assert.equal(
+      (await request(`${m}/remember`, 'POST', { conversationId: id, messageId: turn.assistant.id }))
+        .status,
+      403,
+    );
+    await json(
+      `/admin/models/${models.get('memory-llm')}`,
+      'PATCH',
+      { enabled: true, label: 'memory-llm', vision: false, userIds: [memberId] },
+      admin,
     );
   },
 );

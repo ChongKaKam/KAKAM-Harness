@@ -15,7 +15,11 @@ export function appendMemoryBlocks(content: string, blocks: MemoryContextBlock[]
   }
   return { content, ranges };
 }
-export function redactMemorySnapshot(snapshot: unknown, memoryId: string): boolean {
+export function redactMemorySnapshot(
+  snapshot: unknown,
+  memoryId: string,
+  maxVersion?: number,
+): boolean {
   let changed = false;
   const visit = (value: unknown) => {
     if (!value || typeof value !== 'object') return;
@@ -24,7 +28,11 @@ export function redactMemorySnapshot(snapshot: unknown, memoryId: string): boole
       return;
     }
     const node = value as Record<string, unknown>;
-    if (node.memoryId === memoryId) {
+    const version = node.memoryVersion ?? node.version;
+    if (
+      node.memoryId === memoryId &&
+      (maxVersion === undefined || typeof version !== 'number' || version <= maxVersion)
+    ) {
       node.content = '[记忆已删除]';
       if ('reason' in node) node.reason = '记忆已删除';
       if ('memoryReason' in node) node.memoryReason = '记忆已删除';
@@ -60,14 +68,19 @@ export function redactMemorySnapshot(snapshot: unknown, memoryId: string): boole
   }
   return changed;
 }
-export function redactMemorySnapshots(db: Database, userId: string, memoryId: string) {
+export function redactMemorySnapshots(
+  db: Database,
+  userId: string,
+  memoryId: string,
+  maxVersion?: number,
+) {
   db.transaction(() => {
     for (const row of db.all<{ messageId: string; snapshot: string }>(
       'SELECT message_id AS messageId,snapshot FROM context_snapshots WHERE user_id=?',
       userId,
     )) {
       const snapshot: unknown = JSON.parse(row.snapshot);
-      if (redactMemorySnapshot(snapshot, memoryId))
+      if (redactMemorySnapshot(snapshot, memoryId, maxVersion))
         db.run(
           'UPDATE context_snapshots SET snapshot=? WHERE user_id=? AND message_id=?',
           JSON.stringify(snapshot),

@@ -55,3 +55,40 @@ test('memory request ranges preserve decorated text exactly and deletion scrubs 
   assert.equal(JSON.stringify(snapshot).includes(block.content), false);
   assert.equal(redactMemorySnapshot(snapshot, 'another-owner-memory'), false);
 });
+
+test('withdrawal redacts prior versions while readmitted versions remain auditable and deletion removes all', () => {
+  const memoryId = 'readmitted-memory';
+  const snapshot = {
+    sections: [
+      {
+        entries: [
+          { memoryId, memoryVersion: 1, content: '旧版本记忆', images: [] },
+          { memoryId, memoryVersion: 3, content: '重新纳入后的记忆', images: [] },
+        ],
+        characters: 0,
+        bytes: 0,
+        imageCount: 0,
+      },
+    ],
+    memory: {
+      blocks: [
+        { memoryId, version: 1, content: '旧版本记忆', reason: '旧理由' },
+        { memoryId, version: 3, content: '重新纳入后的记忆', reason: '新理由' },
+      ],
+    },
+    response: '原始回答仍保留',
+    characters: 0,
+    bytes: 0,
+    imageCount: 0,
+  };
+  assert.equal(redactMemorySnapshot(snapshot, memoryId, 1), true);
+  assert.equal(snapshot.sections[0].entries[0].content, '[记忆已删除]');
+  assert.equal(snapshot.memory.blocks[0].content, '[记忆已删除]');
+  assert.equal(snapshot.sections[0].entries[1].content, '重新纳入后的记忆');
+  assert.equal(snapshot.memory.blocks[1].content, '重新纳入后的记忆');
+  assert.equal(snapshot.characters, '[记忆已删除]重新纳入后的记忆'.length);
+  assert.equal(redactMemorySnapshot(snapshot, memoryId), true);
+  assert.ok(snapshot.sections[0].entries.every((entry) => entry.content === '[记忆已删除]'));
+  assert.ok(snapshot.memory.blocks.every((block) => block.content === '[记忆已删除]'));
+  assert.equal(snapshot.response, '原始回答仍保留');
+});

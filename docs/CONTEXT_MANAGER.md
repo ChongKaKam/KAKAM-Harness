@@ -67,4 +67,6 @@
 
 chat 仅依赖 extensions 核心。`ContextObserver` 继续同步、只读地记录实际请求；独立的 [ContextProcessor](../src/features/extensions/context-processor.ts) 提供异步 prepare / complete，由 context-manager 经 `ctx.effect` 注册。prepare 返回请求消息与压缩记录；complete 在回答保存后调度节点摘要。辅助调用统一使用 `registerUtility` / `generateUtility`，逐次校验模型授权、使用真实协议适配器并记录真实用量。SQLite 迁移集中在 `kernel/database.ts`，网络调用在事务外。
 
+Memory 暂时撤出、修改正文或来源失效时，清理该版本及更旧快照中的记忆正文；重新纳入后的新版本可以进入后续快照，不恢复已清理的旧副本。彻底删除才清理该 ID 的所有版本，开发契约见 [记忆生命周期](MEMORY_AGENTS.md#生命周期与证据)。清理后的快照沿用 `[记忆已删除]`、`memoryDeleted` 兼容标记并重新计算数量；对于暂时撤出，这个标记表示旧副本已清除，不表示 MemoryItem 已永久删除。正文查看、复制和 Hand-off 不再包含被清理副本的原文。
+
 针对性测试为 `tests/context-processing.test.ts`、原 `context-manager.test.ts` 和 Memory 上下文兼容用例；浏览器检查 `tests/e2e/context-automation.spec.ts` 与 `memory-settings.spec.ts`。仅使用临时 SQLite、本地 mock provider 和隔离会话，不调用付费模型或使用生产数据作夹具。

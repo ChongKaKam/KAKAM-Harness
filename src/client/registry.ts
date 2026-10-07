@@ -7,6 +7,7 @@ import {
   BookOpen,
   Settings,
   GitBranch,
+  Brain,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ExtensionsPage } from '../features/extensions/client';
@@ -20,7 +21,7 @@ import { ModelsPage } from '../features/models/client';
 import { PromptsPage } from '../features/prompts/client';
 import { PromptsSettings } from '../features/prompts/settings';
 import { ContextManagerSettings } from '../features/context-manager/client';
-import { MemoryPage } from '../features/memory/client';
+import { MemoryPage, MemorySettingsPage } from '../features/memory/client';
 import { manifest as memory } from '../features/memory/manifest';
 import { manifest as contextManager } from '../features/context-manager/manifest';
 import { PreferencesPage } from '../features/preferences/client';
@@ -54,7 +55,6 @@ export const clientFeatures: ClientFeature[] = [
     settingsParent: 'extensions',
   },
   { placement: 'workspace', manifest: chat, icon: MessageSquare, component: ChatPage },
-  { placement: 'settings', manifest: memory, icon: GitBranch, component: MemoryPage },
   {
     placement: 'settings',
     settingsLabel: '上下文管理',
@@ -68,6 +68,14 @@ export const clientFeatures: ClientFeature[] = [
     icon: BookOpen,
     component: PromptsPage,
     settingsComponent: PromptsSettings,
+  },
+  {
+    placement: 'workspace',
+    manifest: memory,
+    icon: Brain,
+    component: MemoryPage,
+    settingsLabel: '记忆管理',
+    settingsComponent: MemorySettingsPage,
   },
   { placement: 'statistics', manifest: usage, icon: ChartNoAxesCombined, component: UsagePage },
   { placement: 'settings', manifest: models, icon: Layers, component: ModelsPage },

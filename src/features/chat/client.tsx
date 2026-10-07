@@ -1,6 +1,7 @@
 import { AttachmentMenu, SkillChips, useChatSkills } from '../skills/chat-controls';
 import { SkillDetails } from '../skills/message-details';
 import { ContextDrawer } from '../context-manager/drawer';
+import { RememberDialog } from '../memory/remember';
 import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
@@ -15,6 +16,7 @@ import {
   Pencil,
   RefreshCw,
   GitBranch,
+  BookmarkPlus,
 } from 'lucide-react';
 import { UserAvatar } from '../../client/user-avatar';
 import { ModelPicker } from './model-picker';
@@ -31,6 +33,14 @@ import { copyText } from '../../client/clipboard';
 import { Markdown } from '../../client/markdown';
 import { ErrorNote, Spinner } from '../../client/components';
 import type { Attachment, ReasoningEffort } from '../../shared/types';
+
+function sourceMessageTarget() {
+  const [page, , messageId] = window.location.hash.replace(/^#\/?/, '').split('/');
+  return page === 'chat' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId ?? '')
+    ? messageId
+    : undefined;
+}
 export function ChatPage() {
   const {
     user,
@@ -54,6 +64,29 @@ export function ChatPage() {
     error: streamError,
   } = useConversation(conversationId, revision, refresh);
   const scroll = useChatNavigation(conversationId, messages, loading);
+  const [sourceTarget, setSourceTarget] = useState(sourceMessageTarget);
+  const sourceJump = useRef('');
+  useEffect(() => {
+    const update = () => setSourceTarget(sourceMessageTarget());
+    window.addEventListener('hashchange', update);
+    return () => window.removeEventListener('hashchange', update);
+  }, []);
+  useEffect(() => {
+    if (!sourceTarget) {
+      sourceJump.current = '';
+      return;
+    }
+    const target = `${conversationId}:${sourceTarget}`;
+    if (
+      loading ||
+      !sourceTarget ||
+      sourceJump.current === target ||
+      !messages.some((message) => message.id === sourceTarget)
+    )
+      return;
+    sourceJump.current = target;
+    scroll.jumpTo(sourceTarget);
+  }, [conversationId, sourceTarget, loading, messages, scroll.jumpTo]);
   const [modelId, setModelId] = useState(localStorage.getItem('kh:model') ?? '');
   const [effort, setEffort] = useState<ReasoningEffort>('none');
   useEffect(() => {
@@ -77,6 +110,13 @@ export function ChatPage() {
   const contextEnabled = features.some(
     (feature) => feature.id === 'context-manager' && feature.enabled,
   );
+  const memoryEnabled = features.some((feature) => feature.id === 'memory' && feature.enabled);
+  const [rememberTurn, setRememberTurn] = useState<{
+    userId: string;
+    conversationId: string;
+    messageId: string;
+  }>();
+  useEffect(() => setRememberTurn(undefined), [user.id, conversationId, memoryEnabled]);
   const [contextTurn, setContextTurn] = useState<{
     userId: string;
     conversationId: string;
@@ -278,6 +318,7 @@ export function ChatPage() {
                       )}
                       <strong>{m.role === 'assistant' ? 'Chatbot' : user.displayName}</strong>
                       {m.modelName && <span>{m.modelName}</span>}
+                      {m.id === sourceTarget && <span>来源消息</span>}
                     </div>
                     <div className="message-content">
                       <SkillDetails message={m} />
@@ -356,6 +397,26 @@ export function ChatPage() {
                               上下文
                             </button>
                           )}
+                          {memoryEnabled &&
+                            conversationId &&
+                            m.status === 'complete' &&
+                            m.content && (
+                              <button
+                                type="button"
+                                className="copy-button memory-remember-trigger"
+                                aria-label="Remember it · 记住这条回复"
+                                onClick={() =>
+                                  setRememberTurn({
+                                    userId: user.id,
+                                    conversationId,
+                                    messageId: m.id,
+                                  })
+                                }
+                              >
+                                <BookmarkPlus size={14} aria-hidden="true" />
+                                Remember it
+                              </button>
+                            )}
                           {!editing &&
                             m.id === lastAssistant?.id &&
                             lastUser &&
@@ -528,6 +589,16 @@ export function ChatPage() {
             conversationId={contextTurn.conversationId}
             messageId={contextTurn.messageId}
             close={() => setContextTurn(undefined)}
+          />
+        )}
+      {memoryEnabled &&
+        rememberTurn?.userId === user.id &&
+        rememberTurn.conversationId === conversationId && (
+          <RememberDialog
+            key={`${user.id}:${rememberTurn.messageId}`}
+            conversationId={rememberTurn.conversationId}
+            messageId={rememberTurn.messageId}
+            close={() => setRememberTurn(undefined)}
           />
         )}
     </div>

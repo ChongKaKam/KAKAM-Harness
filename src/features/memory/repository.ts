@@ -34,6 +34,7 @@ function item(row: Row): MemoryItem {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     expiresAt: row.expires_at ? iso(row.expires_at) : null,
+    admittedAt: row.admitted_at ? iso(row.admitted_at) : null,
     sources: row.sources ?? [],
     indexStatus: row.index_status,
     ...(row.similarity === undefined ? {} : { similarity: Number(row.similarity) }),
@@ -116,6 +117,15 @@ export interface MemoryRepository {
     confirmed: boolean,
   ): Promise<MemoryItem>;
   update(owner: string, id: string, version: number, input: MemoryInput): Promise<MemoryItem>;
+  admission(owner: string, id: string, version: number, include: boolean): Promise<MemoryItem>;
+  confirmRemember(
+    owner: string,
+    id: string,
+    input: MemoryInput,
+    sources: MemorySource[],
+    confirmationHash: string,
+  ): Promise<MemoryItem>;
+  cancelRemember(owner: string, id: string): Promise<void>;
   delete(owner: string, id: string): Promise<void>;
   scopeItems(owner: string, scope: MemoryScope, scopeId: string): Promise<MemoryItem[]>;
   candidates(
@@ -286,7 +296,7 @@ export class PgMemoryRepository implements MemoryRepository {
       `SELECT m.*,${sourceSelect} FROM memory_items m
       WHERE namespace=$1 AND owner_id=$2 AND status<> 'deleted'
         AND ($3::text IS NULL OR scope=$3) AND ($4::text IS NULL OR scope_id=$4)
-        AND ($5::text IS NULL OR content ILIKE '%'||$5||'%') AND ($6::text IS NULL OR status=$6)
+        AND ($5::text IS NULL OR content ILIKE '%'||$5||'%' OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(tags) tag WHERE tag ILIKE '%'||$5||'%')) AND ($6::text IS NULL OR status=$6)
       ORDER BY pinned DESC,updated_at DESC LIMIT 200`,
       owner,
       [filter.scope ?? null, filter.scopeId ?? null, filter.query ?? null, filter.status ?? null],
@@ -324,8 +334,8 @@ export class PgMemoryRepository implements MemoryRepository {
     const id = await this.db.transaction(async (client) => {
       const id = randomUUID();
       const result = await client.query(
-        `INSERT INTO memory_items(namespace,owner_id,id,scope,scope_id,kind,content,tags,pinned,expires_at,dedupe_key,confirmed)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        `INSERT INTO memory_items(namespace,owner_id,id,scope,scope_id,kind,content,tags,pinned,expires_at,dedupe_key,confirmed,status)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         ON CONFLICT(namespace,owner_id,scope,scope_id,kind,dedupe_key) DO NOTHING RETURNING id`,
         [
           this.namespace,
@@ -339,7 +349,8 @@ export class PgMemoryRepository implements MemoryRepository {
           input.pinned,
           input.expiresAt,
           contentKey(input.content),
-          confirmed,
+          input.scope === 'user' ? false : confirmed,
+          input.scope === 'user' ? 'pending' : 'active',
         ],
       );
       if (!result.rowCount) {
@@ -391,13 +402,18 @@ export class PgMemoryRepository implements MemoryRepository {
         )
       ).rows[0];
       if (duplicate) throw new HttpError(409, '该范围已有相同记忆或删除墓碑');
+      const needsAdmission =
+        row.scope === 'user' &&
+        (row.status === 'review' || row.content !== input.content || row.kind !== input.kind);
+      const status = needsAdmission ? 'pending' : row.status === 'review' ? 'active' : row.status;
       await client.query(
         `INSERT INTO memory_versions(namespace,owner_id,memory_id,version,document) VALUES($1,$2,$3,$4,$5)`,
         [this.namespace, owner, id, version, JSON.stringify(item(row))],
       );
       await client.query(
         `UPDATE memory_items SET content=$4,kind=$5,tags=$6,pinned=$7,expires_at=$8,dedupe_key=$9,
-        version=version+1,updated_at=now(),index_status='pending',status='active',confirmed=true
+        version=version+1,updated_at=now(),index_status='pending',status=$10,confirmed=$11,
+        admitted_at=CASE WHEN $12 THEN NULL ELSE admitted_at END
         WHERE namespace=$1 AND owner_id=$2 AND id=$3`,
         [
           this.namespace,
@@ -409,6 +425,9 @@ export class PgMemoryRepository implements MemoryRepository {
           input.pinned,
           input.expiresAt,
           contentKey(input.content),
+          status,
+          status === 'active',
+          needsAdmission,
         ],
       );
       await client.query(
@@ -422,6 +441,115 @@ export class PgMemoryRepository implements MemoryRepository {
         );
     });
     return this.get(owner, id);
+  }
+  async admission(owner: string, id: string, version: number, include: boolean) {
+    await this.db.transaction(async (client) => {
+      const row = (
+        await client.query(
+          `SELECT * FROM memory_items WHERE namespace=$1 AND owner_id=$2 AND id=$3 AND status<>'deleted' FOR UPDATE`,
+          [this.namespace, owner, id],
+        )
+      ).rows[0];
+      if (!row) throw new HttpError(404, '记忆不存在');
+      if (row.scope !== 'user') throw new HttpError(400, '仅长期记忆需要纳入确认');
+      if (row.version !== version) throw new HttpError(409, '记忆已改变，请刷新后重试');
+      if (include && row.status === 'review')
+        throw new HttpError(409, '来源已改变，请先编辑复核后再纳入');
+      if (include && row.expires_at && new Date(row.expires_at).getTime() <= Date.now())
+        throw new HttpError(409, '记忆已到期，不能纳入');
+      if ((include && row.status === 'active') || (!include && row.status === 'pending')) return;
+      await client.query(
+        `INSERT INTO memory_versions(namespace,owner_id,memory_id,version,document) VALUES($1,$2,$3,$4,$5)`,
+        [this.namespace, owner, id, version, JSON.stringify(item(row))],
+      );
+      await client.query(
+        `UPDATE memory_items SET status=$4,confirmed=$5,admitted_at=CASE WHEN $5 THEN now() ELSE NULL END,
+        version=version+1,updated_at=now(),index_status='pending' WHERE namespace=$1 AND owner_id=$2 AND id=$3`,
+        [this.namespace, owner, id, include ? 'active' : 'pending', include],
+      );
+      await client.query(
+        'DELETE FROM memory_embeddings WHERE namespace=$1 AND owner_id=$2 AND memory_id=$3',
+        [this.namespace, owner, id],
+      );
+    });
+    return this.get(owner, id);
+  }
+  async confirmRemember(
+    owner: string,
+    id: string,
+    input: MemoryInput,
+    sources: MemorySource[],
+    confirmationHash: string,
+  ) {
+    const savedId = await this.db.transaction(async (client) => {
+      const row = (
+        await client.query(
+          `SELECT * FROM memory_operations WHERE namespace=$1 AND owner_id=$2 AND id=$3 AND kind='remember' FOR UPDATE`,
+          [this.namespace, owner, id],
+        )
+      ).rows[0];
+      if (!row) throw new HttpError(404, '记忆预览不存在');
+      if (row.status !== 'complete' || !row.result?.preview)
+        throw new HttpError(409, '记忆预览尚未完成或已失效');
+      if (row.result.memoryId) {
+        if (row.result.confirmationHash !== confirmationHash)
+          throw new HttpError(409, '该预览已使用其他内容或范围确认');
+        return row.result.memoryId as string;
+      }
+      const inserted = (
+        await client.query(
+          `INSERT INTO memory_items(namespace,owner_id,id,scope,scope_id,kind,content,tags,pinned,expires_at,dedupe_key,confirmed,status)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,false,NULL,$9,$10,$11)
+        ON CONFLICT(namespace,owner_id,scope,scope_id,kind,dedupe_key) DO NOTHING RETURNING id`,
+          [
+            this.namespace,
+            owner,
+            randomUUID(),
+            input.scope,
+            input.scopeId ?? '',
+            input.kind,
+            input.content,
+            JSON.stringify(input.tags),
+            contentKey(input.content),
+            input.scope !== 'user',
+            input.scope === 'user' ? 'pending' : 'active',
+          ],
+        )
+      ).rows[0];
+      const existing =
+        inserted ??
+        (
+          await client.query(
+            `SELECT id,status FROM memory_items WHERE namespace=$1 AND owner_id=$2 AND scope=$3 AND scope_id=$4 AND kind=$5 AND dedupe_key=$6 FOR UPDATE`,
+            [
+              this.namespace,
+              owner,
+              input.scope,
+              input.scopeId ?? '',
+              input.kind,
+              contentKey(input.content),
+            ],
+          )
+        ).rows[0];
+      if (!existing) throw new HttpError(409, '记忆已改变，请重新确认');
+      if (existing.status === 'deleted') throw new HttpError(409, '该内容已删除，无法重复保存');
+      await this.sources(client, owner, existing.id, sources);
+      await client.query(
+        `UPDATE memory_operations SET result=result||$4::jsonb,updated_at=now() WHERE namespace=$1 AND owner_id=$2 AND id=$3`,
+        [this.namespace, owner, id, JSON.stringify({ memoryId: existing.id, confirmationHash })],
+      );
+      return existing.id as string;
+    });
+    return this.get(owner, savedId);
+  }
+  async cancelRemember(owner: string, id: string) {
+    // This update locks the same operation row as confirmation and cannot overwrite its result.
+    await this.query(
+      `UPDATE memory_operations SET status='cancelled',result='{}',error='记忆任务已取消',updated_at=now()
+      WHERE namespace=$1 AND owner_id=$2 AND id=$3 AND kind='remember' AND status='complete' AND COALESCE(result->>'memoryId','')=''`,
+      owner,
+      [id],
+    );
   }
   async delete(owner: string, id: string) {
     await this.db.transaction(async (client) => {
@@ -466,7 +594,11 @@ export class PgMemoryRepository implements MemoryRepository {
           [original.content, ...historical],
         ],
       );
-      // Operation payloads contain IDs and counters, but no saved memory text.
+      // Remember previews contain summaries and quotes; deleting a saved memory removes its copy.
+      await client.query(
+        `UPDATE memory_operations SET result=result-'preview',updated_at=now() WHERE namespace=$1 AND owner_id=$2 AND kind='remember' AND result->>'memoryId'=$3`,
+        [this.namespace, owner, id],
+      );
     });
   }
   async scopeItems(owner: string, scope: MemoryScope, scopeId: string) {
@@ -661,8 +793,8 @@ export class PgMemoryRepository implements MemoryRepository {
         throw new HttpError(409, '记忆候选已到期');
       const inserted = (
         await client.query(
-          `INSERT INTO memory_items(namespace,owner_id,id,scope,scope_id,kind,content,tags,expires_at,dedupe_key,pinned,confirmed)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) ON CONFLICT(namespace,owner_id,scope,scope_id,kind,dedupe_key) DO NOTHING RETURNING id`,
+          `INSERT INTO memory_items(namespace,owner_id,id,scope,scope_id,kind,content,tags,expires_at,dedupe_key,pinned,confirmed,admitted_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,CASE WHEN $4='user' THEN now() ELSE NULL END) ON CONFLICT(namespace,owner_id,scope,scope_id,kind,dedupe_key) DO NOTHING RETURNING id`,
           [
             this.namespace,
             owner,
@@ -682,7 +814,7 @@ export class PgMemoryRepository implements MemoryRepository {
         inserted ??
         (
           await client.query(
-            `SELECT id,status FROM memory_items WHERE namespace=$1 AND owner_id=$2 AND scope=$3 AND scope_id=$4 AND kind=$5 AND dedupe_key=$6`,
+            `SELECT id,status FROM memory_items WHERE namespace=$1 AND owner_id=$2 AND scope=$3 AND scope_id=$4 AND kind=$5 AND dedupe_key=$6 FOR UPDATE`,
             [
               this.namespace,
               owner,
@@ -693,7 +825,16 @@ export class PgMemoryRepository implements MemoryRepository {
             ],
           )
         ).rows[0];
+      if (!existing) throw new HttpError(409, '记忆已改变，请重新确认');
       if (existing.status === 'deleted') throw new HttpError(409, '该内容已删除，无法批准重复候选');
+      if (input.scope === 'user' && existing.status && existing.status !== 'active') {
+        if (existing.status === 'review')
+          throw new HttpError(409, '记忆来源已改变，请先编辑复核后再纳入');
+        await client.query(
+          `UPDATE memory_items SET status='active',confirmed=true,admitted_at=now(),version=version+1,updated_at=now(),index_status='pending' WHERE namespace=$1 AND owner_id=$2 AND id=$3`,
+          [this.namespace, owner, existing.id],
+        );
+      }
       await this.sources(client, owner, existing.id, input.sources);
       await client.query(
         `UPDATE memory_proposals SET status='accepted',memory_id=$4 WHERE namespace=$1 AND owner_id=$2 AND id=$3`,
@@ -863,7 +1004,7 @@ export class PgMemoryRepository implements MemoryRepository {
     );
     const rows = await this.query(
       `UPDATE memory_items m SET status='review',index_status='pending'
-      WHERE m.namespace=$1 AND m.owner_id=$2 AND m.status='active' AND EXISTS(SELECT 1 FROM memory_sources s WHERE s.namespace=m.namespace AND s.owner_id=m.owner_id AND s.memory_id=m.id AND s.conversation_id=$3 AND s.message_id=$4)
+      WHERE m.namespace=$1 AND m.owner_id=$2 AND m.status IN ('active','pending') AND EXISTS(SELECT 1 FROM memory_sources s WHERE s.namespace=m.namespace AND s.owner_id=m.owner_id AND s.memory_id=m.id AND s.conversation_id=$3 AND s.message_id=$4)
       RETURNING m.id`,
       owner,
       [conversationId, messageId],
@@ -878,6 +1019,11 @@ export class PgMemoryRepository implements MemoryRepository {
     );
     await this.query(
       `DELETE FROM memory_proposals WHERE namespace=$1 AND owner_id=$2 AND EXISTS(SELECT 1 FROM jsonb_array_elements(document->'sources') s WHERE s->>'conversationId'=$3)`,
+      owner,
+      [conversationId],
+    );
+    await this.query(
+      `UPDATE memory_operations SET result=result-'preview',status='cancelled',error='来源对话已删除',updated_at=now() WHERE namespace=$1 AND owner_id=$2 AND kind='remember' AND input->>'conversationId'=$3`,
       owner,
       [conversationId],
     );

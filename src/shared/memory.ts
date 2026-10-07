@@ -16,17 +16,39 @@ export interface MemoryItem {
   scopeId: string | null;
   kind: MemoryKind;
   content: string;
-  status: 'active' | 'deleted' | 'superseded' | 'review';
+  status: 'pending' | 'active' | 'deleted' | 'superseded' | 'review';
   version: number;
   tags: string[];
   pinned: boolean;
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;
+  /** Explicit long-term admission time; historical active records have no recorded time. */
+  admittedAt: string | null;
   sources: MemorySource[];
   indexStatus?: 'pending' | 'ready' | 'error';
   similarity?: number;
   selection?: 'prefer';
+}
+export interface MemorySourceExcerpt extends MemorySource {
+  status: 'available' | 'changed' | 'unavailable';
+  role: 'user' | 'assistant' | null;
+  excerpt: string | null;
+  conversationTitle: string | null;
+  inputTruncated: boolean;
+}
+export interface MemoryRememberPreview {
+  id: string;
+  conversationId: string;
+  messageId: string;
+  content: string;
+  sources: MemorySource[];
+  groupId: string | null;
+  inputTruncated: boolean;
+  createdAt: string;
+  modelName: string;
+  state: 'pending' | 'confirmed';
+  memoryId: string | null;
 }
 export interface MemoryPreferences {
   enabled: boolean;
