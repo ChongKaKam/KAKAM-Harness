@@ -1,5 +1,5 @@
-.memory-remember {
-  width: min(640px, calc(100vw - var(--space-8)));
+.modal.memory-remember {
+  width: min(880px, calc(100vw - var(--space-8)));
 }
 .memory-remember-form,
 .memory-remember-result {
