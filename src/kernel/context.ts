@@ -1,5 +1,6 @@
 import type { ExtensionsService } from '../features/extensions/server';
 import type { MemoryManager } from '../features/memory/manager';
+import type { ProductionService } from '../features/llm-production/service';
 import type { Database } from './database';
 import type { HttpService } from './http';
 import type { AuthService } from '../features/auth/server';
@@ -11,6 +12,7 @@ declare module 'cordis' {
     db: Database;
     extensions: ExtensionsService;
     memory: MemoryManager;
+    production: ProductionService;
     http: HttpService;
     auth: AuthService;
     models: ModelsService;

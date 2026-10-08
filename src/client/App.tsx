@@ -159,6 +159,7 @@ export default function App() {
   );
   const current = available.find((f) => f.manifest.id === route.page);
   const Component = current?.component;
+  const TopbarControls = current?.topbarComponent;
   async function logout() {
     try {
       await post('/auth/logout');
@@ -329,6 +330,7 @@ export default function App() {
               </strong>
             </div>
             <span className="grow" />
+            {TopbarControls && <TopbarControls />}
             <span className="topbar-note">
               <span className="status-dot" />
               属于你的思考空间

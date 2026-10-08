@@ -27,6 +27,7 @@ export async function generateReply(
     user: User;
     modelId: string;
     messageId: string;
+    conversationId: string;
     messages: ProviderMessage[];
     effort: ReasoningEffort;
     signal: AbortSignal;
@@ -38,15 +39,26 @@ export async function generateReply(
     calls: ExtensionCall[];
     text(text: string): void;
     progress(reads: SkillRead[], calls: ExtensionCall[]): void;
+    productionProgress(): void;
   },
 ) {
   const { user, session, calls, signal, messageId } = options;
-  const tools = session?.tools() ?? [];
   const steps: (ToolStep & { text: string })[] = [];
+  let executedTools = 0;
   // Pin the protocol/endpoint for this turn; opaque continuation must never cross providers.
   const model = ctx.models.authorize(user, options.modelId, 'llm');
   const connection = ctx.models.connection(model.providerId);
   const adapter = ctx.models.adapter(connection.apiMode);
+  const production =
+    model.toolCalling && adapter.generateTurn ? ctx.extensions.conversationTools(user) : undefined;
+  const tools = [...(session?.tools() ?? []), ...(production?.tools ?? [])];
+  if (new Set(tools.map((tool) => tool.name)).size !== tools.length)
+    throw new HttpError(500, '工具名称冲突');
+  const messages = options.messages.map((message, index) =>
+    index === options.messages.length - 1 && production?.tools.length
+      ? { ...message, content: `${production.instructions}\n\n${message.content}` }
+      : message,
+  );
   for (let round = 0; round < skillLimits.rounds; round++) {
     signal.throwIfAborted();
     session?.assertActive();
@@ -80,7 +92,7 @@ export async function generateReply(
     try {
       options.recorder?.request({
         callId: call.id,
-        messages: options.messages,
+        messages,
         tools,
         steps: steps.map(({ text, turn, results }) => ({ text, calls: turn.calls, results })),
         memory: options.memory,
@@ -93,13 +105,13 @@ export async function generateReply(
         ? adapter.generateTurn!(
             connection,
             model.name,
-            options.messages,
+            messages,
             tools,
             steps,
             signal,
             options.effort,
           )
-        : adapter.generate(connection, model.name, options.messages, signal, options.effort);
+        : adapter.generate(connection, model.name, messages, signal, options.effort);
       for await (const event of events) {
         signal.throwIfAborted();
         if (event.type === 'usage') call.usage = event.usage;
@@ -127,7 +139,32 @@ export async function generateReply(
       publish();
     }
     if (!turn?.calls.length) return;
-    const results = turn.calls.map((tool) => ({ id: tool.id, output: session!.execute(tool) }));
+    const results: ToolStep['results'] = [];
+    for (const tool of turn.calls) {
+      signal.throwIfAborted();
+      if (executedTools >= skillLimits.reads)
+        throw new HttpError(502, '已达到本轮工具调用次数上限，已保留生成内容');
+      executedTools++;
+      const output =
+        tool.name === 'skills_read' && session
+          ? session.execute(tool)
+          : production
+            ? await production.execute(
+                {
+                  user,
+                  conversationId: options.conversationId,
+                  messageId,
+                  requestId: call.id,
+                  signal,
+                },
+                tool,
+              )
+            : (() => {
+                throw new HttpError(403, '模型请求了未授权工具');
+              })();
+      results.push({ id: tool.id, output });
+      options.productionProgress();
+    }
     steps.push({ turn, results, text: visibleText });
     publish();
   }

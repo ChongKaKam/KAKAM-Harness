@@ -225,7 +225,7 @@ export class Database extends Service {
     if (!this.all<{ name: string }>('PRAGMA table_info(models)').some((c) => c.name === 'kind')) {
       this.transaction(() => {
         this.connection.exec(
-          "ALTER TABLE models ADD COLUMN kind TEXT NOT NULL DEFAULT 'llm' CHECK(kind IN ('llm','jev','embedding'))",
+          "ALTER TABLE models ADD COLUMN kind TEXT NOT NULL DEFAULT 'llm' CHECK(kind IN ('llm','jev','embedding','image'))",
         );
         this.run(
           "UPDATE models SET kind='jev' WHERE provider_id IN (SELECT id FROM providers WHERE api_mode='jev')",
@@ -237,6 +237,41 @@ export class Database extends Service {
         this.connection.exec(
           `ALTER TABLE models ADD COLUMN ${column} INTEGER CHECK(${column} IS NULL OR ${column} BETWEEN 1 AND 16000)`,
         );
+    }
+    // SQLite cannot widen a column CHECK in place. Copy the existing schema and rows,
+    // keeping IDs, grants, preferences, provider references and any model indexes.
+    const modelSchema = this.get<{ sql: string }>(
+      "SELECT sql FROM sqlite_schema WHERE type='table' AND name='models'",
+    )!.sql;
+    const oldKindCheck =
+      /CHECK\s*\(\s*kind\s+IN\s*\(\s*'llm'\s*,\s*'jev'\s*,\s*'embedding'\s*\)\s*\)/i;
+    if (oldKindCheck.test(modelSchema)) {
+      const indexes = this.all<{ sql: string }>(
+        "SELECT sql FROM sqlite_schema WHERE type='index' AND tbl_name='models' AND sql IS NOT NULL",
+      );
+      const names = this.all<{ name: string }>('PRAGMA table_info(models)')
+        .map(({ name }) => `"${name.replaceAll('"', '""')}"`)
+        .join(',');
+      this.connection.exec('PRAGMA foreign_keys=OFF');
+      try {
+        this.transaction(() => {
+          this.connection.exec(
+            modelSchema
+              .replace(/^CREATE TABLE\s+models\b/i, 'CREATE TABLE models_image_migration')
+              .replace(oldKindCheck, "CHECK(kind IN ('llm','jev','embedding','image'))"),
+          );
+          this.connection.exec(
+            `INSERT INTO models_image_migration(${names}) SELECT ${names} FROM models`,
+          );
+          this.connection.exec('DROP TABLE models');
+          this.connection.exec('ALTER TABLE models_image_migration RENAME TO models');
+          for (const index of indexes) this.connection.exec(index.sql);
+          if (this.all('PRAGMA foreign_key_check').length)
+            throw new Error('Model migration would invalidate database references');
+        });
+      } finally {
+        this.connection.exec('PRAGMA foreign_keys=ON');
+      }
     }
     // Snapshots belong to the conversation, not the replaceable assistant message.
     // Keep edited/retried attempts until their owner deletes the conversation.
@@ -273,6 +308,35 @@ export class Database extends Service {
       this.connection.exec(
         "ALTER TABLE context_preferences ADD COLUMN config TEXT NOT NULL DEFAULT '{}'",
       );
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS production_preferences (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        temporary_retention_days INTEGER NOT NULL DEFAULT 7 CHECK(temporary_retention_days BETWEEN 3 AND 7),
+        image_model_id TEXT REFERENCES models(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS production_artifacts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+        message_id TEXT,
+        group_id TEXT REFERENCES conversation_groups(id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL CHECK(size >= 0 AND size <= 20971520),
+        data BLOB NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        temporary_started_at TEXT,
+        expires_at TEXT,
+        idempotency_key TEXT,
+        UNIQUE(user_id,idempotency_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_production_artifacts_owner ON production_artifacts(user_id,created_at);
+      CREATE INDEX IF NOT EXISTS idx_production_artifacts_conversation ON production_artifacts(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_production_artifacts_group ON production_artifacts(group_id);
+      CREATE INDEX IF NOT EXISTS idx_production_artifacts_expiry ON production_artifacts(expires_at) WHERE expires_at IS NOT NULL;
+    `);
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

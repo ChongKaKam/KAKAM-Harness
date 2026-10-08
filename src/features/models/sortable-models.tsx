@@ -66,6 +66,8 @@ function ModelCells({
             `Embedding · ${model.validatedDimensions ?? '未验证'}${model.validatedDimensions ? ' 维' : ''}`
           ) : model.kind === 'jev' ? (
             'Jev 决策'
+          ) : model.kind === 'image' ? (
+            'Image · 图片生成'
           ) : model.vision ? (
             <>
               <Eye size={12} />

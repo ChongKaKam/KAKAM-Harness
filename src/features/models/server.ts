@@ -6,6 +6,8 @@ import { HttpError, requireUser, requireAdmin } from '../../kernel/http';
 import { SecretVault } from '../../kernel/crypto';
 import { testModelConnection, testEmbeddingConnection } from './connection-test';
 import { EmbeddingError, validateEmbeddingResponse } from '../../adapters/embeddings';
+import { ImageGenerationError, imageMimeType } from '../../adapters/images';
+import type { ImageGenerationResult } from '../../adapters/registry';
 import { nextSourceProbeDelay } from './probe-schedule';
 import type { Model, User, ApiMode, EmbeddingResult, EmbeddingUsage } from '../../shared/types';
 export { manifest } from './manifest';
@@ -61,7 +63,7 @@ const modelSchema = z.object({
   label: z.string().trim().min(1).max(100),
   vision: z.boolean().default(false),
   toolCalling: z.boolean().default(false),
-  kind: z.enum(['llm', 'jev', 'embedding']).optional(),
+  kind: z.enum(['llm', 'jev', 'embedding', 'image']).optional(),
   embeddingDimensions: z.number().int().min(1).max(16000).nullable().default(null),
 });
 const embeddingInputs = z
@@ -76,6 +78,8 @@ const embeddingInputs = z
 function validateKind(mode: ApiMode, kind: Model['kind']) {
   if (kind === 'embedding' && !['chat-completions', 'responses'].includes(mode))
     throw new HttpError(400, 'Embedding 仅支持 OpenAI-compatible 来源，Anthropic / Jev 不支持');
+  if (kind === 'image' && !['chat-completions', 'responses'].includes(mode))
+    throw new HttpError(400, '图片生成仅支持 OpenAI-compatible 来源，Anthropic / Jev 不支持');
   if ((kind === 'jev') !== (mode === 'jev'))
     throw new HttpError(400, 'Jev 模型必须使用 Jev 来源协议');
 }
@@ -104,7 +108,9 @@ export class ModelsService extends Service {
           ? '请选择 LLM 模型'
           : kind === 'embedding'
             ? '请选择 Embedding 模型'
-            : '请选择 Jev 决策模型',
+            : kind === 'image'
+              ? '请选择图片生成模型'
+              : '请选择 Jev 决策模型',
       );
     return model;
   }
@@ -130,6 +136,46 @@ export class ModelsService extends Service {
           ? 'anthropic-messages'
           : 'openai-compatible',
     );
+  }
+  async generateImage(
+    user: User,
+    modelId: string,
+    prompt: string,
+    signal: AbortSignal,
+  ): Promise<ImageGenerationResult> {
+    const model = this.authorize(user, modelId, 'image');
+    prompt = z.string().trim().min(1).max(32_000).parse(prompt);
+    const connection = this.connection(model.providerId);
+    validateKind(connection.apiMode, 'image');
+    const adapter = this.adapter(connection.apiMode);
+    if (!adapter.generateImage) throw new HttpError(400, '此来源协议不支持图片生成');
+    let usage: EmbeddingUsage | null = null;
+    let status = 'error';
+    try {
+      const result = await adapter.generateImage(connection, model.name, prompt, signal);
+      usage = result.usage;
+      if (imageMimeType(result.data) !== result.mimeType)
+        throw new ImageGenerationError('图片服务返回无效的图片文件', usage);
+      signal.throwIfAborted();
+      status = 'complete';
+      return result;
+    } catch (error) {
+      if (error instanceof ImageGenerationError) usage = error.usage;
+      status = signal.aborted ? 'cancelled' : 'error';
+      throw error;
+    } finally {
+      this.ctx.db.run(
+        'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
+        randomUUID(),
+        user.id,
+        `[图片生成] ${model.name}`,
+        usage?.input ?? null,
+        usage?.output ?? null,
+        usage?.total ?? null,
+        status,
+        new Date().toISOString(),
+      );
+    }
   }
   async embed(
     user: User,
@@ -248,7 +294,7 @@ export function modelsFeature(secret: string) {
         queueMicrotask(probeAll);
         router.get('/models', requireUser, (req, res) => {
           const { kind } = z
-            .object({ kind: z.enum(['llm', 'jev', 'embedding', 'all']).default('llm') })
+            .object({ kind: z.enum(['llm', 'jev', 'embedding', 'image', 'all']).default('llm') })
             .parse(req.query);
           res.json(
             ctx.models.list(req.user!).filter((model) => kind === 'all' || model.kind === kind),
@@ -310,6 +356,11 @@ export function modelsFeature(secret: string) {
             String(req.params.id),
           );
           if (!model) throw new HttpError(404, '模型不存在');
+          if (model.kind === 'image')
+            throw new HttpError(
+              400,
+              '图片模型通过产物工具生成时验证连接；连接测试不发送付费图片请求',
+            );
           const connection = ctx.models.connection(model.providerId);
           const result =
             model.kind === 'embedding'
@@ -356,11 +407,14 @@ export function modelsFeature(secret: string) {
           ctx.models.connection(id);
           if (
             !['chat-completions', 'responses'].includes(input.apiMode) &&
-            ctx.db.get("SELECT id FROM models WHERE provider_id=? AND kind='embedding'", id)
+            ctx.db.get(
+              "SELECT id FROM models WHERE provider_id=? AND kind IN ('embedding','image')",
+              id,
+            )
           )
             throw new HttpError(
               400,
-              '此来源已配置 Embedding 模型，不能改为不支持 Embedding 的协议',
+              '此来源已配置 Embedding 或图片模型，不能改为不支持该类型的协议',
             );
           ctx.db.run(
             'UPDATE providers SET name=?,base_url=?,api_mode=? WHERE id=?',
@@ -378,7 +432,7 @@ export function modelsFeature(secret: string) {
               id,
             );
           ctx.db.run(
-            "UPDATE models SET kind=CASE WHEN ?='jev' THEN 'jev' ELSE 'llm' END WHERE provider_id=? AND kind!='embedding'",
+            "UPDATE models SET kind=CASE WHEN ?='jev' THEN 'jev' ELSE 'llm' END WHERE provider_id=? AND kind NOT IN ('embedding','image')",
             input.apiMode,
             id,
           );
@@ -465,7 +519,7 @@ export function modelsFeature(secret: string) {
               toolCalling: z.boolean().optional(),
               label: z.string().trim().min(1).max(100),
               userIds: z.array(z.string().uuid()).max(1000),
-              kind: z.enum(['llm', 'jev', 'embedding']).optional(),
+              kind: z.enum(['llm', 'jev', 'embedding', 'image']).optional(),
               embeddingDimensions: z.number().int().min(1).max(16000).nullable().optional(),
             })
             .parse(req.body);

@@ -294,6 +294,7 @@ function GroupEditor({ group, close }: { group?: ConversationGroup; close: () =>
     setError('');
     try {
       await remove(`/conversation-groups/${group!.id}`);
+      window.dispatchEvent(new Event('drift:production-changed'));
       await refresh();
       close();
     } catch (e) {
@@ -410,6 +411,9 @@ function GroupEditor({ group, close }: { group?: ConversationGroup; close: () =>
         {deleting ? (
           <div className="chat-delete-confirm">
             <p>删除「{group?.name}」？其中的对话将移至未分组，消息会保留。</p>
+            <p className="chat-production-note">
+              未归入其他分组的产物会转为临时保留，到期后自动清理。
+            </p>
             <div className="modal-actions">
               <button
                 type="button"
@@ -478,7 +482,11 @@ function ConversationEditor({
       if (removeConversation) {
         await remove(`/conversations/${conversation.id}`);
         if (conversationId === conversation.id) navigate('chat');
-      } else await patch(`/conversations/${conversation.id}`, { title, groupId: groupId || null });
+      } else {
+        await patch(`/conversations/${conversation.id}`, { title, groupId: groupId || null });
+        if (groupId !== (conversation.groupId ?? ''))
+          window.dispatchEvent(new Event('drift:production-changed'));
+      }
       await refresh();
       close();
     } catch (e) {
@@ -517,10 +525,20 @@ function ConversationEditor({
             ))}
           </select>
         </label>
+        {groupId !== (conversation.groupId ?? '') && (
+          <p className="chat-production-note">
+            {groupId
+              ? '新产物将使用所选分组空间，临时产物也会转入；已有分组产物保留在原分组。'
+              : '新产物将使用对话临时空间；已有分组产物保留在原分组。'}
+          </p>
+        )}
         <ErrorNote text={error} />
         {deleting ? (
           <div className="chat-delete-confirm">
             <p>删除此对话及其中的消息？此操作无法撤销。</p>
+            <p className="chat-production-note">
+              此对话的临时产物也会删除；已在分组共享的产物会保留。
+            </p>
             <div className="modal-actions">
               <button
                 type="button"

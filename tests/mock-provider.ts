@@ -1,4 +1,5 @@
 import { skillProviderFixture } from './skill-provider-fixture';
+import { productionProviderFixture } from './production-provider-fixture';
 import express from 'express';
 import { createServer } from 'node:http';
 export const imageData =
@@ -75,6 +76,13 @@ export async function mockProvider(portNumber = 0) {
   const requests: unknown[] = [];
   const searches: { query: string; max_results: number }[] = [];
   const decisions: unknown[] = [];
+  app.post('/v1/images/generations', (req, res) => {
+    requests.push(req.body);
+    res.json({
+      data: [{ b64_json: imageData.slice(imageData.indexOf(',') + 1) }],
+      usage: { input_tokens: 12, output_tokens: 17, total_tokens: 29 },
+    });
+  });
   app.post('/v1/embeddings', (req, res) => {
     requests.push(req.body);
     const inputs = Array.isArray(req.body.input) ? req.body.input : [req.body.input];
@@ -186,6 +194,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/chat/completions', (req, res) => {
     requests.push(req.body);
+    if (productionProviderFixture(req.body, 'chat-completions', res)) return;
     if (skillProviderFixture(req.body, 'chat-completions', res)) return;
     if (req.body.model === 'upstream-error') {
       res.status(401).json({ error: { message: 'sensitive upstream details' } });
@@ -227,6 +236,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/responses', (req, res) => {
     requests.push(req.body);
+    if (productionProviderFixture(req.body, 'responses', res)) return;
     if (skillProviderFixture(req.body, 'responses', res)) return;
     if (req.body.model === 'upstream-error') {
       res.status(401).json({ error: { message: 'sensitive upstream details' } });
@@ -279,6 +289,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/messages', (req, res) => {
     requests.push(req.body);
+    if (productionProviderFixture(req.body, 'anthropic-messages', res)) return;
     if (skillProviderFixture(req.body, 'anthropic-messages', res)) return;
     anthropicHeaders.push(req.headers);
     if (req.body.model === 'upstream-error') {

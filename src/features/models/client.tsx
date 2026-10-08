@@ -41,7 +41,7 @@ export function ModelsPage() {
     names: string[];
   }>();
   const [discovering, setDiscovering] = useState('');
-  const [discoveryKind, setDiscoveryKind] = useState<'llm' | 'embedding'>('llm');
+  const [discoveryKind, setDiscoveryKind] = useState<'llm' | 'embedding' | 'image'>('llm');
   const providerForm = useRef<HTMLFormElement>(null);
   const [testing, setTesting] = useState(false);
   const [draftModels, setDraftModels] = useState<string[]>();
@@ -525,24 +525,34 @@ export function ModelsPage() {
                     <input type="checkbox" name="enabled" defaultChecked={modelModal.enabled} />
                     启用此模型
                   </label>
-                  <ModelConnectionProbe
-                    key={modelModal.id}
-                    modelId={modelModal.id}
-                    modelName={modelModal.name}
-                    apiMode={data.providers.find((p) => p.id === modelModal.providerId)!.apiMode}
-                    kind={modelModal.kind}
-                    busy={busy}
-                    onTesting={setTesting}
-                    onResult={(result) => {
-                      reload();
-                      if (result.kind === 'embedding' && result.ok)
-                        setModelModal((previous) =>
-                          previous && previous !== 'new' && previous.id === modelModal.id
-                            ? { ...previous, validatedDimensions: result.actualDimensions ?? null }
-                            : previous,
-                        );
-                    }}
-                  />
+                  {modelModal.kind === 'image' ? (
+                    <p className="small muted">
+                      图片模型使用
+                      /images/generations；在产物设置中选用后，实际生成时验证连接并记录真实用量。
+                    </p>
+                  ) : (
+                    <ModelConnectionProbe
+                      key={modelModal.id}
+                      modelId={modelModal.id}
+                      modelName={modelModal.name}
+                      apiMode={data.providers.find((p) => p.id === modelModal.providerId)!.apiMode}
+                      kind={modelModal.kind}
+                      busy={busy}
+                      onTesting={setTesting}
+                      onResult={(result) => {
+                        reload();
+                        if (result.kind === 'embedding' && result.ok)
+                          setModelModal((previous) =>
+                            previous && previous !== 'new' && previous.id === modelModal.id
+                              ? {
+                                  ...previous,
+                                  validatedDimensions: result.actualDimensions ?? null,
+                                }
+                              : previous,
+                          );
+                      }}
+                    />
+                  )}
                   <div className="divider" />
                   <h3>用户授权</h3>
                   <p className="small muted">所有管理员默认可用，普通用户需要逐一授权。</p>
@@ -597,11 +607,14 @@ export function ModelsPage() {
               添加模型类型
               <select
                 value={discoveryKind}
-                onChange={(event) => setDiscoveryKind(event.target.value as 'llm' | 'embedding')}
+                onChange={(event) =>
+                  setDiscoveryKind(event.target.value as 'llm' | 'embedding' | 'image')
+                }
                 disabled={busy}
               >
                 <option value="llm">LLM · 对话模型</option>
                 <option value="embedding">Embedding · 向量模型</option>
+                <option value="image">Image · 图片生成</option>
               </select>
             </label>
           )}
@@ -675,9 +688,9 @@ function ModelConfigurationFields({
                 setKind(
                   next.apiMode === 'jev'
                     ? 'jev'
-                    : kind === 'embedding' &&
+                    : (kind === 'embedding' || kind === 'image') &&
                         ['chat-completions', 'responses'].includes(next.apiMode)
-                      ? 'embedding'
+                      ? kind
                       : 'llm',
                 );
               }}
@@ -708,10 +721,17 @@ function ModelConfigurationFields({
             <>
               <option value="llm">LLM · 对话模型</option>
               {supportsEmbedding && <option value="embedding">Embedding · 向量模型</option>}
+              {supportsEmbedding && <option value="image">Image · 图片生成</option>}
             </>
           )}
         </select>
       </label>
+      {kind === 'image' && (
+        <p className="small muted">
+          使用来源的 OpenAI Images 兼容接口，仅接受直接返回的 PNG、JPEG 或 WebP
+          图片内容；不进入聊天模型选择器。
+        </p>
+      )}
       {kind === 'embedding' && (
         <>
           <label>
@@ -744,7 +764,7 @@ function ModelConfigurationFields({
               name="toolCalling"
               defaultChecked={model !== 'new' && model.toolCalling}
             />
-            支持工具调用（Skill 参考文档按需读取）
+            支持工具调用（Skill 参考文档与产物生成）
           </label>
         </>
       )}

@@ -53,6 +53,7 @@ function validateImages(images: Attachment[]) {
 const messageColumns =
   'm.id,m.role,m.content,m.images,m.extensions,m.skills,m.skill_reads AS skillReads,m.calls,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,m.error,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
 function messages(ctx: Context, id: string): Message[] {
+  const owner = ctx.db.get<{ user_id: string }>('SELECT user_id FROM conversations WHERE id=?', id);
   return ctx.db
     .all<
       Omit<Message, 'images' | 'extensions' | 'skills' | 'skillReads' | 'calls'> & {
@@ -98,6 +99,7 @@ function messages(ctx: Context, id: string): Message[] {
         calls,
         ...(m.role === 'assistant'
           ? {
+              artifacts: owner ? ctx.production.forMessage(owner.user_id, m.id) : [],
               usage: calls.length
                 ? aggregateCalls(calls)
                 : input !== null && output !== null && total !== null
@@ -116,7 +118,7 @@ interface Generation {
 }
 export const server = {
   name: 'chat',
-  inject: ['db', 'http', 'models', 'kernel', 'extensions'],
+  inject: ['db', 'http', 'models', 'kernel', 'extensions', 'production'],
   apply(ctx: Context) {
     const router = Router();
     router.use('/conversations', requireUser);
@@ -131,7 +133,7 @@ export const server = {
     const snapshot = (id: string) => {
       const current = active.get(id)?.message;
       return messages(ctx, id).map((message) =>
-        message.id === current?.id ? { ...current } : message,
+        message.id === current?.id ? { ...current, artifacts: message.artifacts } : message,
       );
     };
     const emit = (res: Response, data: StreamEvent) => {
@@ -268,6 +270,7 @@ export const server = {
             id,
             req.user!.id,
           );
+        if (groupId) ctx.production.adoptConversationArtifacts(req.user!.id, id, groupId);
       });
       res.json({ ok: true });
     });
@@ -275,6 +278,7 @@ export const server = {
       const id = String(req.params.id);
       own(id, req.user!.id);
       if (active.has(id)) throw new HttpError(409, '请先停止当前回复');
+      ctx.production.removeConversationArtifacts(req.user!.id, id);
       ctx.db.run('DELETE FROM conversations WHERE id=? AND user_id=?', id, req.user!.id);
       await ctx.extensions.removeMemoryScope(req.user!, 'session', id);
       res.json({ ok: true });
@@ -542,6 +546,7 @@ export const server = {
             throw new HttpError(400, '对话较长，压缩未能缩减历史；请调整上下文压缩设置或新建对话');
           await generateReply(ctx, {
             user,
+            conversationId: id,
             modelId: input.modelId,
             messageId,
             messages: processed.messages,
@@ -553,6 +558,11 @@ export const server = {
             memoryRanges: memoryInput.ranges,
             effort: input.reasoningEffort,
             calls: generation.message.calls!,
+            productionProgress: () => {
+              deadline.touch();
+              generation.message.artifacts = ctx.production.forMessage(user.id, messageId);
+              broadcast({ type: 'artifacts', messageId, artifacts: generation.message.artifacts });
+            },
             progress: (skillReads: SkillRead[], calls: ExtensionCall[]) => {
               deadline.touch();
               generation.message.skillReads = [...skillReads];
@@ -597,6 +607,7 @@ export const server = {
         } finally {
           deadline.close();
           generation.message.status = status;
+          generation.message.artifacts = ctx.production.forMessage(user.id, messageId);
           generation.message.usage = aggregateCalls(generation.message.calls ?? []);
           const durationMs = Math.round(performance.now() - started);
           generation.message.durationMs = durationMs;

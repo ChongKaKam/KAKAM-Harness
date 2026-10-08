@@ -30,7 +30,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → search → chat → usage → prompts → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → llm-production → search → chat → usage → prompts → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
 每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
@@ -43,6 +43,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `models`          | core   | ModelsService、来源、白名单、模型授权、连通性测试                      | 管理员设置；聊天可见已授权模型       |
 | `extensions`      | core   | 托管能力注册、Auto 决策、辅助模型用量                                  | 管理员设置；聊天能力开关             |
 | `search`          | plugin | Perplexity 搜索、查询生成与来源记录                                    | 拓展能力的子设置页                   |
+| `llm-production`  | core   | ProductionService、文件 / 图片生成、私有空间、下载与清理               | 聊天右上角 / 工作区 / 设置           |
 | `chat`            | core   | 私有对话与分组、后台生成、SSE 订阅与停止                               | 工作区                               |
 | `usage`           | core   | 真实用量记录、汇总与活动数据                                           | 统计                                 |
 | `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像                                  | 通用设置                             |
@@ -87,7 +88,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 - `providers.platform_url` 为可空的平台链接，仅 HTTP(S) 且不含嵌入凭据。只出现在管理员 DTO，API 连接仍只使用 baseUrl / key / apiMode。更新时省略该字段保留旧值，空字符串或 null 清空。
 - `models.sort_order` 为全局顺序。首次升级按旧的来源名称 / 模型名称排序初始化；后续启动不重排。新模型使用 MAX + 1 追加，列表按 sort_order、id 稳定排序。
-- `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一个 LLM 为其聊天默认。Embedding / Jev 不参与聊天默认选择。浏览器已明确选择且仍有权限的模型继续优先。
+- `PATCH /admin/models/order` 接收 `{ modelIds: string[] }`，管理员校验后在同步事务中验证为现有全部模型 ID 的无重复排列，再保存索引。列表增删造成冲突返回 409，不部分保存。停用模型可排序但不参与默认选择；普通用户过滤授权后第一个 LLM 为其聊天默认。Embedding / Jev / Image 不参与聊天默认选择。浏览器已明确选择且仍有权限的模型继续优先。
 - `requestId = messages.id`（assistant），首个回答模型请求沿用该 ID 记入 usage，后续工具循环请求使用独立 ID。`messages.calls` 保存调用关联；历史按 usage 中的实际记录聚合，旧消息仍 LEFT JOIN 原用量。任一调用缺失上报时完整合计为 null，`Message.usage` 为 `{ input, output, total } | null`；用户消息不带此字段。最终 SSE `done.message` 也带相同值，重连 snapshot 与历史一致。查询用量前仍先校验对话所有权；此关联不会让管理员读到其他用户的私人回复。
 - `messages.duration_ms` 是可空非负整数，追加迁移保留旧数据为 null。聊天任务用服务器单调时钟从后台任务开始到结束计时，包含拓展调用、上游等待与生成；完成、失败和主动停止都持久保存。`Message.durationMs` 在 SSE done、历史与重连 snapshot 中一致，浏览器离开或幂等重试不会重置。旧消息及异常进程退出前未记录的用时不推算。
 - Anthropic 原生头为 x-api-key / anthropic-version，图片转为 base64 内容块；只向聊天正文转发 text_delta，忽略 thinking/signature 内容。message_start 与 message_delta 的 usage 按字段合并，输出为累计计数。输入加上 cache creation / cache read，message_stop 才代表协议结束；缺失结束、error、max_tokens 等保留已生成文本并报告未完成。None 不发送思考字段；非 None 使用 adaptive + output_config.effort，兼容范围和输出上限见 README。
@@ -254,3 +255,7 @@ Memory 撤出、正文修改和来源失效只清理指定版本及更旧的快�
 分区与数量契约见 [context-manager 接口](FEATURES.md#对话-context-manager)。System 当前为空；启用 Memory 时长期 / 分组 / Session 按实际注入展示，否则显示为空。Session 是本轮实际发送的会话上下文，不能把“曾经读过”视为后续请求仍然带有原文。文本大小只描述快照，不等于模型 tokenizer、协议封装或图片的输入 Token；图片保留元数据，避免重复存储 base64。分区字符占比直接读取快照已有的 `section.characters`，沿用 UTF-16 字符统计，与详情和总量一致；无额外分词计算，不修改真实用量记录。
 
 交接按所选轮次截止，包含该轮之前的交互与修订证据，防止后续对话混入较早的交接点。用户主动点击才通过 extensions utility 调用已授权 LLM，不安排付费后台任务；输出说明意图轨迹、实际进展、后续方向和资料引用，并区分证据与推断。有限输入预算溢出时返回明确错误，输出只返回当前浏览器作为交接草稿，不另建服务器文档库。它不是跨进程任务恢复，也不会复制隐式供应商上下文或重新抓取文档。模型偏好、输出和真实调用用量的接口边界见功能指南。
+
+## 产物空间与异步工具
+
+`llm-production` 核心提供 `ctx.production`，生成工具通过 extensions 的受控异步注册表接入聊天。字节存于带容量限制的 SQLite BLOB，元数据按 owner 与空间隔离；分组共享、临时保留、删除、幂等及 SSE 契约集中在 [LLM Production](LLM_PRODUCTION.md)。图片生成通过 ModelsService 逐次授权并单独记录实际用量。固定生成器不执行模型脚本，不自动拉取供应商图片 URL；已保存文件持久化，服务重启不续跑生成。

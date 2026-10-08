@@ -8,6 +8,7 @@ import {
   Settings,
   GitBranch,
   Brain,
+  FolderOpen,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ExtensionsPage } from '../features/extensions/client';
@@ -15,6 +16,10 @@ import { SearchPage } from '../features/search/client';
 import { manifest as extensions } from '../features/extensions/manifest';
 import { manifest as search } from '../features/search/manifest';
 import { ChatPage } from '../features/chat/client';
+import { ChatProductionTopbar } from '../features/llm-production/chat-controls';
+import { ProductionPage } from '../features/llm-production/client';
+import { ProductionSettingsPage } from '../features/llm-production/settings';
+import { manifest as production } from '../features/llm-production/manifest';
 import { UsagePage } from '../features/usage/client';
 import { UsersPage } from '../features/users/client';
 import { ModelsPage } from '../features/models/client';
@@ -43,6 +48,8 @@ export interface ClientFeature {
   settingsParent?: string;
   /** Optional settings page for a feature that also has a workspace page. */
   settingsComponent?: ComponentType;
+  /** Optional feature-owned controls in the Shell header. */
+  topbarComponent?: ComponentType;
 }
 // Build-time client catalog; runtime availability comes from the authenticated server registry.
 export const clientFeatures: ClientFeature[] = [
@@ -54,7 +61,21 @@ export const clientFeatures: ClientFeature[] = [
     component: SearchPage,
     settingsParent: 'extensions',
   },
-  { placement: 'workspace', manifest: chat, icon: MessageSquare, component: ChatPage },
+  {
+    placement: 'workspace',
+    manifest: chat,
+    icon: MessageSquare,
+    component: ChatPage,
+    topbarComponent: ChatProductionTopbar,
+  },
+  {
+    placement: 'workspace',
+    manifest: production,
+    icon: FolderOpen,
+    component: ProductionPage,
+    settingsLabel: '产物空间',
+    settingsComponent: ProductionSettingsPage,
+  },
   {
     placement: 'settings',
     settingsLabel: '上下文管理',

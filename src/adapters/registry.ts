@@ -5,6 +5,7 @@ import type {
   ReasoningEffort,
   MessageUsage,
   EmbeddingResult,
+  EmbeddingUsage,
 } from '../shared/types';
 import type { ProviderDiagnostics } from './diagnostics';
 export interface ProviderConnection {
@@ -19,6 +20,11 @@ export interface ProviderMessage {
   images?: Attachment[];
 }
 export type TokenUsage = MessageUsage;
+export interface ImageGenerationResult {
+  data: Uint8Array;
+  mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+  usage: EmbeddingUsage | null;
+}
 export type ProviderEvent = { type: 'text'; text: string } | { type: 'usage'; usage: TokenUsage };
 export interface ToolDefinition {
   name: string;
@@ -46,6 +52,12 @@ export interface DecisionInput {
 export type DecisionEvent =
   { type: 'decision'; enabled: boolean } | { type: 'usage'; usage: TokenUsage };
 export interface ModelAdapter {
+  generateImage?(
+    connection: ProviderConnection,
+    model: string,
+    prompt: string,
+    signal: AbortSignal,
+  ): Promise<ImageGenerationResult>;
   embed?(
     connection: ProviderConnection,
     model: string,

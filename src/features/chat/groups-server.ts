@@ -82,7 +82,10 @@ export function registerGroupRoutes(ctx: Context, router: Router) {
     const id = z.string().uuid().parse(req.params.id);
     ownGroup(ctx, id, req.user!.id);
     // ON DELETE SET NULL preserves the conversations and any active generation.
-    ctx.db.run('DELETE FROM conversation_groups WHERE id=? AND user_id=?', id, req.user!.id);
+    ctx.db.transaction(() => {
+      ctx.production.releaseGroupArtifacts(req.user!.id, id);
+      ctx.db.run('DELETE FROM conversation_groups WHERE id=? AND user_id=?', id, req.user!.id);
+    });
     await ctx.extensions.removeMemoryScope(req.user!, 'group', id);
     res.json({ ok: true });
   });

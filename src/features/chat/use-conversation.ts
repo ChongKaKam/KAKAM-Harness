@@ -94,6 +94,14 @@ export function useConversation(
                     : message,
                 ),
               );
+            } else if (event.type === 'artifacts') {
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === event.messageId
+                    ? { ...message, artifacts: event.artifacts }
+                    : message,
+                ),
+              );
             } else if (event.type === 'skill-progress') {
               setMessages((previous) =>
                 previous.map((message) =>
@@ -140,6 +148,7 @@ export function useConversation(
     window.addEventListener('pageshow', resume);
     window.addEventListener('online', resume);
     window.addEventListener('offline', offline);
+    window.addEventListener('drift:production-changed', resume);
     return () => {
       disposed = true;
       disconnect();
@@ -148,6 +157,7 @@ export function useConversation(
       window.removeEventListener('pageshow', resume);
       window.removeEventListener('online', resume);
       window.removeEventListener('offline', offline);
+      window.removeEventListener('drift:production-changed', resume);
     };
   }, [id, revision]);
   return { messages, loading, reconnecting, error };

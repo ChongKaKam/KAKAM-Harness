@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { SkillSession, type SkillProvider, type SkillPlan } from './skill-runtime';
+import { ConversationToolRegistry, type ConversationToolProvider } from './conversation-tools';
 import type { ContextObserver, ContextRecorder, ContextTurn } from './context-observer';
 import type {
   ContextProcessor,
@@ -78,6 +79,13 @@ function parseJson<T>(text: string, schema: z.ZodType<T>): T {
 }
 export class ExtensionsService extends Service {
   static inject = ['db', 'models', 'kernel'];
+  private conversationToolRegistry = new ConversationToolRegistry();
+  registerConversationTools(provider: ConversationToolProvider) {
+    return this.conversationToolRegistry.register(provider);
+  }
+  conversationTools(user: User) {
+    return this.conversationToolRegistry.select(user);
+  }
   private entries = new Map<string, Registered>();
   private utilities = new Map<
     string,

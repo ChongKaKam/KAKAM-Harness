@@ -2,6 +2,7 @@ import { AttachmentMenu, SkillChips, useChatSkills } from '../skills/chat-contro
 import { SkillDetails } from '../skills/message-details';
 import { ContextDrawer } from '../context-manager/drawer';
 import { RememberDialog } from '../memory/remember';
+import { MessageArtifacts } from '../llm-production/message-artifacts';
 import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
@@ -351,6 +352,7 @@ export function ChatPage() {
                       {m.status === 'cancelled' && m.content && (
                         <small className="message-status">已停止生成</small>
                       )}
+                      <MessageArtifacts artifacts={m.artifacts} />
                       {m.role === 'user' && m.id === lastUser?.id && !busy && !editing && (
                         <div className="chat-message-actions">
                           <button className="copy-button" onClick={editLastQuestion}>

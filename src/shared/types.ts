@@ -1,4 +1,5 @@
 import type { SelectedSkill, SkillRead } from '../features/skills/types';
+import type { ProductionArtifact } from '../features/llm-production/types';
 import type { AccentColor } from './appearance';
 export type Role = 'admin' | 'user';
 export type ApiMode = 'chat-completions' | 'responses' | 'anthropic-messages' | 'jev';
@@ -35,7 +36,7 @@ export interface FeatureManifest {
   enabled?: boolean;
 }
 export interface Model {
-  kind: 'llm' | 'jev' | 'embedding';
+  kind: 'llm' | 'jev' | 'embedding' | 'image';
   id: string;
   providerId: string;
   providerName: string;
@@ -98,6 +99,7 @@ export interface Attachment {
   data: string;
 }
 export interface Message {
+  artifacts?: ProductionArtifact[];
   skills?: SelectedSkill[];
   skillReads?: SkillRead[];
   calls?: ExtensionCall[];
@@ -152,6 +154,7 @@ export interface UsageData {
   activity: { day: string; model: string; total: number; requests: number }[];
 }
 export type StreamEvent =
+  | { type: 'artifacts'; messageId: string; artifacts: ProductionArtifact[] }
   | { type: 'skill-progress'; messageId: string; skillReads: SkillRead[]; calls: ExtensionCall[] }
   | { type: 'extensions'; messageId: string; extensions: ExtensionRun[] }
   | { type: 'snapshot'; messages: Message[] }

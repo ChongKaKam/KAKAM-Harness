@@ -249,6 +249,12 @@
   font-size: var(--font-ui);
   line-height: 1.7;
 }
+.chat-production-note {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.7;
+}
 @media (hover: none), (pointer: coarse) {
   .chat-library .conversation-action {
     opacity: 1;

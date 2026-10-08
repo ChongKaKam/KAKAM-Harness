@@ -4,6 +4,7 @@ import type { ModelAdapter, ProviderConnection, ProviderMessage, ProviderEvent }
 import type { ReasoningEffort } from '../shared/types';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
+import { generateCompatibleImage } from './images';
 import {
   EmbeddingError,
   embeddingUsage,
@@ -26,6 +27,9 @@ async function check(response: Response, connection: ProviderConnection) {
   }
 }
 export class OpenAICompatibleAdapter implements ModelAdapter {
+  generateImage(c: ProviderConnection, model: string, prompt: string, signal: AbortSignal) {
+    return generateCompatibleImage(c, model, prompt, signal);
+  }
   async embed(
     c: ProviderConnection,
     model: string,

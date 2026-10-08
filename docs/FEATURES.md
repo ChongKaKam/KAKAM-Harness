@@ -299,7 +299,7 @@ interface ModelAdapter {
 
 Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dimensions: number, usage: EmbeddingUsage | null }`，其中 usage 的三个字段分别允许 null。OpenAI-compatible 在 Chat Completions / Responses 来源下都调用 `/embeddings`，发送 `encoding_format: 'float'`，仅在指定时发送 dimensions；Anthropic / Jev 不支持。协议依据 [OpenAI Embeddings API](https://developers.openai.com/api/reference/resources/embeddings/methods/create)。`ModelsService.embed(user, modelId, inputs, signal, options?)` 托管逐调用授权、数量 / index / 有限 float32 数值 / 非零 / 维度校验与 SQLite 用量写入；策略和插件不要绕过该入口。输入为 1–128 个非空字符串，每条最多 100000 字符、合计最多 512000 字符，维度为 1–16000。可选 options 含 `expectedDimensions`（锁定既有向量空间）、`dimensions`（不得与模型已配置维度冲突）和固定业务 `purpose` 标签。
 
-模型级 `kind: 'llm' | 'jev' | 'embedding'` 独立保存；旧模型迁移时从 Jev 来源初始化类型。`embeddingDimensions` 是配置维度，`validatedDimensions` 是最近成功验证的维度，未指定 / 未验证为 null。`GET /api/models` 默认只返回可用 LLM，可显式查询 `kind=embedding / jev / all`。管理员模型创建 / 修改接口支持 kind 和 embeddingDimensions，Embedding 不具备 vision / toolCalling。改维度或来源配置清空旧验证值，记忆索引重建见 [Memory API](MEMORY_API.md#向量索引)。
+模型级 `kind: 'llm' | 'jev' | 'embedding' | 'image'` 独立保存；旧模型迁移时从 Jev 来源初始化类型。`embeddingDimensions` 是配置维度，`validatedDimensions` 是最近成功验证的维度，未指定 / 未验证为 null。`GET /api/models` 默认只返回可用 LLM，可显式查询 `kind=embedding / jev / image / all`。管理员模型创建 / 修改接口支持 kind 和 embeddingDimensions，Embedding / image 不具备 vision / toolCalling，也不进入聊天默认选择。改维度或来源配置清空旧验证值，记忆索引重建见 [Memory API](MEMORY_API.md#向量索引)。
 
 在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible`、`anthropic-messages` 和 `jev`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `chat-completions` / `responses`，`anthropic-messages` 处理原生 Messages，`jev` 处理 TypeSafe System One。来源表保留 `api_mode`，旧来源迁移默认 Chat Completions。
 
@@ -425,3 +425,9 @@ Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare 
 所有接口由 `requireUser` 保护，同时检查对话和账户归属；管理员不能读取他人快照。对话删除级联清理记录。停用撤销 API、停止新轮次捕获并取消交接、压缩与轨迹摘要调用，已有聊天和已接收的 recorder 仍可完成；重新启用保留数据，并按持久化消息状态整理未完成记录。
 
 Hand-off 使用 `registerUtility` 托管的显式辅助调用，不加入聊天 Auto / On / Off 菜单。该接口可选第三个参数 `{ maxCharacters, timeoutMs }`，缺省仍为 4000 / 60000；hand-off 使用 32000 字符输出上限与 120000ms 超时。完整交接输入超过 240000 个 UTF-16 字符时明确拒绝，不静默丢弃历史。模型逐次执行当前账户授权，真实用量计入统计；历史文本仅作待总结证据，指令要求交接用户意图变化、进度、后续方向、文档资料与不确定事项。输出只返回浏览器，供复制或下载 Markdown；关闭抽屉、切换选中轮次、插件停用或服务关闭会取消尚未完成的辅助调用，不停止原聊天。
+
+## 产物与聊天工具注册
+
+`llm-production` 为 Core，服务端和客户端仍显式双注册。`ctx.extensions.registerConversationTools(provider)` 注册受控异步工具，并通过 disposer 撤销；统一派发不依赖某个可选插件。工具参数、服务 / API、空间及保留规则见 [产物契约](LLM_PRODUCTION.md)。`ModelAdapter.generateImage` 为可选非流式接口，使用 `ModelsService.generateImage` 授权、实际用量和格式校验。
+
+ClientFeature 可提供 `settingsComponent` 与 `topbarComponent`：前者在设置容器呈现同一能力的设置，后者仅在当前 feature 页面贡献顶栏操作。Shell 不硬编码产物导航；聊天的 topbarComponent 使用产物组件，侧栏统一管理由产物 feature 的 workspace 注册提供。交互见 [UI 指南](UI_GUIDE.md#产物空间)。
