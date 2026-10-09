@@ -23,7 +23,7 @@ test('Anthropic discovery follows pagination and uses native authentication', as
     assert.equal(headers.authorization, undefined);
   }
 });
-for (const effort of ['none', 'low', 'medium', 'high', 'xhigh'] as ReasoningEffort[]) {
+for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as ReasoningEffort[]) {
   test(`Anthropic ${effort}: text, images, history and cumulative cached token accounting`, async () => {
     const events: ProviderEvent[] = [];
     for await (const event of adapter.generate(

@@ -346,7 +346,9 @@ export function modelsFeature(secret: string) {
         router.post('/admin/models/:id/test', async (req, res) => {
           const { reasoningEffort } = z
             .object({
-              reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).default('none'),
+              reasoningEffort: z
+                .enum(['none', 'low', 'medium', 'high', 'xhigh', 'max'])
+                .default('none'),
             })
             .strict()
             .parse(req.body ?? {});

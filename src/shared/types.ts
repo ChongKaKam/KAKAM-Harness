@@ -13,7 +13,7 @@ export const apiModeLabels: Record<ApiMode, string> = {
   'anthropic-messages': 'Anthropic Messages',
   jev: 'Jev · 决策模型',
 };
-export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export interface UiPreferences {
   theme: 'light' | 'dark' | 'system';
   accentColor: AccentColor;

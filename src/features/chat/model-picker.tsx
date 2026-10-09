@@ -17,6 +17,7 @@ export const effortLevels: { value: ReasoningEffort; label: string; name: string
   { value: 'medium', label: '中', name: 'Medium' },
   { value: 'high', label: '高', name: 'High' },
   { value: 'xhigh', label: '极高', name: 'Extra high' },
+  { value: 'max', label: '最大', name: 'Max' },
 ];
 
 export function ModelPicker({
@@ -162,10 +163,14 @@ export function ModelPicker({
             </button>
             <input
               className="effort-slider"
-              style={{ '--effort-progress': `${level * 25}%` } as CSSProperties}
+              style={
+                {
+                  '--effort-progress': `${(level / (effortLevels.length - 1)) * 100}%`,
+                } as CSSProperties
+              }
               type="range"
               min="0"
-              max="4"
+              max={effortLevels.length - 1}
               step="1"
               value={level}
               aria-label="思考程度"

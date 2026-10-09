@@ -34,7 +34,7 @@ const inputSchema = z
     productionMode: z.enum(['auto', 'required']).default('auto'),
     requestId: z.string().uuid().optional(),
     replaceLastMessageId: z.string().uuid().optional(),
-    reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).default('none'),
+    reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']).default('none'),
     content: z.string().trim().max(100_000).default(''),
     images: z.array(imageSchema).max(4).default([]),
   })

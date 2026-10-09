@@ -12,7 +12,7 @@ after(async () => {
   await mock.close();
 });
 for (const apiMode of ['chat-completions', 'responses'] as ApiMode[]) {
-  for (const effort of ['none', 'low', 'medium', 'high', 'xhigh'] as ReasoningEffort[]) {
+  for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as ReasoningEffort[]) {
     test(`${apiMode} correctly maps images, streaming, usage and ${effort} effort`, async () => {
       const events = [];
       for await (const e of adapter.generate(

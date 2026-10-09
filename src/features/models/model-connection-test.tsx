@@ -77,6 +77,7 @@ export function ModelConnectionProbe({
               <option value="medium">Medium</option>
               <option value="high">High</option>
               <option value="xhigh">Extra high</option>
+              <option value="max">Max</option>
             </select>
           </label>
         )}

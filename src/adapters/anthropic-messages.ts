@@ -2,6 +2,7 @@ import { generateToolTurn } from './tool-turn';
 import type { ToolDefinition, ToolStep, ToolTurnOptions } from './registry';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
+import { unsupportedMaxEffortMessage } from './reasoning-error';
 import type { ReasoningEffort } from '../shared/types';
 import type { ModelAdapter, ProviderConnection, ProviderEvent, ProviderMessage } from './registry';
 
@@ -11,9 +12,19 @@ const headers = (key: string) => ({
   'anthropic-version': '2023-06-01',
   ...(key ? { 'x-api-key': key } : {}),
 });
-async function check(response: Response, connection: ProviderConnection) {
+async function check(
+  response: Response,
+  connection: ProviderConnection,
+  effort: ReasoningEffort = 'none',
+) {
   if (!response.ok) {
-    await captureErrorBody(response, connection);
+    const body = await captureErrorBody(
+      response,
+      connection,
+      effort === 'max' && [400, 422].includes(response.status),
+    );
+    const maxError = unsupportedMaxEffortMessage(body, effort);
+    if (maxError) throw new HttpError(502, maxError);
     throw new HttpError(
       502,
       `Anthropic 服务返回 HTTP ${response.status}，请检查地址、密钥、模型及思考程度`,
@@ -117,7 +128,7 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
         })),
       }),
     });
-    await check(response, connection);
+    await check(response, connection, effort);
     if (!response.body) throw new HttpError(502, 'Anthropic 服务未返回流');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -150,7 +161,11 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
             throw new HttpError(502, 'Anthropic 流事件格式无效');
           }
           if (chunk.type === 'error')
-            throw new HttpError(502, 'Anthropic 生成失败，请稍后重试或检查来源配置');
+            throw new HttpError(
+              502,
+              unsupportedMaxEffortMessage(chunk, effort) ??
+                'Anthropic 生成失败，请稍后重试或检查来源配置',
+            );
           if (chunk.type === 'message_start') {
             started = true;
             usage = { ...chunk.message?.usage };

@@ -1,5 +1,6 @@
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
+import { unsupportedMaxEffortMessage } from './reasoning-error';
 import type { ApiMode, ReasoningEffort } from '../shared/types';
 import type {
   ProviderConnection,
@@ -186,8 +187,16 @@ export async function* generateToolTurn(
     },
   );
   if (!response.ok) {
-    await captureErrorBody(response, connection);
-    throw new HttpError(502, `模型工具调用返回 HTTP ${response.status}，请检查模型的工具调用支持`);
+    const errorBody = await captureErrorBody(
+      response,
+      connection,
+      effort === 'max' && [400, 422].includes(response.status),
+    );
+    throw new HttpError(
+      502,
+      unsupportedMaxEffortMessage(errorBody, effort) ??
+        `模型工具调用返回 HTTP ${response.status}，请检查模型的工具调用支持`,
+    );
   }
   const blocks = new Map<number, Wire>();
   const partialJson = new Map<number, string>();
@@ -296,7 +305,10 @@ export async function* generateToolTurn(
         yield { type: 'usage', usage: { input, output, total: u.total_tokens } };
     }
     if (p.error || ['error', 'response.failed', 'response.incomplete'].includes(p.type))
-      throw new HttpError(502, '模型工具生成中断，已保留内容和已上报用量');
+      throw new HttpError(
+        502,
+        unsupportedMaxEffortMessage(p, effort) ?? '模型工具生成中断，已保留内容和已上报用量',
+      );
     if (responses) {
       if (
         ['response.output_text.delta', 'response.refusal.delta'].includes(p.type) &&

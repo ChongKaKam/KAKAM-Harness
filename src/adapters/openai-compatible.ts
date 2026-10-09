@@ -4,6 +4,7 @@ import type { ModelAdapter, ProviderConnection, ProviderMessage, ProviderEvent }
 import type { ReasoningEffort } from '../shared/types';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
+import { unsupportedMaxEffortMessage } from './reasoning-error';
 import { generateCompatibleImage } from './images';
 import {
   EmbeddingError,
@@ -17,9 +18,19 @@ const headers = (c: ProviderConnection) => ({
   'Content-Type': 'application/json',
   ...(c.apiKey ? { Authorization: `Bearer ${c.apiKey}` } : {}),
 });
-async function check(response: Response, connection: ProviderConnection) {
+async function check(
+  response: Response,
+  connection: ProviderConnection,
+  effort: ReasoningEffort = 'none',
+) {
   if (!response.ok) {
-    await captureErrorBody(response, connection);
+    const body = await captureErrorBody(
+      response,
+      connection,
+      effort === 'max' && [400, 422].includes(response.status),
+    );
+    const maxError = unsupportedMaxEffortMessage(body, effort);
+    if (maxError) throw new HttpError(502, maxError);
     throw new HttpError(
       502,
       `模型服务返回 HTTP ${response.status}，请检查来源地址、密钥和模型名称`,
@@ -151,7 +162,7 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
         body: JSON.stringify(body),
       },
     );
-    await check(response, c);
+    await check(response, c, effort);
     if (!response.body) throw new HttpError(502, '模型服务返回空响应');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -183,7 +194,11 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
           if ([input, output, usage?.total_tokens].every((n) => Number.isSafeInteger(n) && n >= 0))
             yield { type: 'usage', usage: { input, output, total: usage.total_tokens } };
           if (chunk.error || chunk.type === 'error' || chunk.type === 'response.failed')
-            throw new HttpError(502, '模型服务中断了回复，请检查来源配置、模型及思考等级后重试');
+            throw new HttpError(
+              502,
+              unsupportedMaxEffortMessage(chunk, effort) ??
+                '模型服务中断了回复，请检查来源配置、模型及思考等级后重试',
+            );
           if (chunk.type === 'response.incomplete')
             throw new HttpError(502, '模型回复未完成，已保留收到的内容');
           const text = responses

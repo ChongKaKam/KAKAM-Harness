@@ -305,9 +305,11 @@ Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dime
 
 新增协议时同步共享 `ApiMode` / `apiModeLabels`、provider Zod、管理表单、ModelsService 映射与注册；已有协议值保持兼容。聊天、连通性测试、探测都传入来源的 apiMode，不在调用点硬编码 Adapter ID。如果未来协议需要独立于来源的 Adapter ID，再设计相应迁移。
 
-思考档位是 `none / low / medium / high / xhigh`；None 省略上游字段。OpenAI 两种模式分别使用 reasoning_effort / reasoning.effort；Anthropic 当前使用 adaptive thinking / output_config.effort，不支持该字段的模型使用 None。协议转换放在 Adapter 中，聊天页面只提交统一 DTO。不要把 thinking_delta 当最终回复正文，也不要为协议错误自动重复付费调用。
+思考档位是 `none / low / medium / high / xhigh / max`；None 省略上游字段，Max 原值传递 `max`。OpenAI 两种模式分别使用 reasoning_effort / reasoning.effort；Anthropic 当前使用 adaptive thinking / output_config.effort，不支持该字段的模型使用 None。聊天提交与管理员连通性测试都校验同一档位范围。协议转换放在 Adapter 中，聊天页面只提交统一 DTO。不要把 thinking_delta 当最终回复正文，也不要为协议错误自动重复付费调用。
 
-用量计数必须来自供应商，累计 usage 以最新值替换，不将多次事件重复相加。`TokenUsage` 是共享 `MessageUsage` 的类型别名。新增或变更计数方式时同时验证统计页、消息历史及 SSE done 的一致性。参考 `tests/anthropic-adapter.test.ts`（图片、认证、分页、五档思考、缓存计数、缺失/零用量、失败及取消）与 `tests/models-iteration.test.ts`（权限、迁移、顺序、来源链接及消息用量）。
+普通生成和工具调用在选择 Max 时检查上游 HTTP 400 / 422 的参数错误及 SSE 错误事件。HTTP 错误体最多检查 32 KiB，不持久化或返回原始错误；仅明确拒绝 effort 参数 / Max 值时生成固定安全提示，引导用户调低强度后显式重试。无关参数、鉴权、超时、过载等继续使用原有错误提示，不推断模型不支持 Max。已上报用量在流错误前交付并保留，不自动降级或追加请求。协议与错误回归见 `tests/reasoning-effort.test.ts`。
+
+用量计数必须来自供应商，累计 usage 以最新值替换，不将多次事件重复相加。`TokenUsage` 是共享 `MessageUsage` 的类型别名。新增或变更计数方式时同时验证统计页、消息历史及 SSE done 的一致性。参考 `tests/anthropic-adapter.test.ts`（图片、认证、分页、六档思考、缓存计数、缺失/零用量、失败及取消）与 `tests/models-iteration.test.ts`（权限、迁移、顺序、来源链接及消息用量）。
 
 ## 来源探测与模型连通性测试
 

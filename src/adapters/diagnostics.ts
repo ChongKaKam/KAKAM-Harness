@@ -143,22 +143,30 @@ export async function providerFetch(
   );
 }
 
-/** Ordinary calls discard upstream errors; explicit probes retain a bounded, redacted body. */
-export async function captureErrorBody(response: Response, connection: ProviderConnection) {
+/** Probes retain redacted errors; optional bounded inspection never persists the raw body. */
+export async function captureErrorBody(
+  response: Response,
+  connection: ProviderConnection,
+  inspect = false,
+) {
   if (!response.body) return;
-  if (!connection.diagnostics) {
+  if (!connection.diagnostics && !inspect) {
     await response.body.cancel();
     return;
   }
   const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let body = '';
   try {
     let size = 0;
     while (size <= limit) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
+      if (inspect && size <= limit) body += decoder.decode(value, { stream: true });
     }
-    if (size > limit) connection.diagnostics.markTruncated();
+    if (size > limit) connection.diagnostics?.markTruncated();
+    else if (inspect) return body + decoder.decode();
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

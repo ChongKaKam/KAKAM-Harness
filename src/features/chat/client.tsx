@@ -101,7 +101,7 @@ export function ChatPage() {
   useEffect(() => {
     const saved = localStorage.getItem(`drift:effort:${user.id}:${modelId}`);
     setEffort(
-      ['low', 'medium', 'high', 'xhigh'].includes(saved ?? '')
+      ['low', 'medium', 'high', 'xhigh', 'max'].includes(saved ?? '')
         ? (saved as ReasoningEffort)
         : 'none',
     );
