@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_MAX_CONCURRENT_CHATS } from '../features/chat/limits';
 import { readMemoryConfig, type MemoryDatabaseOptions } from '../kernel/memory-config';
 export interface Config {
   port: number;
@@ -9,6 +10,7 @@ export interface Config {
   secureCookies: boolean;
   trustProxy: number;
   clientDir?: string;
+  maxConcurrentChats?: number;
   memoryDatabaseUrl?: string;
   memoryNamespace?: string;
   memoryDatabaseOptions?: MemoryDatabaseOptions;
@@ -24,6 +26,12 @@ export function readConfig(): Config {
       PUBLIC_ORIGIN: z.url().optional(),
       COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
       TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
+      MAX_CONCURRENT_CHATS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .default(DEFAULT_MAX_CONCURRENT_CHATS),
     })
     .parse(process.env);
   return {
@@ -35,6 +43,7 @@ export function readConfig(): Config {
     secureCookies: e.COOKIE_SECURE === 'true',
     trustProxy: e.TRUST_PROXY,
     clientDir: 'dist/client',
+    maxConcurrentChats: e.MAX_CONCURRENT_CHATS,
     memoryDatabaseUrl: memory.databaseUrl,
     memoryNamespace: memory.namespace,
     memoryDatabaseOptions: memory.databaseOptions,

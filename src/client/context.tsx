@@ -1,4 +1,5 @@
 import type { SelectedSkill } from '../features/skills/types';
+import type { ChatDraft, SetChatDraft } from '../features/chat/use-chat-drafts';
 import { createContext, useContext, type Dispatch, type SetStateAction } from 'react';
 import type { Conversation, FeatureManifest, Model, User } from '../shared/types';
 export interface WorkspaceContext {
@@ -13,8 +14,8 @@ export interface WorkspaceContext {
   conversationId?: string;
   draftSkills: SelectedSkill[];
   setDraftSkills: Dispatch<SetStateAction<SelectedSkill[]>>;
-  draft: string;
-  setDraft: Dispatch<SetStateAction<string>>;
+  chatDraft: ChatDraft;
+  setChatDraft: SetChatDraft;
 }
 export const Workspace = createContext<WorkspaceContext>(null!);
 export const useWorkspace = () => useContext(Workspace);

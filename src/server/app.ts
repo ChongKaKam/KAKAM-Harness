@@ -29,7 +29,7 @@ export async function createApp(config: Config) {
     await kernel.register(extensions.manifest, extensions.server);
     await kernel.register(production.manifest, production.server);
     await kernel.register(search.manifest, search.server);
-    await kernel.register(chat.manifest, chat.server);
+    await kernel.register(chat.manifest, chat.createChatFeature(config.maxConcurrentChats));
     await kernel.register(usage.manifest, usage.server);
     await kernel.register(prompts.manifest, prompts.server);
     await kernel.register(preferences.manifest, preferences.server);

@@ -49,7 +49,7 @@ export function ConversationList({
   search: string;
   activeId?: string;
 }) {
-  const { conversations, refresh, navigate, notify, setDraft } = useWorkspace();
+  const { conversations, refresh, navigate, notify } = useWorkspace();
   const colors = usePatternColors();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editingGroup, setEditingGroup] = useState<ConversationGroup | 'new'>();
@@ -93,7 +93,6 @@ export function ConversationList({
     try {
       const { id } = await post<{ id: string }>('/conversations', { groupId });
       if (!mounted.current) return;
-      setDraft('');
       navigate('chat', id);
       await refresh();
     } catch (error) {

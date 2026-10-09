@@ -356,6 +356,12 @@ Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭�
 
 检索流程参考 [Open WebUI 的查询生成与搜索预处理](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/utils/middleware.py) 的阶段划分，没有复制其运行时。失败、权限与用量边界见 [架构](ARCHITECTURE.md#llm-拓展能力核心)。
 
+## 聊天提交与并发
+
+`chat.createChatFeature(config.maxConcurrentChats)` 在服务端装配时绑定每用户活动回复上限，默认 5；环境变量配置见 [README](../README.md#聊天并发与再次生成)。每对话仍只允许一个活动回复，满额返回 409；不排队，重复 requestId 仍返回原 messageId。任务释放、订阅与重启边界以 [生成任务](ARCHITECTURE.md#生成任务与浏览器订阅) 为主要说明。
+
+`POST /api/conversations/:id/messages` 的可选 `replaceLastMessageId` 指向本人对话最后一个 user 消息，需搭配新的 requestId，允许替换已完成、失败或已停止的末条 assistant。输入继续使用 modelId、reasoningEffort、content、images、skills、extensions 与 productionMode；换模型重新执行授权、图片与工具能力检查。替换保留 user ID 和旧用量，创建新 assistant ID；旧问答不进入本次模型上下文，不增加重复提问。产物模式保留原提问的值，既有产物与 Memory 失效处理沿用原编辑 / 重试契约。
+
 ## 对话分组 API
 
 分组路由由 chat 的 `groups-server.ts` 注册到现有 router，沿用 `requireUser`、数据库生命周期和统一错误处理，无新增 feature / 全局服务。

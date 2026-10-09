@@ -159,6 +159,8 @@ npm run format:check
 
 `tests/streaming-latency.test.ts` 验证文本先于结束事件交付；`tests/e2e/model-connections.spec.ts` 验证来源草稿探测、紧凑列表、模型诊断与明暗 / 字号 / 手机布局。自动回归使用模拟服务；用户授权的真实供应商耗时测量单独执行，不能将密钥写入测试或日志。
 
+聊天并发的针对性回归为 `npx tsx --test tests/chat-concurrency.test.ts`，使用手动结束的本地模型流验证默认 / 配置额度、幂等、单独停止、订阅隔离与关机保存；`npx playwright test tests/e2e/chat-revision.spec.ts` 覆盖桌面 / 手机的会话草稿及编辑状态隔离、换模型再次生成、旧用量保留与切换会话并行提交。
+
 ## 规范与文档同步
 
 文档与代码在同一次变更中同步，这是交付完成条件；不是另设周期任务，也不是只在对话中说明。新增约定注明适用范围，实际实现尚不支持的内容明确标记为方案。

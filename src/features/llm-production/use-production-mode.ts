@@ -1,15 +1,14 @@
-import { useState } from 'react';
+import { useWorkspace } from '../../client/context';
 import type { ProductionMode } from './types';
 
 // Composer choices stay local to this account and chat, rather than becoming an account default.
 export function useProductionMode(userId: string, conversationId?: string) {
-  const [choices, setChoices] = useState<Record<string, ProductionMode>>({});
-  const key = `${userId}:${conversationId ?? 'draft'}`;
+  const { user, chatDraft, setChatDraft } = useWorkspace();
   return {
-    mode: choices[key] ?? 'auto',
+    mode: chatDraft.productionMode,
     setMode(mode: ProductionMode, destinationId = conversationId) {
-      const destinationKey = `${userId}:${destinationId ?? 'draft'}`;
-      setChoices((current) => ({ ...current, [destinationKey]: mode }));
+      if (user.id !== userId) return;
+      setChatDraft((current) => ({ ...current, productionMode: mode }), destinationId ?? null);
     },
   };
 }

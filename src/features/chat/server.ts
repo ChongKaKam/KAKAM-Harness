@@ -4,6 +4,7 @@ import { appendMemoryBlocks } from '../extensions/memory-context';
 import type { SelectedSkill, SkillRead } from '../skills/types';
 import { generateReply, aggregateCalls, prepareConversationTools } from './skill-generation';
 import { generationDeadline } from './generation-deadline';
+import { DEFAULT_MAX_CONCURRENT_CHATS } from './limits';
 import type { ExtensionCall } from '../../shared/types';
 import { modesSchema } from '../extensions/server';
 import { Router, type Response } from 'express';
@@ -118,15 +119,19 @@ interface Generation {
   listeners: Set<Response>;
   finished?: Promise<void>;
 }
-export const server = {
-  name: 'chat',
-  inject: ['db', 'http', 'models', 'kernel', 'extensions', 'production'],
-  apply(ctx: Context) {
+export function createChatFeature(maxConcurrentChats = DEFAULT_MAX_CONCURRENT_CHATS) {
+  const limit = z.number().int().min(1).max(20).parse(maxConcurrentChats);
+  return {
+    name: 'chat',
+    inject: ['db', 'http', 'models', 'kernel', 'extensions', 'production'],
+    apply,
+  };
+  function apply(ctx: Context) {
     const router = Router();
     router.use('/conversations', requireUser);
     registerGroupRoutes(ctx, router);
     const active = new Map<string, Generation>();
-    const userActive = new Set<string>();
+    const userActive = new Map<string, Set<string>>();
     let stopping = false;
     const own = (id: string, userId: string) => {
       if (!ctx.db.get('SELECT id FROM conversations WHERE id=? AND user_id=?', id, userId))
@@ -335,8 +340,12 @@ export const server = {
         skillPlan?.skills.map(({ id, version, title, scope }) => ({ id, version, title, scope })) ??
         [];
       const extensionPlan = ctx.extensions.plan(user, input.extensions, input.modelId);
-      if (active.has(id) || userActive.has(user.id))
-        throw new HttpError(409, '已有回复正在生成，请先停止或等待完成');
+      if (active.has(id)) throw new HttpError(409, '此对话已有回复正在生成，请先停止或等待完成');
+      if ((userActive.get(user.id)?.size ?? 0) >= limit)
+        throw new HttpError(
+          409,
+          `同时最多生成 ${limit} 个聊天回复，请等待其中一个完成或停止后再试`,
+        );
       const latest = input.replaceLastMessageId
         ? ctx.db.all<{ id: string; role: Message['role']; status: Message['status'] }>(
             'SELECT id,role,status FROM messages WHERE conversation_id=? ORDER BY rowid DESC LIMIT 2',
@@ -475,7 +484,9 @@ export const server = {
         });
       });
       active.set(id, generation);
-      userActive.add(user.id);
+      const userJobs = userActive.get(user.id) ?? new Set<string>();
+      userJobs.add(id);
+      userActive.set(user.id, userJobs);
       res.status(202).json({ messageId });
       const context: ProviderMessage[] = [
         ...history.map((message) => ({
@@ -671,7 +682,8 @@ export const server = {
             });
           } finally {
             active.delete(id);
-            userActive.delete(user.id);
+            userJobs.delete(id);
+            if (!userJobs.size) userActive.delete(user.id);
             for (const listener of generation.listeners) listener.end();
           }
         }
@@ -691,5 +703,6 @@ export const server = {
     ctx.on('dispose', () => {
       for (const job of active.values()) job.abort.abort();
     });
-  },
-};
+  }
+}
+export const server = createChatFeature();

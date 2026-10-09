@@ -1,0 +1,1 @@
+export const DEFAULT_MAX_CONCURRENT_CHATS = 5;

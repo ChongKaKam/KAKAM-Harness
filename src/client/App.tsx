@@ -16,6 +16,7 @@ import { APP_VERSION } from '../shared/version';
 import { api, post } from './api';
 import { useUi } from './ui-preferences';
 import { ConversationList } from '../features/chat/conversation-list';
+import { emptyChatDraft, useChatDrafts } from '../features/chat/use-chat-drafts';
 import { Workspace } from './context';
 import { clientFeatures } from './registry';
 import { Logo, Spinner, PageHeader, ErrorNote } from './components';
@@ -47,7 +48,10 @@ export default function App() {
   const [route, setRoute] = useState(readRoute);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [draft, setDraft] = useState('');
+  const { chatDraft, setChatDraft, resetChatDrafts } = useChatDrafts(
+    user?.id,
+    route.page === 'chat' ? route.id : undefined,
+  );
   const [draftSkills, setDraftSkills] = useState<SelectedSkill[]>([]);
   const [toast, setToast] = useState('');
   const [toastPaused, setToastPaused] = useState(false);
@@ -98,6 +102,24 @@ export default function App() {
       document.removeEventListener('visibilitychange', resume);
     };
   }, [refresh, user]);
+  const hasGenerating = conversations.some((conversation) => conversation.generating);
+  useEffect(() => {
+    if (!user || !hasGenerating) return;
+    let disposed = false;
+    const owner = user.id;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      api<Conversation[]>('/conversations')
+        .then((rows) => {
+          if (!disposed && activeUserId.current === owner) setConversations(rows);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [user?.id, hasGenerating]);
   useEffect(() => {
     const change = () => {
       setRoute(readRoute());
@@ -146,7 +168,7 @@ export default function App() {
           setGroups([]);
           setSearch('');
           setModels([]);
-          setDraft('');
+          resetChatDrafts();
           setDraftSkills([]);
           navigate('chat');
         }}
@@ -164,7 +186,7 @@ export default function App() {
     try {
       await post('/auth/logout');
       setUser(undefined);
-      setDraft('');
+      resetChatDrafts();
       setDraftSkills([]);
       setConversations([]);
       setGroups([]);
@@ -186,8 +208,8 @@ export default function App() {
         navigate,
         notify: setToast,
         conversationId: route.id,
-        draft,
-        setDraft,
+        chatDraft,
+        setChatDraft,
         draftSkills,
         setDraftSkills,
       }}
@@ -218,7 +240,7 @@ export default function App() {
           <button
             className="new-chat"
             onClick={() => {
-              setDraft('');
+              setChatDraft(emptyChatDraft, null);
               setDraftSkills([]);
               navigate('chat');
             }}

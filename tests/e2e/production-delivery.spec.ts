@@ -82,6 +82,21 @@ test('required artifact mode shows real delivery, partial failure, clarification
     await input.fill('待发送的草稿');
     await page.getByRole('button', { name: '编辑提问', exact: true }).click();
     await expect(mode).toHaveValue('required');
+    const other = await (await request.post('/api/conversations', { data: {} })).json();
+    conversations.push(other.id);
+    await page.evaluate((id) => {
+      location.hash = `/chat/${id}`;
+    }, other.id);
+    await expect(mode).toHaveValue('auto');
+    await page.evaluate(() => {
+      location.hash = '/settings';
+    });
+    await expect(input).toHaveCount(0);
+    await page.evaluate((id) => {
+      location.hash = `/chat/${id}`;
+    }, completedId);
+    await expect(page.getByText('正在修改最后一次提问', { exact: false })).toBeVisible();
+    await expect(mode).toHaveValue('required');
     await page.getByRole('button', { name: '取消编辑提问', exact: true }).click();
     await expect(input).toHaveText('待发送的草稿');
     await expect(mode).toHaveValue('auto');
