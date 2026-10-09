@@ -130,6 +130,7 @@ test('private artifacts preview in chat and spaces with inert source, retry and 
     await page.keyboard.press('Escape');
     await page.unroute(htmlURL);
     await page.goto('/#/llm-production');
+    await page.getByRole('button', { name: /^管理对话产物 / }).click();
     const managerButton = page.getByRole('button', { name: '预览 测试图片.png', exact: true });
     let fail = true;
     const imageArtifact = artifacts.artifacts.find(
@@ -154,6 +155,7 @@ test('private artifacts preview in chat and spaces with inert source, retry and 
       await request.patch('/api/preferences', { data: { ...appearance, theme } });
       await page.evaluate((id) => localStorage.setItem(`drift:font-size:${id}`, 'large'), user.id);
       await page.reload();
+      await page.getByRole('button', { name: /^管理对话产物 / }).click();
       await managerButton.click();
       await expect(
         imagePreview.getByRole('img', { name: '测试图片.png', exact: true }),

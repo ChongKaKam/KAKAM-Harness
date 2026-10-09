@@ -82,6 +82,8 @@
 
 聊天里的 PNG / JPEG / WebP 产物直接展示缩略图，点击可放大查看；消息文件卡片、聊天产物抽屉和统一产物空间提供同一个预览窗口。预览保留名称、大小、到期说明与下载入口，不触发模型调用，也不延长临时文件保留时间。
 
+统一管理首页按来源对话聚合图标卡片，封面不请求图片内容；进入卡片后再提供文件预览。分组对话的详情在共享空间结果中按 `conversationId` 筛选来源，用户可切换到整个分组；聊天抽屉和服务端列表接口仍保持共享空间语义。已删除来源的保留产物仍可管理。具体布局与 Color Pattern 规则见 [UI 指南](UI_GUIDE.md#产物空间)。
+
 Markdown 使用已有安全渲染管线；文本、JSON、CSV、HTML 和 SVG 展示纯文本 / 源码，正文最多展示 100,000 字符并明确提示截断，下载仍返回完整文件。HTML / SVG 不执行或加载外部资源。PDF、DOCX、XLSX、PPTX 等二进制文件当前提供下载提示，尚无页面 / Office 排版预览。
 
 预览内容经独立私有 `/content` 接口读取：只有签名与 MIME 匹配的 PNG / JPEG / WebP 和 PDF 保留原类型；文本、JSON、XML、HTML、SVG 降为 `text/plain`，其他或伪装媒体使用 `application/octet-stream` 和 attachment。响应使用 private/no-store、nosniff 与限制主动内容的 CSP。客户端再次检查响应类型；关闭预览、切换账号或删除后取消读取并释放临时 object URL，防止旧响应进入新的界面。

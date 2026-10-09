@@ -17,6 +17,8 @@ import './production.css';
 interface ProductionLibraryProps {
   conversationId?: string;
   groupId?: string;
+  /** Filter by source without changing the shared group-space API contract. */
+  sourceConversationId?: string | null;
   showSpace?: boolean;
   refreshed?: () => void;
 }
@@ -25,7 +27,7 @@ export function ProductionLibrary(props: ProductionLibraryProps) {
   const { user } = useWorkspace();
   return (
     <ProductionLibraryContent
-      key={`${user.id}:${props.conversationId ?? ''}:${props.groupId ?? ''}`}
+      key={`${user.id}:${props.conversationId ?? ''}:${props.groupId ?? ''}:${props.sourceConversationId ?? 'all'}:${props.sourceConversationId === null}`}
       {...props}
     />
   );
@@ -34,6 +36,7 @@ export function ProductionLibrary(props: ProductionLibraryProps) {
 function ProductionLibraryContent({
   conversationId,
   groupId,
+  sourceConversationId,
   showSpace = false,
   refreshed,
 }: ProductionLibraryProps) {
@@ -98,7 +101,13 @@ function ProductionLibraryContent({
     setRevision((value) => value + 1);
     refreshed?.();
   };
-  const artifacts = data?.artifacts.filter((artifact) =>
+  const scopedArtifacts = data?.artifacts.filter(
+    (artifact) =>
+      sourceConversationId === undefined ||
+      (artifact.conversationId === sourceConversationId &&
+        (sourceConversationId !== null || artifact.groupId === (groupId ?? null))),
+  );
+  const artifacts = scopedArtifacts?.filter((artifact) =>
     `${artifact.name} ${artifact.spaceName}`
       .toLocaleLowerCase()
       .includes(search.toLocaleLowerCase()),
@@ -148,10 +157,15 @@ function ProductionLibraryContent({
         <div className="llm-production-space-summary">
           <strong>{data.space.name}</strong>
           <span>
-            {data.space.kind === 'group' ? '分组共享 · 默认不过期' : '对话独享 · 到期自动清理'}
+            {data.space.kind === 'group'
+              ? `分组共享 · 默认不过期${sourceConversationId !== undefined ? ' · 当前对话产物' : ''}`
+              : '对话独享 · 到期自动清理'}
           </span>
           <span>
-            {data.space.artifactCount} 个文件 · {productionBytes(data.space.size)}
+            {scopedArtifacts?.length ?? 0} 个文件 ·{' '}
+            {productionBytes(
+              scopedArtifacts?.reduce((sum, artifact) => sum + artifact.size, 0) ?? 0,
+            )}
           </span>
         </div>
       )}

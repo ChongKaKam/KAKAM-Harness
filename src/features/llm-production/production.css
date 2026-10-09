@@ -3,39 +3,234 @@
 .llm-production-library {
   min-width: 0;
 }
-.llm-production-overview {
+:root .shell > .page.llm-production-page {
+  max-width: 1600px;
+  padding: var(--space-8);
+}
+.llm-production-page .page-heading .eyebrow {
+  display: none;
+}
+:root .llm-production-page .page-heading > .button {
+  margin-top: 0;
+}
+.llm-production-browse-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+}
+.llm-production-browse-toolbar .llm-production-search {
+  flex-basis: 240px;
+}
+.llm-production-browse-toolbar > select {
+  width: auto;
+  max-width: 100%;
+  font-size: var(--font-ui);
+}
+.llm-production-view-toggle {
+  display: flex;
+  gap: var(--space-1);
+}
+.llm-production-view-toggle [aria-pressed='true'] {
+  background: var(--selection);
+}
+.llm-production-group-section {
+  margin-bottom: var(--space-8);
+}
+.llm-production-group-section h2,
+.llm-production-section-heading h2,
+.llm-production-detail-heading h2 {
+  font-size: var(--font-heading-small);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.llm-production-group-section h2 {
+  margin-bottom: var(--space-3);
+}
+.llm-production-group-grid,
+.llm-production-conversation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-4);
+}
+.llm-production-group-card {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--font-ui);
+  min-width: 0;
+  padding: var(--space-4);
+  text-align: left;
+  border: 1px solid var(--item-line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--ink);
 }
-.llm-production-overview > div {
-  flex: 1;
+.llm-production-group-card:hover,
+.llm-production-group-card[aria-pressed='true'] {
+  border-color: var(--item-color);
+  background: var(--item-soft);
+}
+.llm-production-group-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-control);
+  background: var(--item-soft);
+  color: var(--item-color);
+}
+.llm-production-group-card > span:last-child {
+  display: grid;
+  gap: var(--space-1);
   min-width: 0;
 }
-.llm-production-overview p,
-.llm-production-generation-state {
+.llm-production-group-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui);
+  font-weight: 600;
+}
+.llm-production-group-card small {
   color: var(--muted);
   font-size: var(--font-caption);
-  line-height: 1.6;
 }
-.llm-production-guide {
-  padding: var(--space-4) 0;
-  font-size: var(--font-ui);
-  line-height: 1.7;
+.llm-production-section-heading,
+.llm-production-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
-.llm-production-guide p + p {
+.llm-production-section-heading h2 > span {
+  margin-left: var(--space-2);
+  font-size: var(--font-caption);
+  font-weight: 400;
   color: var(--muted);
-  margin-top: var(--space-2);
 }
-.llm-production-guide > .button {
-  margin-top: var(--space-3);
+.llm-production-conversation-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid var(--item-line);
+  border-radius: var(--radius-panel);
+  color: var(--ink);
+  background: var(--surface);
 }
-.llm-production-space-filter {
-  max-width: 480px;
-  margin: var(--space-4) 0;
+.llm-production-conversation-card:hover {
+  border-color: var(--item-color);
+}
+.llm-production-conversation-cover {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 112px;
+  flex-shrink: 0;
+  background: var(--item-soft);
+  color: var(--item-color);
+  border-bottom: 1px solid var(--item-line);
+}
+.llm-production-conversation-cover > svg {
+  width: 48px;
+  height: 48px;
+}
+.llm-production-conversation-info {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4);
+}
+.llm-production-conversation-title,
+.llm-production-conversation-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.llm-production-conversation-title strong {
+  min-width: 0;
+  font-size: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.llm-production-conversation-title > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.llm-production-conversation-meta {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  flex-wrap: wrap;
+}
+.llm-production-conversation-grid.is-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.llm-production-conversation-grid.is-list .llm-production-conversation-card {
+  flex-direction: row;
+  align-items: center;
+}
+.llm-production-conversation-grid.is-list .llm-production-conversation-cover {
+  width: 64px;
+  height: 80px;
+  border-bottom: 0;
+  border-right: 1px solid var(--item-line);
+}
+.llm-production-conversation-grid.is-list .llm-production-conversation-cover > svg {
+  width: 28px;
+  height: 28px;
+}
+.llm-production-detail-heading {
+  margin-top: var(--space-6);
+}
+.llm-production-detail-heading > div {
+  min-width: 0;
+}
+.llm-production-detail-heading h2 {
+  overflow-wrap: anywhere;
+}
+.llm-production-detail-heading p {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+@media (max-width: 760px) {
+  :root .shell > .page.llm-production-page {
+    padding: var(--space-4);
+  }
+  .llm-production-browse-toolbar .llm-production-search {
+    flex-basis: 100%;
+  }
+  .llm-production-group-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  .llm-production-group-card {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .llm-production-group-icon {
+    width: 28px;
+    height: 28px;
+    background: transparent;
+  }
+  .llm-production-browse-toolbar .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 .llm-production-library-toolbar {
   display: flex;

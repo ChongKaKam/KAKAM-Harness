@@ -218,7 +218,8 @@ test('chat artifacts generate, download, share group space, manage and configure
       expect(headerBounds.x + headerBounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
       await page.screenshot({ path: test.info().outputPath(`production-chat-${theme}.png`) });
       await page.goto('/#/llm-production');
-      await page.getByLabel('产物空间', { exact: true }).selectOption(`group:${group.id}`);
+      await page.getByRole('button', { name: `筛选分组 ${group.name}`, exact: true }).click();
+      await page.getByRole('button', { name: '管理分组产物', exact: true }).click();
       await expect(page.locator('.llm-production-item')).toContainText('测试产物.md');
       await page.screenshot({
         path: test.info().outputPath(`production-manager-${theme}.png`),
@@ -228,7 +229,8 @@ test('chat artifacts generate, download, share group space, manage and configure
     }
     await page.goto('/#/llm-production');
     await expect(page.getByRole('heading', { name: '产物空间', exact: true })).toBeVisible();
-    await page.getByLabel('产物空间', { exact: true }).selectOption(`group:${group.id}`);
+    await page.getByRole('button', { name: `筛选分组 ${group.name}`, exact: true }).click();
+    await page.getByRole('button', { name: '管理分组产物', exact: true }).click();
     await expect(page.locator('.llm-production-item')).toContainText('测试产物.md');
     await page.getByRole('searchbox', { name: '搜索产物名称' }).fill('没有这个文件');
     await expect(page.getByRole('heading', { name: '没有匹配的产物' })).toBeVisible();
@@ -300,9 +302,9 @@ test('chat artifacts generate, download, share group space, manage and configure
     await request.patch('/api/llm-production/preferences', { data: preferences.preferences });
     await request.patch('/api/preferences', { data: uiPreferences });
     await page.evaluate((id) => localStorage.removeItem(`drift:font-size:${id}`), user.id);
-    await request.delete(`/api/conversations/${conversation.id}`);
-    await request.delete(`/api/conversations/${otherConversation.id}`);
-    await request.delete(`/api/conversation-groups/${group.id}`);
-    await request.delete(`/api/admin/providers/${provider.id}`);
+    await request.delete(`/api/conversations/${conversation.id}`, { data: {} });
+    await request.delete(`/api/conversations/${otherConversation.id}`, { data: {} });
+    await request.delete(`/api/conversation-groups/${group.id}`, { data: {} });
+    await request.delete(`/api/admin/providers/${provider.id}`, { data: {} });
   }
 });
