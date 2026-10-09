@@ -14,8 +14,14 @@ export function SettingsPage({
   tab?: string;
 }) {
   const { user, features, refresh, navigate } = useWorkspace();
-  const feature = available.find((f) => f.manifest.id === tab);
-  const Component = feature?.settingsComponent ?? feature?.component;
+  const adminFeature =
+    user.role === 'admin'
+      ? available.find((f) => f.adminSettingsComponent && tab === `admin:${f.manifest.id}`)
+      : undefined;
+  const feature = adminFeature ?? available.find((f) => f.manifest.id === tab);
+  const Component = adminFeature
+    ? adminFeature.adminSettingsComponent
+    : (feature?.settingsComponent ?? feature?.component);
   const personal = available.filter((f) => !f.manifest.adminOnly && !f.settingsParent);
   const admin = available.filter((f) => f.manifest.adminOnly && !f.settingsParent);
   const link = (id: string, name: string, Icon: ClientFeature['icon']) => (
@@ -51,6 +57,11 @@ export function SettingsPage({
             <div className="settings-nav-group">
               <span className="nav-label">管理员</span>
               {admin.map((f) => link(f.manifest.id, f.manifest.name, f.icon))}
+              {available
+                .filter((f) => f.adminSettingsComponent)
+                .map((f) =>
+                  link(`admin:${f.manifest.id}`, f.adminSettingsLabel ?? f.manifest.name, f.icon),
+                )}
               {link('features', '功能与插件', Puzzle)}
             </div>
           )}

@@ -218,7 +218,7 @@ function ProductionPreferencesForm({
         />
         <p className="llm-production-settings-description">
           单个文件最大 {productionBytes(settings.storage.maxFileBytes)}
-          。达到账户上限时，请在产物空间删除不再需要的文件。
+          。账户总容量由管理员统一设置；容量不足时，请在产物空间删除不再需要的文件。
         </p>
       </section>
       <ErrorNote text={error} />

@@ -372,7 +372,10 @@ export default function App() {
           )}
           {route.page === 'settings' ? (
             <SettingsPage
-              available={available.filter((f) => f.placement === 'settings' || f.settingsComponent)}
+              available={available.filter(
+                (f) =>
+                  f.placement === 'settings' || f.settingsComponent || f.adminSettingsComponent,
+              )}
               tab={route.id}
             />
           ) : Component ? (

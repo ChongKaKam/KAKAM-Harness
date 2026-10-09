@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import type { Context } from 'cordis';
 import { z } from 'zod';
-import { requireUser } from '../../kernel/http';
-import { ProductionService, productionPreferencesPatch } from './service';
+import { requireAdmin, requireUser } from '../../kernel/http';
+import {
+  ProductionService,
+  productionPreferencesPatch,
+  productionAdminSettingsInput,
+} from './service';
 import { registerProductionTools } from './tools';
 export { manifest } from './manifest';
 
@@ -40,6 +44,14 @@ export const server = {
       const router = Router();
       const base = '/llm-production';
       const id = z.string().uuid();
+      const adminBase = '/admin/llm-production/settings';
+      router.use(adminBase, requireAdmin);
+      router.get(adminBase, (_req, res) => res.json(ctx.production.adminSettings()));
+      router.patch(adminBase, (req, res) =>
+        res.json(
+          ctx.production.saveAdminSettings(req.user!, productionAdminSettingsInput.parse(req.body)),
+        ),
+      );
       router.use(base, requireUser);
       router.get(`${base}/preferences`, (req, res) =>
         res.json(ctx.production.preferences(req.user!.id)),

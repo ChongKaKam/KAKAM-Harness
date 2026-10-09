@@ -213,6 +213,8 @@ Embedding 的针对性回归使用 `npx tsx --test tests/embedding.test.ts tests
 
 管理首页的对话卡片、Color Pattern、类型 / 分组筛选、来源详情与共享空间切换由 tests/e2e/production-spaces.spec.ts 验证，包含已删除来源的保留产物；预览窗口的安全源码、加载重试和明暗 / 手机布局由 tests/e2e/production-preview.spec.ts 覆盖。
 
+管理员容量默认值、权限、输入边界、即时写入限额、独立账户额度及重启持久化在 tests/llm-production.test.ts；设置入口、保存、普通用户只读与桌面 / 手机布局在 tests/e2e/production-capacity.spec.ts。测试只用临时数据库与本地服务，容量边界通过临时文件元数据模拟，不创建 GiB 级文件。
+
 触发与交付回归位于 tests/production-request.test.ts（一般文件需求、明确格式与否定 / 引用 / 示例边界）、tests/production-trigger.test.ts（原始提问、配置预检、三协议调用、模型选择网页文件格式、未调用工具不能成功、图片失败不自动重试），均使用本地 mock；工具预算仍由 tests/production-budget.test.ts 验证。
 
 结构化计划回归在 tests/production-delivery.test.ts（三协议混合产物、必须产物模式、部分交付、澄清、十二项逐次生成、Auto 普通请求次数），服务不变量在 tests/production-delivery-service.test.ts（计划锁定、权限、项目 / 格式绑定、失败图片去重），动态通用接口在 tests/conversation-tools.test.ts。tests/e2e/production-delivery.spec.ts 仅检查新增输入模式、清单、下载、未完成提示、澄清及桌面 / 手机布局；无需为计划改动运行全套浏览器测试。

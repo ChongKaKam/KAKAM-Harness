@@ -327,6 +327,97 @@ test('generation validates file boundaries, message ownership and user generatio
   await json('/llm-production/preferences', 'PATCH', { enabled: true });
 });
 
+test('administrator capacity defaults to 1 GiB, validates access and immediately enforces per-account quotas', async () => {
+  const path = '/admin/llm-production/settings';
+  assert.equal((await request(path, 'GET', undefined, '')).status, 401);
+  for (const cookie of [member.cookie, other.cookie]) {
+    assert.equal((await request(path, 'GET', undefined, cookie)).status, 403);
+    assert.equal((await request(path, 'PATCH', { accountLimitMiB: 2048 }, cookie)).status, 403);
+  }
+  assert.throws(
+    () => app.kernel.ctx.production.saveAdminSettings(member.user, { accountLimitMiB: 2048 }),
+    (error: unknown) => error instanceof HttpError && error.status === 403,
+  );
+  const original = await json(path, 'GET', undefined, admin.cookie);
+  assert.deepEqual(original, { accountLimitMiB: 1024 });
+  assert.equal((await json('/llm-production/settings')).storage.limitBytes, 1024 ** 3);
+  for (const invalid of [0, -1, 19, 20.5, '1024', null, productionLimits.maxAccountMiB + 1]) {
+    assert.equal(
+      (await request(path, 'PATCH', { accountLimitMiB: invalid }, admin.cookie)).status,
+      400,
+    );
+  }
+  assert.equal((await request(path, 'PATCH', {}, admin.cookie)).status, 400);
+  assert.equal(
+    (await request(path, 'PATCH', { accountLimitMiB: 1024, userId: member.user.id }, admin.cookie))
+      .status,
+    400,
+  );
+  const conversationId = await conversation();
+  const foreignConversation = (await json('/conversations', 'POST', {}, other.cookie)).id;
+  try {
+    await json(path, 'PATCH', { accountLimitMiB: 20 }, admin.cookie);
+    const seed = create(conversationId, {
+      name: 'quota-seed.txt',
+      idempotencyKey: 'quota-seed',
+      data: Buffer.from('seed'),
+    });
+    // Only the temporary fixture's metadata simulates a nearly full account; no GiB allocation.
+    const used = app.kernel.ctx.production.storage(member.user.id).usedBytes;
+    app.kernel.ctx.db.run(
+      'UPDATE production_artifacts SET size=? WHERE id=?',
+      20 * 1024 * 1024 - (used - seed.size) - 1,
+      seed.id,
+    );
+    assert.throws(
+      () => create(conversationId, { data: Buffer.from('xx') }),
+      (error: unknown) => error instanceof HttpError && /20 MiB/.test(error.message),
+    );
+    create(conversationId, { name: 'last-byte.txt', data: Buffer.from('x') });
+    assert.equal(app.kernel.ctx.production.storage(member.user.id).usedBytes, 20 * 1024 * 1024);
+    assert.equal(
+      create(conversationId, {
+        name: 'quota-seed.txt',
+        idempotencyKey: 'quota-seed',
+        data: Buffer.from('seed'),
+      }).id,
+      seed.id,
+    );
+    assert.throws(
+      () => create(conversationId),
+      (error: unknown) => error instanceof HttpError && error.status === 400,
+    );
+    await json(path, 'PATCH', { accountLimitMiB: 2048 }, admin.cookie);
+    assert.equal((await json('/llm-production/settings')).storage.limitBytes, 2 * 1024 ** 3);
+    create(conversationId, { name: 'after-raise.txt', data: Buffer.from('xx') });
+    await json(path, 'PATCH', { accountLimitMiB: 20 }, admin.cookie);
+    assert.equal(
+      await (await request(`/llm-production/artifacts/${seed.id}/download`)).text(),
+      'seed',
+    );
+    assert.ok(
+      (
+        await json<ProductionList>(`/llm-production/artifacts?conversationId=${conversationId}`)
+      ).artifacts.some((item) => item.id === seed.id),
+    );
+    assert.throws(
+      () => create(conversationId),
+      (error: unknown) => error instanceof HttpError && error.status === 400,
+    );
+    const foreign = app.kernel.ctx.production.create(other.user, {
+      conversationId: foreignConversation,
+      name: 'other.txt',
+      mimeType: 'text/plain',
+      data: Buffer.from('other'),
+    });
+    assert.ok(foreign.id);
+  } finally {
+    await json('/conversations/' + conversationId, 'DELETE');
+    await json('/conversations/' + foreignConversation, 'DELETE', undefined, other.cookie);
+    await json(path, 'PATCH', original, admin.cookie);
+  }
+});
+
 test('restart preserves file bytes and removes expired temporary files before requests', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'kh-production-restart-'));
   let instance: Awaited<ReturnType<typeof createApp>> | undefined;
@@ -378,8 +469,14 @@ test('restart preserves file bytes and removes expired temporary files before re
       new Date(Date.now() - 1).toISOString(),
       expired.id,
     );
+    instance.kernel.ctx.production.saveAdminSettings(
+      { ...user, role: 'admin' },
+      { accountLimitMiB: 3072 },
+    );
     await instance.kernel.stop();
     instance = await createApp({ ...config, dataDir: dir });
+    assert.deepEqual(instance.kernel.ctx.production.adminSettings(), { accountLimitMiB: 3072 });
+    assert.equal(instance.kernel.ctx.production.storage(user.id).limitBytes, 3 * 1024 ** 3);
     assert.equal(
       instance.kernel.ctx.db.get('SELECT id FROM production_artifacts WHERE id=?', expired.id),
       undefined,

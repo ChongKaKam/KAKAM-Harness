@@ -110,6 +110,8 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 平台 SQLite 表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。其事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。Memory 独立 PostgreSQL 表由 [`kernel/memory-database.ts`](../src/kernel/memory-database.ts) 在插件初始化时集中迁移，允许异步数据库事务，但模型 / 网络请求仍不能放入事务。两种数据库之间没有跨库外键或分布式事务。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
 
+产物每账户容量默认 1 GiB，全局管理员配置保存在现有 `settings` 表的 `llm-production:storage`。ProductionService 在容量查询、预检和写入时读取配置；缩小额度不删除已有文件。文件仍按 owner 隔离，管理员容量接口不提供其他用户的文件访问；配置与数据一起备份，详见 [产物契约](LLM_PRODUCTION.md#空间与保留时间)。
+
 `PUBLIC_ORIGIN` 目前只接受一个来源，比较浏览器发送的 Origin。`COOKIE_SECURE` 控制会话 Cookie 的 HTTPS 限制；`TRUST_PROXY` 控制 Express 对代理的信任，不是绕过 Origin 校验的开关。部署配置、数据库和密钥的备份规则见 [README](../README.md#备份与重新构建)。
 
 ## 取舍

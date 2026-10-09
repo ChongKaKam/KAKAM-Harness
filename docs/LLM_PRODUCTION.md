@@ -12,7 +12,9 @@
 - 修改保留天数按固定的临时起算时间重算现有临时文件，缩短可能立即清理到期文件；分组文件不受影响。
 - 启动及每小时清理过期记录，查询列表触发清理，下载立即拒绝过期文件。删除释放 SQLite 页供后续写入复用，不承诺数据库文件立即缩小。
 
-文件内容以有上限的 BLOB 保存到现有 SQLite；元数据记录 owner、来源聊天 / 消息、空间、名称、MIME、大小、哈希与幂等标识。单文件 20 MiB、每账户 200 MiB。完整 SQLite / 数据目录备份包含产物，不增加公开静态目录。迁移集中在 `kernel/database.ts`。
+文件内容以有上限的 BLOB 保存到现有 SQLite；元数据记录 owner、来源聊天 / 消息、空间、名称、MIME、大小、哈希与幂等标识。单文件 20 MiB；每账户总容量默认 1 GiB（1024 MiB），无已存配置的旧安装也采用该默认值。管理员在「设置 → 管理员 → 产物容量」统一调整为整数 20–1048576 MiB，适用于每个账户，不是所有账户共用一个总额度。配置保存在 SQLite `settings` 的 `llm-production:storage`，重启保留，无需新增表结构。
+
+调整对下一次容量读取、图片生成预检与最终文件保存立即生效。降低额度不删除已有文件，超额账户仍可管理、预览和下载，但新文件不能超过额度；重复的成功幂等请求仍返回原文件。普通用户不能修改额度。完整 SQLite / 数据目录备份包含产物及容量配置，不增加公开静态目录。迁移集中在 `kernel/database.ts`。
 
 ## 生成工具与范围
 
@@ -112,5 +114,12 @@ SSE 使用 `{ type: 'artifacts', messageId, artifacts, productionDelivery }`，�
 | `GET /llm-production/artifacts/:id/download` | 原字节，attachment、private/no-store、nosniff；过期或非本人返回 404 |
 | `GET /llm-production/artifacts/:id/content`  | 私有预览原字节；响应类型受控，过期、删除或非本人返回 404            |
 | `DELETE /llm-production/artifacts/:id`       | 删除本人文件，`{ ok: true }`                                        |
+
+管理员容量接口同样加 `/api` 前缀，并由 `requireAdmin` 独立鉴权；未登录返回 401，普通用户返回 403。
+
+| 方法与路径                             | 契约                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------ |
+| `GET /admin/llm-production/settings`   | `{ accountLimitMiB }`，全局每账户容量                                          |
+| `PATCH /admin/llm-production/settings` | `{ accountLimitMiB: number }`，整数 20–1048576，不接受其他字段，保存后立即生效 |
 
 生成仅通过已注册聊天工具发生，管理页面不隐式调用模型；没有匿名公共文件 URL。界面契约见 [UI 指南](UI_GUIDE.md#产物空间)，验证位置见 [开发指南](DEVELOPMENT.md)。

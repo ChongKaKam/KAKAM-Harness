@@ -439,3 +439,5 @@ Hand-off 使用 `registerUtility` 托管的显式辅助调用，不加入聊天 
 `conversationTools(user, request, requireDelivery = false)` 接收原始当前提问和用户选择的强制策略；provider 可选 `requirement(user, request, requireDelivery?)` 预检，`requirements(scope)` 声明动态交付要求，`tools(user, scope?)` 按当前计划决定工具可用性。selection 提供 toolsFor(scope) 和 pending(scope)，Chat 每轮刷新工具并在结束前验证真实交付。要求包含 toolName、instructions、failureMessage、satisfied(scope) 与可选 stopOnFailure / maxRounds；扩轮最多 16，调用总数仍为 16。作用域及 requireDelivery 由服务器绑定，完成策略由 provider 声明，Chat 不硬编码业务工具。`generateTurn` 的 effort 后新增可选 `{ requireTool?: boolean }`，兼容现有调用；Adapter 按协议映射，当前 OpenAI-compatible 发 required，Anthropic 由交付指令和完成校验约束。明确触发、计划与协议限制集中在 [产物契约](LLM_PRODUCTION.md#触发与交付校验)。
 
 ClientFeature 可提供 `settingsComponent` 与 `topbarComponent`：前者在设置容器呈现同一能力的设置，后者仅在当前 feature 页面贡献顶栏操作。Shell 不硬编码产物导航；聊天的 topbarComponent 使用产物组件，侧栏统一管理由产物 feature 的 workspace 注册提供。交互见 [UI 指南](UI_GUIDE.md#产物空间)。
+
+同一 feature 还可注册 `adminSettingsComponent` / `adminSettingsLabel`，设置容器仅向管理员展示入口，路由使用 `#/settings/admin:<featureId>`；普通用户直接访问也不能加载该组件。产物容量复用此注册方式，不新增独立插件；`GET/PATCH /admin/llm-production/settings` 仍由服务端 `requireAdmin` 校验，目录权限不能代替 API 鉴权。容量、持久化和边界见 [产物契约](LLM_PRODUCTION.md#空间与保留时间)。

@@ -64,9 +64,16 @@ export interface ProductionSettings {
   storage: ProductionStorage;
 }
 
+/** Global per-account quota, managed only by administrators. */
+export interface ProductionAdminSettings {
+  accountLimitMiB: number;
+}
+
 export const productionLimits = {
   fileBytes: 20 * 1024 * 1024,
-  accountBytes: 200 * 1024 * 1024,
+  accountBytes: 1024 * 1024 * 1024,
+  minAccountMiB: 20,
+  maxAccountMiB: 1024 * 1024,
   textCharacters: 500_000,
   deliveryItems: 12,
 } as const;

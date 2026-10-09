@@ -19,6 +19,7 @@ import { ChatPage } from '../features/chat/client';
 import { ChatProductionTopbar } from '../features/llm-production/chat-controls';
 import { ProductionPage } from '../features/llm-production/client';
 import { ProductionSettingsPage } from '../features/llm-production/settings';
+import { ProductionAdminSettingsPage } from '../features/llm-production/admin-settings';
 import { manifest as production } from '../features/llm-production/manifest';
 import { UsagePage } from '../features/usage/client';
 import { UsersPage } from '../features/users/client';
@@ -48,6 +49,9 @@ export interface ClientFeature {
   settingsParent?: string;
   /** Optional settings page for a feature that also has a workspace page. */
   settingsComponent?: ComponentType;
+  /** A feature-owned settings panel exposed only in the administrator group. */
+  adminSettingsComponent?: ComponentType;
+  adminSettingsLabel?: string;
   /** Optional feature-owned controls in the Shell header. */
   topbarComponent?: ComponentType;
 }
@@ -75,6 +79,8 @@ export const clientFeatures: ClientFeature[] = [
     component: ProductionPage,
     settingsLabel: '产物空间',
     settingsComponent: ProductionSettingsPage,
+    adminSettingsComponent: ProductionAdminSettingsPage,
+    adminSettingsLabel: '产物容量',
   },
   {
     placement: 'settings',

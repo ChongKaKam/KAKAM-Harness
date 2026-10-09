@@ -14,6 +14,7 @@ import {
 import {
   productionLimits,
   type ProductionArtifact,
+  type ProductionAdminSettings,
   type ProductionDelivery,
   type ProductionDeliveryItem,
   type ProductionFormat,
@@ -26,6 +27,8 @@ import {
 } from './types';
 
 const day = 86_400_000;
+const mib = 1024 * 1024;
+const storageSettingsKey = 'llm-production:storage';
 const columns = `a.id,a.name,a.mime_type AS mimeType,a.size,a.created_at AS createdAt,
   a.expires_at AS expiresAt,a.conversation_id AS conversationId,a.message_id AS messageId,
   a.group_id AS groupId,a.delivery_item_id AS deliveryItemId,
@@ -60,6 +63,16 @@ export const productionPreferencesPatch = z
   })
   .strict()
   .refine((input) => Object.keys(input).length > 0, '请提供需要修改的设置');
+
+export const productionAdminSettingsInput = z
+  .object({
+    accountLimitMiB: z
+      .number()
+      .int()
+      .min(productionLimits.minAccountMiB)
+      .max(productionLimits.maxAccountMiB),
+  })
+  .strict();
 
 export interface CreateProductionArtifact {
   conversationId: string;
@@ -136,6 +149,27 @@ export class ProductionService extends Service {
     return next;
   }
 
+  adminSettings(): ProductionAdminSettings {
+    const saved = this.ctx.db.get<{ value: string }>(
+      'SELECT value FROM settings WHERE key=?',
+      storageSettingsKey,
+    );
+    return productionAdminSettingsInput.parse(
+      saved ? JSON.parse(saved.value) : { accountLimitMiB: productionLimits.accountBytes / mib },
+    );
+  }
+
+  saveAdminSettings(user: User, settings: ProductionAdminSettings): ProductionAdminSettings {
+    if (user.role !== 'admin') throw new HttpError(403, '需要管理员权限');
+    const next = productionAdminSettingsInput.parse(settings);
+    this.ctx.db.run(
+      'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      storageSettingsKey,
+      JSON.stringify(next),
+    );
+    return next;
+  }
+
   storage(userId: string): ProductionStorage {
     this.cleanup();
     return {
@@ -143,7 +177,7 @@ export class ProductionService extends Service {
         'SELECT COALESCE(SUM(size),0) AS total FROM production_artifacts WHERE user_id=?',
         userId,
       )!.total,
-      limitBytes: productionLimits.accountBytes,
+      limitBytes: this.adminSettings().accountLimitMiB * mib,
       maxFileBytes: productionLimits.fileBytes,
     };
   }
@@ -490,8 +524,12 @@ export class ProductionService extends Service {
     }
     if (!this.preferences(user.id).enabled) throw new HttpError(400, '请先在产物设置中启用生成');
     this.cleanup();
-    if (this.storage(user.id).usedBytes + input.data.byteLength > productionLimits.accountBytes)
-      throw new HttpError(400, '产物空间已达到 200 MiB，请删除部分文件后重试');
+    const storage = this.storage(user.id);
+    if (storage.usedBytes + input.data.byteLength > storage.limitBytes)
+      throw new HttpError(
+        400,
+        `产物空间容量不足（上限 ${storage.limitBytes / mib} MiB），请删除部分文件后重试`,
+      );
     const id = randomUUID();
     const createdAt = new Date().toISOString();
     const groupId = conversation.groupId;
