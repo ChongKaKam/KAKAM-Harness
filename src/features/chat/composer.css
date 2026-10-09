@@ -1,60 +1,109 @@
-/* Compact controls; editor height continues to grow with content and font size. */
+/* The editor remains a single document; additional controls appear on demand. */
 :root .chat-page .composer {
-  padding: 10px 14px 8px;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--space-6);
+  background: var(--surface);
+  box-shadow: none;
+}
+:root .chat-page .composer:focus-within {
+  border-color: color-mix(in srgb, var(--ink) 20%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .chat-editing-note {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
   font-size: var(--font-caption);
   line-height: 1.5;
-  padding: 2px 2px 8px;
+  padding: 0 var(--space-1) var(--space-2);
 }
 .chat-editing-note button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   flex-shrink: 0;
+  min-height: 32px;
   color: var(--ink);
   font-size: var(--font-caption);
 }
-:root .composer-format {
-  padding-bottom: 4px;
-  margin-bottom: 4px;
+:root .chat-page .composer-format {
+  gap: var(--space-1);
+  padding: 0 0 var(--space-1);
+  margin: 0;
+  border: 0;
 }
-:root .composer-format button {
-  min-width: 30px;
-  min-height: 28px;
-  height: 28px;
+:root .chat-page .composer-format button {
+  min-width: 36px;
+  min-height: 36px;
+  height: 36px;
+  border-radius: var(--radius-control);
 }
 :root .chat-page .composer .live-composer {
-  min-height: 3.25em;
-  padding: 4px 2px 8px;
+  min-height: 3em;
+  max-height: min(14em, 30dvh);
+  padding: var(--space-1) var(--space-1) var(--space-3);
+  font-size: var(--font-input);
+  line-height: 1.65;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-:root .composer-tools {
+:root .chat-page .composer .live-composer p.is-editor-empty:first-child::before {
+  font-size: inherit;
+}
+:root .chat-page .composer-tools {
+  display: flex;
+  align-items: center;
   flex-wrap: nowrap;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+:root .chat-page .composer-tools > .grow {
+  display: none;
+}
+:root .chat-page .composer-tools .send-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  margin-left: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  opacity: 1;
+}
+:root .chat-page .composer-tools .send-button:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+:root .chat-page .composer-tools .send-button:disabled {
+  background: var(--soft);
+  color: var(--faint);
+  opacity: 1;
 }
 .model-picker {
+  flex: 0 1 auto;
   min-width: 0;
   margin-left: auto;
-  max-width: calc(100% - 84px);
+  max-width: calc(100% - 96px);
 }
 .model-picker-trigger {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   max-width: 100%;
-  min-height: 32px;
-  padding: 5px 10px;
-  border-radius: 18px;
-  background: var(--soft);
+  min-height: 44px;
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--ink);
   font-size: var(--font-ui);
   line-height: 1.4;
+}
+.model-picker-trigger:hover:not(:disabled),
+.model-picker-trigger[aria-expanded='true'] {
+  background: var(--soft);
 }
 .model-picker-name {
   overflow: hidden;
@@ -62,7 +111,8 @@
   white-space: nowrap;
   min-width: 0;
 }
-.model-picker-effort {
+.model-picker-effort,
+.model-picker-trigger > svg {
   color: var(--muted);
   white-space: nowrap;
 }
@@ -71,8 +121,188 @@
 .model-picker-list svg {
   flex-shrink: 0;
 }
-:root .composer-tools .send-button {
-  margin-left: 0;
+.chat-composer-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: var(--space-1);
+  min-width: 0;
+}
+:root .chat-page .chat-composer-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--ink);
+  background: transparent;
+}
+:root .chat-page .chat-composer-menu-trigger:hover:not(:disabled),
+:root .chat-page .chat-composer-menu-trigger[aria-expanded='true'] {
+  background: var(--soft);
+}
+.chat-composer-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 auto;
+  gap: var(--space-1);
+  min-height: 36px;
+  max-width: clamp(100px, 25vw, 180px);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--soft);
+  color: var(--ink);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+.chat-composer-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-composer-chip > svg {
+  flex-shrink: 0;
+}
+.chat-composer-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--space-4);
+  box-shadow: var(--shadow-floating);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--font-ui);
+  line-height: 1.5;
+}
+.chat-composer-menu::backdrop {
+  background: transparent;
+}
+.chat-composer-menu-section + .chat-composer-menu-section {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+.chat-composer-menu-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+.chat-composer-menu-heading > strong {
+  flex: 1;
+  font-weight: 500;
+}
+.chat-composer-menu-section > h3 {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+.chat-composer-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  text-align: left;
+}
+button.chat-composer-menu-item:hover:not(:disabled),
+label.chat-composer-menu-item:hover,
+.chat-composer-menu-item[aria-pressed='true'] {
+  background: var(--soft);
+}
+.chat-composer-menu-item > svg {
+  flex-shrink: 0;
+}
+label.chat-composer-menu-item {
+  margin: 0;
+  flex-direction: row;
+  cursor: pointer;
+}
+.chat-composer-menu-item > input[type='checkbox'] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  accent-color: var(--primary);
+}
+.chat-composer-menu-item-copy {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chat-composer-menu-item-title {
+  display: block;
+  font-weight: 500;
+}
+.chat-composer-menu-item-description {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.chat-composer-menu .llm-production-composer-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+}
+.chat-composer-menu .llm-production-composer-control > label {
+  color: var(--ink);
+  font-size: var(--font-ui);
+}
+:root .chat-composer-menu .llm-production-composer-control > select {
+  width: auto;
+  max-width: 100%;
+  min-height: 44px;
+  font-size: var(--font-ui);
+}
+.chat-composer-menu .llm-production-composer-description {
+  grid-column: 1 / -1;
+}
+.chat-composer-menu .extensions-menu-item {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+}
+.chat-composer-menu .extensions-menu-name {
+  gap: var(--space-3);
+}
+.chat-composer-menu .extensions-menu-name > strong {
+  font-weight: 500;
+}
+.chat-composer-menu .extensions-menu-item > p {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.chat-composer-menu .extensions-modes {
+  min-height: 44px;
+}
+.chat-composer-menu .extensions-modes label {
+  min-height: 44px;
 }
 .model-picker-popover {
   position: fixed;
@@ -225,17 +455,24 @@
 }
 @media (max-width: 760px) {
   :root .chat-page .composer {
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2) var(--space-2);
   }
-  :root .composer-format button {
-    min-height: 32px;
-    height: 32px;
-    min-width: 32px;
+  :root .chat-page .composer-format button {
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
   }
-  .model-picker {
-    flex: 0 1 auto;
+  :root .chat-page .composer .live-composer {
+    max-height: min(12em, 32dvh);
+    padding-right: var(--space-2);
+    padding-left: var(--space-2);
   }
   .model-picker-trigger {
-    min-height: 36px;
+    gap: var(--space-1);
+    padding: var(--space-1);
+  }
+  .chat-composer-chip {
+    max-width: 100px;
+    min-height: 44px;
   }
 }

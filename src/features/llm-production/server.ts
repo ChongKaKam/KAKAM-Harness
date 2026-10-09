@@ -6,6 +6,30 @@ import { ProductionService, productionPreferencesPatch } from './service';
 import { registerProductionTools } from './tools';
 export { manifest } from './manifest';
 
+/** Only inert, verified media retain their original type on the private content route. */
+function contentType(mimeType: string, data: Buffer): string | null {
+  const mime = mimeType.toLowerCase();
+  if (mime === 'image/png')
+    return data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? mime : null;
+  if (mime === 'image/jpeg')
+    return data[0] === 255 && data[1] === 216 && data[2] === 255 ? mime : null;
+  if (mime === 'image/webp')
+    return data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP'
+      ? mime
+      : null;
+  if (mime === 'application/pdf')
+    return data.subarray(0, 5).equals(Buffer.from('%PDF-')) ? mime : null;
+  if (
+    mime.startsWith('text/') ||
+    mime === 'application/json' ||
+    mime.endsWith('+json') ||
+    mime === 'application/xml' ||
+    mime.endsWith('+xml')
+  )
+    return 'text/plain; charset=utf-8';
+  return null;
+}
+
 export const server = {
   name: 'llm-production',
   inject: ['db', 'http', 'models', 'extensions'],
@@ -38,6 +62,17 @@ export const server = {
         res.set('Cache-Control', 'private, no-store');
         res.set('X-Content-Type-Options', 'nosniff');
         res.attachment(artifact.name).type(artifact.mimeType).send(Buffer.from(data));
+      });
+      router.get(`${base}/artifacts/:id/content`, (req, res) => {
+        res.set('Cache-Control', 'private, no-store');
+        res.set('X-Content-Type-Options', 'nosniff');
+        res.set('Content-Security-Policy', "default-src 'none'; sandbox; frame-ancestors 'none'");
+        const { artifact, data } = ctx.production.download(req.user!.id, id.parse(req.params.id));
+        const bytes = Buffer.from(data);
+        const mime = contentType(artifact.mimeType, bytes);
+        if (mime) res.set('Content-Disposition', 'inline').type(mime);
+        else res.attachment(artifact.name).type('application/octet-stream');
+        res.send(bytes);
       });
       router.delete(`${base}/artifacts/:id`, (req, res) => {
         ctx.production.remove(req.user!.id, id.parse(req.params.id));

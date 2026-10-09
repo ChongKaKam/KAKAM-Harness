@@ -24,6 +24,29 @@ export function productionDownload(artifact: ProductionArtifact) {
   return `/api/llm-production/artifacts/${encodeURIComponent(artifact.id)}/download`;
 }
 
+export function productionContent(artifact: ProductionArtifact) {
+  return `/api/llm-production/artifacts/${encodeURIComponent(artifact.id)}/content`;
+}
+
+export function productionPreviewKind(artifact: ProductionArtifact) {
+  const mime = artifact.mimeType.toLowerCase();
+  if (['image/png', 'image/jpeg', 'image/webp'].includes(mime)) return 'image';
+  if (
+    ['text/markdown', 'text/x-markdown'].includes(mime) ||
+    (mime === 'text/plain' && /\.md(?:own)?$/i.test(artifact.name))
+  )
+    return 'markdown';
+  if (
+    mime.startsWith('text/') ||
+    mime === 'application/json' ||
+    mime.endsWith('+json') ||
+    mime === 'application/xml' ||
+    mime.endsWith('+xml')
+  )
+    return 'text';
+  return 'unsupported';
+}
+
 export function productionType(artifact: ProductionArtifact) {
   if (artifact.mimeType.startsWith('image/')) return '图片';
   const extension = artifact.name.split('.').at(-1);

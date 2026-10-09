@@ -1,6 +1,6 @@
 # LLM Production：产物空间
 
-`llm-production` 是 `kind: 'core'` 的基础能力，提供模型生成文件、私有空间、下载和删除。管理员不能停用它；用户可在「设置 → 产物空间」关闭自己的生成工具，已有文件仍可管理。此页是该能力的主要契约。
+`llm-production` 是 `kind: 'core'` 的基础能力，提供模型生成文件、私有空间、Web 预览、下载和删除。管理员不能停用它；用户可在「设置 → 产物空间」关闭自己的生成工具，已有文件仍可管理。此页是该能力的主要契约。
 
 ## 空间与保留时间
 
@@ -22,7 +22,7 @@
 
 产物是用户请求交付的文件或图片，与文件内容的业务题材无关。当前聊天模型结合用户要求与对话上下文，选择合适的工具、格式、文件名和内容；请求产物时必须用工具保存真实文件，不能只交付文字或代码块。没有「计算器」等业务专用触发分支。网页只是文件产物的一种，未明确格式时由模型选择合适的受支持格式；用户明确指定 HTML / PDF 等格式时应遵从。仅讨论实现、解释机制、引用请求或索要代码示例，不等于请求文件。
 
-输入栏提供两种「产物输出」模式，聊天提交参数为 `productionMode: 'auto' | 'required'`，省略为 auto。用户消息与助手消息保存该模式，编辑和重试沿用原提问的模式；账户和聊天的输入选项隔离。
+聊天[加号菜单](UI_GUIDE.md#聊天输入)提供两种「产物输出」模式，默认选项和说明收在菜单中；选择「必须产物」后输入栏显示状态标签。聊天提交参数为 `productionMode: 'auto' | 'required'`，省略为 auto。用户消息与助手消息保存该模式，编辑和重试沿用原提问的模式；账户和聊天的输入选项隔离。
 
 - **自动**：主模型结合上下文决定是否生成。单个文件或图片可以直接调用工具；多个文件、多张图片、混合交付或有依赖步骤的任务先声明结构化交付计划。普通聊天不增加计划请求或辅助模型调用。
 - **必须产物**：框架先仅提供计划工具（可同时读取已授权 Skill），要求主模型先声明完整清单；需求不足时可以提出澄清问题。计划未声明，或已声明的文件未全部保存，均不能将本轮标记为成功。切换到不支持工具调用的模型时提示并禁止提交此模式。
@@ -72,11 +72,21 @@
 
 文件参数为 `{ itemId, name, format, content }`，图片参数为 `{ itemId, name, prompt }`；未规划的 Auto 单产物用 itemId=null，旧调用省略也兼容。PDF / DOCX 接收正文段落；XLSX content 为序列化 JSON `{"sheets":[{"name":"Sheet1","rows":[["名称","数量"],["示例",12]]}]}`；PPTX 为 `{"slides":[{"title":"标题","body":["第一项","第二项"]}]}`。数量与输入限制以 `generators.ts` 为准。文件名只用于展示和下载，不成为宿主路径。
 
-当前只提供基础文档排版，未实现任意模板、宏、复杂 Office 布局、脚本沙箱、依赖安装和网页执行；HTML / SVG 仅下载，不在聊天中执行。PDF 嵌入随依赖提供的 Noto Sans SC 字体，支持常用中文和拉丁字符；字体未覆盖的字符会明确拒绝，可改用 DOCX 或文本。Excel 单元格仅支持字符串、数字、布尔值和空值，公式文本按普通文字保存。
+当前只提供基础文档排版，未实现任意模板、宏、复杂 Office 布局、脚本沙箱、依赖安装和网页执行；HTML / SVG 支持源码预览与下载，不在聊天中执行。PDF 嵌入随依赖提供的 Noto Sans SC 字体，支持常用中文和拉丁字符；字体未覆盖的字符会明确拒绝，可改用 DOCX 或文本。Excel 单元格仅支持字符串、数字、布尔值和空值，公式文本按普通文字保存。
 
-图片模型为模型级 `kind: 'image'`，不进入聊天选择器 / 默认 LLM。管理员通过 OpenAI 兼容来源添加并授权，用户在产物设置选择。`ModelsService.generateImage(user, modelId, prompt, signal)` 逐调用授权，Adapter 使用来源 `/images/generations`；Anthropic / Jev 来源不支持图片模型。校验真实图片格式、大小，只接受 base64，不拉取上游图片 URL，不自动重试付费请求。暂不提供图片编辑。文字连通性测试不用于图片模型，实际生成验证图片接口。
+图片模型为模型级 `kind: 'image'`，不进入聊天选择器 / 默认 LLM。管理员通过 OpenAI 兼容来源添加并授权，用户在产物设置选择。`ModelsService.generateImage(user, modelId, prompt, signal)` 逐调用授权，Adapter 使用来源 `/images/generations`；Anthropic / Jev 来源不支持图片模型。校验真实图片格式、大小，只接受 base64，不拉取上游图片 URL，不自动重试付费请求。暂不提供基于原图字节的编辑；继续生成的范围见下方 Web 预览说明。文字连通性测试不用于图片模型，实际生成验证图片接口。
 
 图片 usage 逐字段记录，缺失值保留 NULL；独立计入统计，不混入回答 LLM 的文本 Token 合计。
+
+## Web 预览
+
+聊天里的 PNG / JPEG / WebP 产物直接展示缩略图，点击可放大查看；消息文件卡片、聊天产物抽屉和统一产物空间提供同一个预览窗口。预览保留名称、大小、到期说明与下载入口，不触发模型调用，也不延长临时文件保留时间。
+
+Markdown 使用已有安全渲染管线；文本、JSON、CSV、HTML 和 SVG 展示纯文本 / 源码，正文最多展示 100,000 字符并明确提示截断，下载仍返回完整文件。HTML / SVG 不执行或加载外部资源。PDF、DOCX、XLSX、PPTX 等二进制文件当前提供下载提示，尚无页面 / Office 排版预览。
+
+预览内容经独立私有 `/content` 接口读取：只有签名与 MIME 匹配的 PNG / JPEG / WebP 和 PDF 保留原类型；文本、JSON、XML、HTML、SVG 降为 `text/plain`，其他或伪装媒体使用 `application/octet-stream` 和 attachment。响应使用 private/no-store、nosniff 与限制主动内容的 CSP。客户端再次检查响应类型；关闭预览、切换账号或删除后取消读取并释放临时 object URL，防止旧响应进入新的界面。
+
+用户可以在聊天中提出修改意见，再请求生成新版图片；当前图片工具仅接收文字提示，不传入已有产物的图像字节，因而不保证精准保留原图细节。这与基于参考原图的编辑不同；后者尚未接入，原图与再次生成的图片作为独立产物保留。
 
 ## 接入与任务
 
@@ -98,6 +108,7 @@ SSE 使用 `{ type: 'artifacts', messageId, artifacts, productionDelivery }`，�
 | `GET /llm-production/spaces`                 | 本人的聊天 / 分组空间与数量、大小                                   |
 | `GET /llm-production/artifacts`              | 全部文件或单个 conversationId / groupId；`{ artifacts, space }`     |
 | `GET /llm-production/artifacts/:id/download` | 原字节，attachment、private/no-store、nosniff；过期或非本人返回 404 |
+| `GET /llm-production/artifacts/:id/content`  | 私有预览原字节；响应类型受控，过期、删除或非本人返回 404            |
 | `DELETE /llm-production/artifacts/:id`       | 删除本人文件，`{ ok: true }`                                        |
 
 生成仅通过已注册聊天工具发生，管理页面不隐式调用模型；没有匿名公共文件 URL。界面契约见 [UI 指南](UI_GUIDE.md#产物空间)，验证位置见 [开发指南](DEVELOPMENT.md)。

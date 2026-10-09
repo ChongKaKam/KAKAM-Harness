@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, File, Image, RefreshCw, Trash2, ArrowUpRight, Search } from 'lucide-react';
+import { Download, Eye, File, Image, RefreshCw, Trash2, ArrowUpRight, Search } from 'lucide-react';
 import { api, remove } from '../../client/api';
 import { Empty, ErrorNote, Spinner } from '../../client/components';
 import { useWorkspace } from '../../client/context';
 import type { ProductionArtifact, ProductionList } from './types';
+import { ProductionPreview } from './preview';
 import {
   productionBytes,
   productionDate,
@@ -43,6 +44,7 @@ function ProductionLibraryContent({
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState('');
   const [confirm, setConfirm] = useState<ProductionArtifact>();
+  const [preview, setPreview] = useState<ProductionArtifact>();
   const [deleting, setDeleting] = useState(false);
   const mounted = useRef(false);
   const cancelDelete = useRef<HTMLButtonElement>(null);
@@ -90,6 +92,7 @@ function ProductionLibraryContent({
   const reload = () => {
     deleteTrigger.current = null;
     setConfirm(undefined);
+    setPreview(undefined);
     setLoading(true);
     setData(undefined);
     setRevision((value) => value + 1);
@@ -220,6 +223,15 @@ function ProductionLibraryContent({
                       <ArrowUpRight size={18} aria-hidden="true" />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="button llm-production-preview-trigger"
+                    aria-label={`预览 ${artifact.name}`}
+                    onClick={() => setPreview(artifact)}
+                  >
+                    <Eye size={16} aria-hidden="true" />
+                    预览
+                  </button>
                   <a
                     className="button"
                     href={productionDownload(artifact)}
@@ -252,6 +264,7 @@ function ProductionLibraryContent({
               : '在聊天中说明需要的文件格式或图片，模型生成后会出现在这里，可随时下载。'}
           </Empty>
         ))}
+      {preview && <ProductionPreview artifact={preview} close={() => setPreview(undefined)} />}
     </div>
   );
 }

@@ -434,7 +434,7 @@ Hand-off 使用 `registerUtility` 托管的显式辅助调用，不加入聊天 
 
 ## 产物与聊天工具注册
 
-`llm-production` 为 Core，服务端和客户端仍显式双注册。`ctx.extensions.registerConversationTools(provider)` 注册受控异步工具，并通过 disposer 撤销；统一派发不依赖某个可选插件。工具参数、服务 / API、空间及保留规则见 [产物契约](LLM_PRODUCTION.md)。`ModelAdapter.generateImage` 为可选非流式接口，使用 `ModelsService.generateImage` 授权、实际用量和格式校验。
+`llm-production` 为 Core，服务端和客户端仍显式双注册。`ctx.extensions.registerConversationTools(provider)` 注册受控异步工具，并通过 disposer 撤销；统一派发不依赖某个可选插件。工具参数、服务 / API、空间及保留规则见 [产物契约](LLM_PRODUCTION.md)。`ModelAdapter.generateImage` 为可选非流式接口，使用 `ModelsService.generateImage` 授权、实际用量和格式校验。Web 预览通过同一 owner / 过期校验的私有 `/content` API 获取字节，媒体类型受控，不作为公开静态文件或模型执行入口；范围见[Web 预览](LLM_PRODUCTION.md#web-预览)。
 
 `conversationTools(user, request, requireDelivery = false)` 接收原始当前提问和用户选择的强制策略；provider 可选 `requirement(user, request, requireDelivery?)` 预检，`requirements(scope)` 声明动态交付要求，`tools(user, scope?)` 按当前计划决定工具可用性。selection 提供 toolsFor(scope) 和 pending(scope)，Chat 每轮刷新工具并在结束前验证真实交付。要求包含 toolName、instructions、failureMessage、satisfied(scope) 与可选 stopOnFailure / maxRounds；扩轮最多 16，调用总数仍为 16。作用域及 requireDelivery 由服务器绑定，完成策略由 provider 声明，Chat 不硬编码业务工具。`generateTurn` 的 effort 后新增可选 `{ requireTool?: boolean }`，兼容现有调用；Adapter 按协议映射，当前 OpenAI-compatible 发 required，Anthropic 由交付指令和完成校验约束。明确触发、计划与协议限制集中在 [产物契约](LLM_PRODUCTION.md#触发与交付校验)。
 

@@ -1,17 +1,33 @@
-import { Check, ChevronDown, Download, File, Image, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, ChevronDown, Download, Eye, File, Image, X } from 'lucide-react';
+import { useWorkspace } from '../../client/context';
 import type { ProductionArtifact, ProductionDelivery } from './types';
-import { productionBytes, productionDownload, productionExpiry } from './presentation';
+import {
+  productionBytes,
+  productionDownload,
+  productionExpiry,
+  productionPreviewKind,
+} from './presentation';
+import { ProductionImageThumbnail, ProductionPreview } from './preview';
 import './production.css';
 
-export function MessageArtifacts({
-  artifacts,
-  delivery,
-  messageStatus,
-}: {
+interface MessageArtifactsProps {
   artifacts?: ProductionArtifact[];
   delivery?: ProductionDelivery | null;
   messageStatus?: 'complete' | 'error' | 'cancelled' | 'streaming';
-}) {
+}
+
+export function MessageArtifacts(props: MessageArtifactsProps) {
+  const { user } = useWorkspace();
+  return <MessageArtifactsContent key={user.id} {...props} />;
+}
+
+function MessageArtifactsContent({ artifacts, delivery, messageStatus }: MessageArtifactsProps) {
+  const [preview, setPreview] = useState<ProductionArtifact>();
+  useEffect(() => {
+    if (preview && !artifacts?.some((artifact) => artifact.id === preview.id))
+      setPreview(undefined);
+  }, [artifacts, preview]);
   if (!artifacts?.length && !delivery) return null;
   const completed = delivery?.items.filter((item) => item.status === 'complete').length ?? 0;
   const failed = delivery?.items.some((item) => item.status === 'failed');
@@ -92,27 +108,43 @@ export function MessageArtifacts({
         </details>
       )}
       {artifacts?.map((artifact) => (
-        <a
-          key={artifact.id}
-          className="llm-production-message-file"
-          href={productionDownload(artifact)}
-          download={artifact.name}
-          aria-label={`下载 ${artifact.name}，${productionBytes(artifact.size)}`}
-        >
-          {artifact.mimeType.startsWith('image/') ? (
-            <Image size={20} aria-hidden="true" />
-          ) : (
-            <File size={20} aria-hidden="true" />
+        <div key={artifact.id} className="llm-production-message-artifact">
+          {productionPreviewKind(artifact) === 'image' && (
+            <ProductionImageThumbnail artifact={artifact} preview={() => setPreview(artifact)} />
           )}
-          <span className="llm-production-message-file-info">
-            <strong>{artifact.name}</strong>
-            <span>
-              {productionBytes(artifact.size)} · {productionExpiry(artifact)}
-            </span>
-          </span>
-          <Download size={18} aria-hidden="true" />
-        </a>
+          <div className="llm-production-message-file-row">
+            <a
+              className="llm-production-message-file"
+              href={productionDownload(artifact)}
+              download={artifact.name}
+              aria-label={`下载 ${artifact.name}，${productionBytes(artifact.size)}`}
+            >
+              {artifact.mimeType.startsWith('image/') ? (
+                <Image size={20} aria-hidden="true" />
+              ) : (
+                <File size={20} aria-hidden="true" />
+              )}
+              <span className="llm-production-message-file-info">
+                <strong>{artifact.name}</strong>
+                <span>
+                  {productionBytes(artifact.size)} · {productionExpiry(artifact)}
+                </span>
+              </span>
+              <Download size={18} aria-hidden="true" />
+            </a>
+            <button
+              type="button"
+              className="icon-button llm-production-preview-trigger"
+              aria-label={`预览 ${artifact.name}`}
+              title="预览产物"
+              onClick={() => setPreview(artifact)}
+            >
+              <Eye size={18} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       ))}
+      {preview && <ProductionPreview artifact={preview} close={() => setPreview(undefined)} />}
     </div>
   );
 }

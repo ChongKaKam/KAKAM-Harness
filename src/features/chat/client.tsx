@@ -1,12 +1,11 @@
-import { AttachmentMenu, SkillChips, useChatSkills } from '../skills/chat-controls';
+import { SkillChips, useChatSkills } from '../skills/chat-controls';
 import { SkillDetails } from '../skills/message-details';
 import { ContextDrawer } from '../context-manager/drawer';
 import { RememberDialog } from '../memory/remember';
 import { MessageArtifacts } from '../llm-production/message-artifacts';
-import { ProductionModeControl } from '../llm-production/composer-control';
 import { useProductionMode } from '../llm-production/use-production-mode';
 import type { ProductionMode } from '../llm-production/types';
-import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
+import { useExtensions } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent, type SetStateAction } from 'react';
 import {
@@ -24,6 +23,7 @@ import {
 } from 'lucide-react';
 import { UserAvatar } from '../../client/user-avatar';
 import { ModelPicker } from './model-picker';
+import { ComposerActions } from './composer-actions';
 import { RegenerateDialog } from './regenerate-dialog';
 import { emptyChatDraft } from './use-chat-drafts';
 import { LiveComposer, type ComposerHandle } from './composer';
@@ -63,6 +63,8 @@ export function ChatPage() {
   const extensions = useExtensions(user.id, features);
   const skills = useChatSkills(conversationId);
   const [revision, setRevision] = useState(0);
+  const [formatting, setFormatting] = useState(false);
+  useEffect(() => setFormatting(false), [user.id, conversationId]);
   const {
     messages,
     loading,
@@ -602,6 +604,7 @@ export function ChatPage() {
               onChange={setDraft}
               onSend={() => void send()}
               disabled={busy}
+              formatting={formatting}
             />
             {images.length > 0 && (
               <div className="attachment-list">
@@ -618,14 +621,6 @@ export function ChatPage() {
                 ))}
               </div>
             )}
-            {productionEnabled && (
-              <ProductionModeControl
-                mode={production.mode}
-                onChange={(value) => production.setMode(value)}
-                disabled={busy || loading}
-                toolCalling={!!selected?.toolCalling}
-              />
-            )}
             <div className="composer-tools">
               <input
                 ref={file}
@@ -635,12 +630,24 @@ export function ChatPage() {
                 multiple
                 onChange={addImages}
               />
-              <AttachmentMenu
-                disabled={busy}
+              <ComposerActions
+                key={viewKey}
+                disabled={busy || loading}
                 vision={!!selected?.vision}
+                toolCalling={!!selected?.toolCalling}
                 addImages={() => file.current?.click()}
-                controls={skills}
+                skills={skills}
+                skillsEnabled={features.some(
+                  (feature) => feature.id === 'prompts' && feature.enabled,
+                )}
+                productionEnabled={productionEnabled}
+                productionMode={production.mode}
+                onProductionMode={(value) => production.setMode(value)}
+                formatting={formatting}
+                onFormatting={setFormatting}
+                extensions={extensions}
               />
+              <span className="grow" />
               <ModelPicker
                 models={models}
                 modelId={modelId}
@@ -659,8 +666,6 @@ export function ChatPage() {
                   } catch {}
                 }}
               />
-              <ExtensionControls controls={extensions} disabled={busy} />
-              <span className="grow" />
               {busy ? (
                 <button
                   className="send-button"

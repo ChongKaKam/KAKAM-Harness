@@ -42,8 +42,8 @@ test('Skill attachments remain available to text models, stream reference reads 
   ).json();
   await page.goto('/#/chat');
   await chooseModel(page, { id: model.id });
-  await page.getByRole('button', { name: '附件', exact: true }).click();
-  const menu = page.getByRole('dialog', { name: '添加附件' });
+  await page.getByRole('button', { name: '添加内容和工具', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: '添加内容和工具' });
   await expect(menu.getByRole('button', { name: '添加图片' })).toBeDisabled();
   await expect(menu.getByText('插件', { exact: true })).toBeVisible();
   await menu.getByRole('button', { name: 'Skill 库 插件' }).click();
@@ -58,7 +58,7 @@ test('Skill attachments remain available to text models, stream reference reads 
   ).toBeVisible();
   await picker.getByRole('checkbox', { name: new RegExp(skill.title) }).check();
   await picker.getByRole('button', { name: '完成选择' }).click();
-  await expect(page.getByRole('button', { name: '附件', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: '添加内容和工具', exact: true })).toBeFocused();
   const chips = page.getByLabel('已选 Skill');
   await expect(chips).toContainText(skill.title);
   const composer = page.getByRole('textbox', { name: '消息', exact: true });
@@ -75,7 +75,7 @@ test('Skill attachments remain available to text models, stream reference reads 
   await request.patch(`/api/skills/${skill.id}`, {
     data: { version: 1, content: '新版主指令', files: [] },
   });
-  await page.getByRole('button', { name: '附件', exact: true }).click();
+  await page.getByRole('button', { name: '添加内容和工具', exact: true }).click();
   await menu.getByRole('button', { name: 'Skill 库 插件' }).click();
   await picker.getByRole('searchbox', { name: '搜索 Skill' }).fill(skill.title);
   await picker.getByRole('button', { name: '更新到 v2' }).click();
@@ -120,13 +120,13 @@ test('Skill menu and picker fit themes, four font sizes and mobile with Escape f
         size: size.id,
       });
       await page.reload();
-      const trigger = page.getByRole('button', { name: '附件', exact: true });
+      const trigger = page.getByRole('button', { name: '添加内容和工具', exact: true });
       await trigger.click();
       await page.keyboard.press('Escape');
       await expect(trigger).toBeFocused();
       await trigger.click();
       await page
-        .getByRole('dialog', { name: '添加附件' })
+        .getByRole('dialog', { name: '添加内容和工具' })
         .getByRole('button', { name: 'Skill 库 插件' })
         .click();
       const dialog = page.getByRole('dialog');
@@ -172,9 +172,9 @@ test('long Skill lists keep selection and preview usable while scrolling', async
       created.push(skill.id);
     }
     await page.goto('/#/chat');
-    await page.getByRole('button', { name: '附件', exact: true }).click();
+    await page.getByRole('button', { name: '添加内容和工具', exact: true }).click();
     await page
-      .getByRole('dialog', { name: '添加附件' })
+      .getByRole('dialog', { name: '添加内容和工具' })
       .getByRole('button', { name: 'Skill 库 插件' })
       .click();
     const picker = page.getByRole('dialog', { name: 'Skill 库' });

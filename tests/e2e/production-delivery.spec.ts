@@ -62,11 +62,16 @@ test('required artifact mode shows real delivery, partial failure, clarification
     };
     const input = page.getByRole('textbox', { name: '消息', exact: true });
     const mode = page.getByLabel('产物输出', { exact: true });
+    const setMode = async (value: 'auto' | 'required') => {
+      await page.getByRole('button', { name: '添加内容和工具', exact: true }).click();
+      await mode.selectOption(value);
+      await page.keyboard.press('Escape');
+    };
     const submit = page.getByRole('button', { name: '发送消息', exact: true });
     const completedId = await openConversation();
     await chooseModel(page, { id: models.get('delivery-mixed')! });
     await expect(mode).toHaveValue('auto');
-    await mode.selectOption('required');
+    await setMode('required');
     await input.fill('完成约定的网页、表格和两张图片');
     await submit.click();
     const answer = page.locator('.message.assistant').last();
@@ -119,13 +124,13 @@ test('required artifact mode shows real delivery, partial failure, clarification
     }
     const partialId = await openConversation();
     await chooseModel(page, { id: models.get('delivery-partial')! });
-    await mode.selectOption('required');
+    await setMode('required');
     await input.fill('继续完成约定');
     await submit.click();
     await expect(answer).toContainText('完成 1/4 · 未完成');
     await expect(answer.getByRole('link', { name: /^下载 / })).toHaveCount(1);
     await expect(answer).toContainText('未完成产物交付');
-    await mode.selectOption('auto');
+    await setMode('auto');
     await chooseModel(page, { id: models.get('basic')! });
     await expect(mode.locator('option[value="required"]')).toBeDisabled();
     await page.getByRole('button', { name: '重新输出', exact: true }).click();
@@ -142,7 +147,7 @@ test('required artifact mode shows real delivery, partial failure, clarification
     expect(messages.at(-1).productionMode).toBe('required');
     await openConversation();
     await chooseModel(page, { id: models.get('delivery-clarify')! });
-    await mode.selectOption('required');
+    await setMode('required');
     await input.fill('按约定做出来');
     await submit.click();
     await expect(answer.getByRole('status', { name: '' })).toContainText('产物需求待补充');

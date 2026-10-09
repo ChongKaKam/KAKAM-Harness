@@ -88,9 +88,17 @@ interface Props {
   onChange: (value: string) => void;
   onSend: () => void;
   disabled: boolean;
+  formatting?: boolean;
   ref?: Ref<ComposerHandle>;
 }
-export function LiveComposer({ value, onChange, onSend, disabled, ref }: Props) {
+export function LiveComposer({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  formatting = false,
+  ref,
+}: Props) {
   const callbacks = useRef({ onChange, onSend, disabled });
   callbacks.current = { onChange, onSend, disabled };
   const lastValue = useRef(value);
@@ -207,65 +215,67 @@ export function LiveComposer({ value, onChange, onSend, disabled, ref }: Props) 
   }, [editor, value]);
   return (
     <>
-      <div className="composer-format" role="toolbar" aria-label="文本格式">
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="插入粗体"
-          title="粗体 · ⌘/Ctrl B"
-          onClick={() => editor?.chain().focus().toggleBold().run()}
-        >
-          <Bold size={15} />
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="插入列表"
-          title="列表"
-          onClick={() => editor?.chain().focus().toggleBulletList().run()}
-        >
-          <List size={16} />
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="插入代码块"
-          title="代码块"
-          onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
-        >
-          <Code2 size={16} />
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="插入公式"
-          title="公式"
-          onClick={() => setMath({ latex: '', block: false })}
-        >
-          <Sigma size={16} />
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="插入表格"
-          title="表格"
-          onClick={() =>
-            editor?.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run()
-          }
-        >
-          <Table2 size={15} />
-        </button>
-        <span className="grow" />
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="撤销编辑"
-          title="撤销 · ⌘/Ctrl Z"
-          onClick={() => editor?.chain().focus().undo().run()}
-        >
-          <Undo2 size={15} />
-        </button>
-      </div>
+      {formatting && (
+        <div className="composer-format" role="toolbar" aria-label="文本格式">
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="插入粗体"
+            title="粗体 · ⌘/Ctrl B"
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+          >
+            <Bold size={15} />
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="插入列表"
+            title="列表"
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          >
+            <List size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="插入代码块"
+            title="代码块"
+            onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
+          >
+            <Code2 size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="插入公式"
+            title="公式"
+            onClick={() => setMath({ latex: '', block: false })}
+          >
+            <Sigma size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="插入表格"
+            title="表格"
+            onClick={() =>
+              editor?.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run()
+            }
+          >
+            <Table2 size={15} />
+          </button>
+          <span className="grow" />
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="撤销编辑"
+            title="撤销 · ⌘/Ctrl Z"
+            onClick={() => editor?.chain().focus().undo().run()}
+          >
+            <Undo2 size={15} />
+          </button>
+        </div>
+      )}
       <EditorContent editor={editor} />
       {math && (
         <Modal

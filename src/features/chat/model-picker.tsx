@@ -108,7 +108,9 @@ export function ModelPicker({
         }
       >
         <span className="model-picker-name">{selected?.label ?? '选择模型'}</span>
-        {selected && <span className="model-picker-effort">{current.label}</span>}
+        {selected && effort !== 'none' && (
+          <span className="model-picker-effort">{current.label}</span>
+        )}
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       <div

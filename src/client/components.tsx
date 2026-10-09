@@ -84,6 +84,7 @@ export function Modal({
       aria-labelledby={headingId}
       onCancel={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         close();
       }}
       onClick={(e) => {

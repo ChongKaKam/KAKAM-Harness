@@ -52,8 +52,8 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
       .toBe('llm-jev');
     await page.goto('/#/chat');
     await chooseModel(page, { id: llm });
-    const trigger = page.getByRole('button', { name: '拓展能力', exact: true });
-    const popup = page.getByRole('dialog', { name: '聊天拓展能力' });
+    const trigger = page.getByRole('button', { name: '添加内容和工具', exact: true });
+    const popup = page.getByRole('dialog', { name: '添加内容和工具', exact: true });
     await expect(trigger).toBeEnabled();
     await expect(page.getByRole('radio', { name: 'Auto · 自动判断' })).not.toBeVisible();
     await trigger.click();
@@ -63,7 +63,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await expect(popup.getByRole('radio', { name: 'On · 始终开启' })).toBeChecked();
     await popup.getByRole('radio', { name: 'Auto · 自动判断' }).click();
     await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
-    await popup.getByRole('button', { name: '关闭拓展能力' }).click();
+    await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
     // Management uses the same account preference as the chat popover.
     await page.goto('/#/settings/extensions');
@@ -71,7 +71,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     const other = await page.context().newPage();
     try {
       await other.goto('/#/chat');
-      await other.getByRole('button', { name: '拓展能力', exact: true }).click();
+      await other.getByRole('button', { name: '添加内容和工具', exact: true }).click();
       await expect(other.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
       await page.getByRole('radio', { name: 'Off · 始终关闭' }).click();
       await expect(page.getByRole('radio', { name: 'Off · 始终关闭' })).toBeChecked();
@@ -82,7 +82,6 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await page.goto('/#/chat');
     await trigger.click();
     await expect(popup.getByRole('radio', { name: 'Off · 始终关闭' })).toBeChecked();
-    await expect(popup.getByRole('radio', { name: 'Off · 始终关闭' })).toBeFocused();
     await popup.getByRole('radio', { name: 'Auto · 自动判断' }).focus();
     await page.keyboard.press('Space');
     await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
@@ -107,7 +106,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await expect(result.locator('summary')).toContainText('2 个来源');
     await trigger.click();
     await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
-    await popup.getByRole('button', { name: '关闭拓展能力' }).click();
+    await page.keyboard.press('Escape');
     for (const theme of ['light', 'dark']) {
       await page.request.patch('/api/preferences', { data: { theme, assistantIcon: null } });
       await page.reload();
@@ -131,12 +130,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
         expect(await popup.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
         if (size.id === 'large')
           await page.screenshot({ path: test.info().outputPath(`extensions-menu-${theme}.png`) });
-        await popup.getByRole('button', { name: '关闭拓展能力' }).click();
-        expect(
-          await page
-            .getByRole('group', { name: '拓展能力', exact: true })
-            .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
-        ).toBe(true);
+        await page.keyboard.press('Escape');
       }
       await page.screenshot({
         path: test.info().outputPath(`extensions-${theme}.png`),
