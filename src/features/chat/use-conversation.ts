@@ -3,6 +3,7 @@ import type { Message, StreamEvent } from '../../shared/types';
 
 // Browser connections are replaceable viewers. Generation belongs to the server.
 export function useConversation(
+  userId: string,
   id: string | undefined,
   revision: number,
   onComplete: () => Promise<void>,
@@ -11,12 +12,15 @@ export function useConversation(
   const [loading, setLoading] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState('');
-  const previousId = useRef<string | undefined>(undefined);
+  const scope = `${userId}:${id ?? ''}`;
+  const previousScope = useRef('');
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const complete = useRef(onComplete);
   complete.current = onComplete;
   useEffect(() => {
-    if (previousId.current !== id) setMessages([]);
-    previousId.current = id;
+    if (previousScope.current !== scope) setMessages([]);
+    previousScope.current = scope;
     setError('');
     if (!id) {
       setLoading(false);
@@ -43,14 +47,18 @@ export function useConversation(
       controller = current;
       let terminal = false;
       let receivedSnapshot = false;
+      const stale = () => disposed || current.signal.aborted || currentScope.current !== scope;
       try {
         const response = await fetch('/api/conversations/' + id + '/events', {
           signal: current.signal,
         });
+        if (stale()) return;
         if (!response.ok) {
           if (response.status === 401) window.dispatchEvent(new Event('kh:unauthorized'));
           if ([401, 403, 404].includes(response.status)) {
-            setError((await response.json()).error ?? '对话暂不可用');
+            const failure = await response.json();
+            if (stale()) return;
+            setError(failure.error ?? '对话暂不可用');
             setLoading(false);
             setReconnecting(false);
             return;
@@ -62,7 +70,7 @@ export function useConversation(
         let buffer = '';
         while (true) {
           const { value, done } = await reader.read();
-          if (current.signal.aborted || disposed) return;
+          if (stale()) return;
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           let boundary: number;
@@ -98,7 +106,13 @@ export function useConversation(
               setMessages((previous) =>
                 previous.map((message) =>
                   message.id === event.messageId
-                    ? { ...message, artifacts: event.artifacts }
+                    ? {
+                        ...message,
+                        artifacts: event.artifacts,
+                        ...(event.productionDelivery === undefined
+                          ? {}
+                          : { productionDelivery: event.productionDelivery }),
+                      }
                     : message,
                 ),
               );
@@ -123,7 +137,7 @@ export function useConversation(
         }
         if (!receivedSnapshot || !terminal) throw new Error('订阅已断开');
       } catch {
-        if (disposed || current.signal.aborted) return;
+        if (stale()) return;
         setLoading(false);
         setReconnecting(true);
         timer = setTimeout(() => void connect(), Math.min(1000 * 2 ** failures++, 10_000));
@@ -159,6 +173,12 @@ export function useConversation(
       window.removeEventListener('offline', offline);
       window.removeEventListener('drift:production-changed', resume);
     };
-  }, [id, revision]);
-  return { messages, loading, reconnecting, error };
+  }, [id, userId, scope, revision]);
+  const current = previousScope.current === scope;
+  return {
+    messages: current ? messages : [],
+    loading: current ? loading : !!id,
+    reconnecting: current ? reconnecting : false,
+    error: current ? error : '',
+  };
 }

@@ -3,6 +3,9 @@ import { SkillDetails } from '../skills/message-details';
 import { ContextDrawer } from '../context-manager/drawer';
 import { RememberDialog } from '../memory/remember';
 import { MessageArtifacts } from '../llm-production/message-artifacts';
+import { ProductionModeControl } from '../llm-production/composer-control';
+import { useProductionMode } from '../llm-production/use-production-mode';
+import type { ProductionMode } from '../llm-production/types';
 import { useExtensions, ExtensionControls } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
@@ -63,7 +66,8 @@ export function ChatPage() {
     loading,
     reconnecting,
     error: streamError,
-  } = useConversation(conversationId, revision, refresh);
+  } = useConversation(user.id, conversationId, revision, refresh);
+  const production = useProductionMode(user.id, conversationId);
   const scroll = useChatNavigation(conversationId, messages, loading);
   const [sourceTarget, setSourceTarget] = useState(sourceMessageTarget);
   const sourceJump = useRef('');
@@ -103,6 +107,7 @@ export function ChatPage() {
     id: string;
     previousDraft: string;
     previousImages: Attachment[];
+    previousProductionMode: ProductionMode;
   }>();
   const [submitting, setSubmitting] = useState(false);
   const busy = submitting || messages.some((message) => message.status === 'streaming');
@@ -112,6 +117,9 @@ export function ChatPage() {
     (feature) => feature.id === 'context-manager' && feature.enabled,
   );
   const memoryEnabled = features.some((feature) => feature.id === 'memory' && feature.enabled);
+  const productionEnabled = features.some(
+    (feature) => feature.id === 'llm-production' && feature.enabled,
+  );
   const [rememberTurn, setRememberTurn] = useState<{
     userId: string;
     conversationId: string;
@@ -127,7 +135,12 @@ export function ChatPage() {
   const mounted = useRef(true);
   const viewId = useRef(conversationId);
   viewId.current = conversationId;
-  const pending = useRef<{ id: string; requestId: string; body: string } | undefined>(undefined);
+  const ownerId = useRef(user.id);
+  ownerId.current = user.id;
+  const submission = useRef(0);
+  const pending = useRef<
+    { userId: string; id: string; requestId: string; body: string } | undefined
+  >(undefined);
   const input = useRef<ComposerHandle>(null);
   const file = useRef<HTMLInputElement>(null);
 
@@ -141,12 +154,22 @@ export function ChatPage() {
     setEditing(undefined);
   }, [conversationId]);
   useEffect(() => {
+    submission.current++;
+    pending.current = undefined;
+    setSubmitting(false);
+    setError('');
+    setImages([]);
+    setEditing(undefined);
+  }, [user.id]);
+  useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
   async function addImages(e: ChangeEvent<HTMLInputElement>) {
+    const startingOwner = user.id;
+    const startingView = conversationId;
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
     if (files.length + images.length > 4) {
@@ -172,13 +195,21 @@ export function ChatPage() {
             }),
         ),
       );
+      if (ownerId.current !== startingOwner || viewId.current !== startingView) return;
       setImages((prev) => [...prev, ...attachments]);
       setError('');
     } catch (e) {
-      setError((e as Error).message);
+      if (ownerId.current === startingOwner && viewId.current === startingView)
+        setError((e as Error).message);
     }
   }
-  async function send(retry?: { id: string; content: string; images: Attachment[] }) {
+  async function send(retry?: {
+    id: string;
+    content: string;
+    images: Attachment[];
+    productionMode?: ProductionMode;
+  }) {
+    const productionMode = retry ? (retry.productionMode ?? 'auto') : production.mode;
     if (
       busy ||
       loading ||
@@ -190,11 +221,25 @@ export function ChatPage() {
       (!retry && !draft.trim() && !images.length)
     )
       return;
+    if (
+      productionMode === 'required' &&
+      !models.find((model) => model.id === modelId)?.toolCalling
+    ) {
+      setError('此提问要求交付产物，请选择已启用工具调用的模型后发送或重试。');
+      return;
+    }
     const originalDraft = draft;
     const text = retry ? retry.content : draft.trim();
     const attachments = retry ? retry.images : images;
     const selectedSkills = skills.selected;
     const startingId = conversationId;
+    const startingOwner = user.id;
+    const operation = ++submission.current;
+    const currentView = (id?: string) =>
+      mounted.current &&
+      ownerId.current === startingOwner &&
+      submission.current === operation &&
+      (viewId.current === id || viewId.current === startingId);
     scroll.latest();
     setSubmitting(true);
     setError('');
@@ -205,36 +250,44 @@ export function ChatPage() {
       images: attachments,
       ...(retry || editing ? { replaceLastMessageId: retry?.id ?? editing?.id } : {}),
       reasoningEffort: effort,
+      productionMode,
       extensions: extensions.modes,
       skills: skills.selected.map(({ id, version, scope }) => ({ id, version, scope })),
     };
     try {
       if (!id) {
         id = (await post<{ id: string }>('/conversations')).id;
-        if (mounted.current && viewId.current === startingId) navigate('chat', id);
+        if (ownerId.current !== startingOwner) return;
+        if (currentView(id)) {
+          production.setMode(productionMode, id);
+          navigate('chat', id);
+        }
       }
       const serialized = JSON.stringify(body);
       const requestId =
-        pending.current?.id === id && pending.current.body === serialized
+        pending.current?.userId === startingOwner &&
+        pending.current.id === id &&
+        pending.current.body === serialized
           ? pending.current.requestId
           : crypto.randomUUID();
-      pending.current = { id, requestId, body: serialized };
+      pending.current = { userId: startingOwner, id, requestId, body: serialized };
       // Submission is independent of the disposable SSE viewer and component lifecycle.
       await post(`/conversations/${id}/messages`, { ...body, requestId });
-      pending.current = undefined;
-
-      if (!retry) {
-        setDraft((current) => (current === originalDraft ? '' : current));
-        setEditing(undefined);
-      }
-      if (mounted.current && (viewId.current === id || viewId.current === startingId)) {
+      if (ownerId.current === startingOwner && submission.current === operation)
+        pending.current = undefined;
+      if (currentView(id)) {
         scroll.latest();
         skills.accepted(selectedSkills);
-        if (!retry) setImages([]);
+        if (!retry) {
+          setDraft((current) => (current === originalDraft ? '' : current));
+          setEditing(undefined);
+          setImages([]);
+          if (!startingId) production.setMode('auto');
+        }
         setRevision((value) => value + 1);
       }
     } catch (error) {
-      if (mounted.current && (viewId.current === id || viewId.current === startingId)) {
+      if (currentView(id)) {
         setError((error as Error).message);
         if (!retry) setImages(attachments);
         skills.restore(selectedSkills);
@@ -242,16 +295,20 @@ export function ChatPage() {
         setRevision((value) => value + 1);
       }
     } finally {
-      if (mounted.current) setSubmitting(false);
+      if (mounted.current && ownerId.current === startingOwner && submission.current === operation)
+        setSubmitting(false);
       await refresh().catch(() => {});
     }
   }
   async function stop() {
     if (conversationId) {
+      const startingOwner = user.id;
+      const startingId = conversationId;
       try {
         await post(`/conversations/${conversationId}/stop`);
       } catch (error) {
-        setError((error as Error).message);
+        if (mounted.current && ownerId.current === startingOwner && viewId.current === startingId)
+          setError((error as Error).message);
       }
     }
   }
@@ -261,15 +318,22 @@ export function ChatPage() {
   const lastAssistant = messages.at(-1)?.role === 'assistant' ? messages.at(-1) : undefined;
   function editLastQuestion() {
     if (!lastUser || busy) return;
-    setEditing({ id: lastUser.id, previousDraft: draft, previousImages: images });
+    setEditing({
+      id: lastUser.id,
+      previousDraft: draft,
+      previousImages: images,
+      previousProductionMode: production.mode,
+    });
     setDraft(lastUser.content);
     setImages(lastUser.images);
+    production.setMode(lastUser.productionMode ?? 'auto');
     input.current?.focus();
   }
   function cancelEdit() {
     if (!editing) return;
     setDraft(editing.previousDraft);
     setImages(editing.previousImages);
+    production.setMode(editing.previousProductionMode);
     setEditing(undefined);
   }
   return (
@@ -352,7 +416,11 @@ export function ChatPage() {
                       {m.status === 'cancelled' && m.content && (
                         <small className="message-status">已停止生成</small>
                       )}
-                      <MessageArtifacts artifacts={m.artifacts} />
+                      <MessageArtifacts
+                        artifacts={m.artifacts}
+                        delivery={m.productionDelivery}
+                        messageStatus={m.status}
+                      />
                       {m.role === 'user' && m.id === lastUser?.id && !busy && !editing && (
                         <div className="chat-message-actions">
                           <button className="copy-button" onClick={editLastQuestion}>
@@ -431,6 +499,7 @@ export function ChatPage() {
                                     id: lastUser.id,
                                     content: lastUser.content,
                                     images: lastUser.images,
+                                    productionMode: lastUser.productionMode,
                                   })
                                 }
                               >
@@ -514,6 +583,14 @@ export function ChatPage() {
                 ))}
               </div>
             )}
+            {productionEnabled && (
+              <ProductionModeControl
+                mode={production.mode}
+                onChange={(value) => production.setMode(value)}
+                disabled={busy || loading}
+                toolCalling={!!selected?.toolCalling}
+              />
+            )}
             <div className="composer-tools">
               <input
                 ref={file}
@@ -564,6 +641,7 @@ export function ChatPage() {
                   aria-label="发送消息"
                   disabled={
                     !modelId ||
+                    (production.mode === 'required' && !selected?.toolCalling) ||
                     (!draft.trim() && !images.length) ||
                     loading ||
                     extensions.saving ||

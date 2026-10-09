@@ -3,9 +3,21 @@ import { Service, type Context } from 'cordis';
 import { z } from 'zod';
 import { HttpError } from '../../kernel/http';
 import type { User } from '../../shared/types';
+import { productionMimeTypes } from './generators';
+import {
+  planIdentity,
+  productionPlanInput,
+  storedProductionPlan,
+  productionImageMimeTypes,
+  type ProductionPlanInput,
+} from './delivery';
 import {
   productionLimits,
   type ProductionArtifact,
+  type ProductionDelivery,
+  type ProductionDeliveryItem,
+  type ProductionFormat,
+  type ProductionMode,
   type ProductionList,
   type ProductionPreferences,
   type ProductionSettings,
@@ -16,7 +28,8 @@ import {
 const day = 86_400_000;
 const columns = `a.id,a.name,a.mime_type AS mimeType,a.size,a.created_at AS createdAt,
   a.expires_at AS expiresAt,a.conversation_id AS conversationId,a.message_id AS messageId,
-  a.group_id AS groupId,COALESCE(g.name,c.title,'已删除对话的产物') AS spaceName`;
+  a.group_id AS groupId,a.delivery_item_id AS deliveryItemId,
+  COALESCE(g.name,c.title,'已删除对话的产物') AS spaceName`;
 const joins = `FROM production_artifacts a
   LEFT JOIN conversation_groups g ON g.id=a.group_id AND g.user_id=a.user_id
   LEFT JOIN conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id`;
@@ -37,6 +50,7 @@ const artifactSchema = z.object({
     .max(160)
     .regex(/^[a-z][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i),
   idempotencyKey: z.string().min(1).max(200).optional(),
+  deliveryItemId: z.string().uuid().nullable().optional(),
 });
 export const productionPreferencesPatch = z
   .object({
@@ -54,6 +68,14 @@ export interface CreateProductionArtifact {
   mimeType: string;
   data: Uint8Array;
   idempotencyKey?: string;
+  deliveryItemId?: string | null;
+}
+
+export interface ProductionMessageScope {
+  user: User;
+  conversationId: string;
+  messageId: string;
+  requireDelivery?: boolean;
 }
 
 /** Private, bounded files. File bytes never become public static assets or host paths. */
@@ -247,6 +269,150 @@ export class ProductionService extends Service {
     );
   }
 
+  private message(userId: string, messageId: string, conversationId?: string) {
+    const message = this.ctx.db.get<{
+      conversationId: string;
+      mode: ProductionMode;
+      plan: string | null;
+      imageFailure: string | null;
+    }>(
+      `SELECT m.conversation_id AS conversationId,m.production_mode AS mode,
+       m.production_plan AS plan,m.production_image_failure AS imageFailure
+       FROM messages m JOIN conversations c ON c.id=m.conversation_id
+       WHERE m.id=? AND m.role='assistant' AND c.user_id=?`,
+      messageId,
+      userId,
+    );
+    if (!message || (conversationId && message.conversationId !== conversationId))
+      throw new HttpError(404, '生成消息不存在');
+    return message;
+  }
+
+  delivery(userId: string, messageId: string): ProductionDelivery | null {
+    let saved: ReturnType<ProductionService['message']>;
+    try {
+      saved = this.message(userId, messageId);
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) return null;
+      throw error;
+    }
+    if (!saved.plan) return null;
+    const plan = storedProductionPlan.parse(JSON.parse(saved.plan));
+    const artifacts = this.forMessage(userId, messageId);
+    return {
+      ...plan,
+      items: plan.items.map((item): ProductionDeliveryItem => {
+        const artifact = artifacts.find(
+          (file) =>
+            file.deliveryItemId === item.id &&
+            (item.kind === 'image'
+              ? productionImageMimeTypes.includes(file.mimeType)
+              : item.format
+                ? file.mimeType === productionMimeTypes[item.format]
+                : !productionImageMimeTypes.includes(file.mimeType)),
+        );
+        return artifact
+          ? { ...item, status: 'complete', artifactId: artifact.id, error: undefined }
+          : { ...item, status: item.status === 'failed' ? 'failed' : 'pending' };
+      }),
+    };
+  }
+
+  declareDelivery(scope: ProductionMessageScope, input: ProductionPlanInput): ProductionDelivery {
+    const parsed = productionPlanInput.parse(input);
+    const message = this.message(scope.user.id, scope.messageId, scope.conversationId);
+    if (!this.preferences(scope.user.id).enabled)
+      throw new HttpError(400, '请先在产物设置中启用生成');
+    if (message.plan) {
+      const saved = storedProductionPlan.parse(JSON.parse(message.plan));
+      if (planIdentity(saved) !== planIdentity(parsed))
+        throw new HttpError(409, '本轮交付计划已锁定，不能修改或减少产物；请在新一轮提出修改');
+      return this.delivery(scope.user.id, scope.messageId)!;
+    }
+    if (this.forMessage(scope.user.id, scope.messageId).length || message.imageFailure)
+      throw new HttpError(409, '本轮已开始生成产物；请在生成前声明计划，或在新一轮规划多个产物');
+    const plan: ProductionDelivery = {
+      decision: parsed.decision,
+      items: parsed.items.map((item) => ({ ...item, id: randomUUID(), status: 'pending' })),
+      ...(parsed.question ? { question: parsed.question } : {}),
+    };
+    this.ctx.db.run(
+      `UPDATE messages SET production_plan=? WHERE id=? AND conversation_id=?
+       AND EXISTS(SELECT 1 FROM conversations WHERE id=messages.conversation_id AND user_id=?)`,
+      JSON.stringify(plan),
+      scope.messageId,
+      scope.conversationId,
+      scope.user.id,
+    );
+    return this.delivery(scope.user.id, scope.messageId)!;
+  }
+
+  /** The server binds each planned item to one actual file, never to model-supplied ownership. */
+  deliveryItem(
+    scope: ProductionMessageScope,
+    itemId: string | null | undefined,
+    kind: ProductionDeliveryItem['kind'],
+    format?: ProductionFormat,
+  ): { item?: ProductionDeliveryItem; artifact?: ProductionArtifact } {
+    const message = this.message(scope.user.id, scope.messageId, scope.conversationId);
+    const plan = this.delivery(scope.user.id, scope.messageId);
+    if (!plan) {
+      if (message.mode === 'required' || scope.requireDelivery)
+        throw new HttpError(400, '必须先调用 production_plan 声明交付计划');
+      if (itemId) throw new HttpError(400, '交付项目不存在');
+      if (kind === 'image' && message.imageFailure)
+        throw new HttpError(409, '本轮图片生成已失败，不会自动重复付费；请在新一轮重试');
+      return {};
+    }
+    if (plan.decision !== 'deliver') throw new HttpError(409, '本轮需要澄清需求，不能直接生成产物');
+    const item = plan.items.find((entry) => entry.id === itemId);
+    if (!item || item.kind !== kind || (item.format && item.format !== format))
+      throw new HttpError(400, '交付项目、产物类型或明确格式不匹配');
+    if (item.artifactId) return { item, artifact: this.get(scope.user.id, item.artifactId) };
+    if (item.status === 'failed')
+      throw new HttpError(409, item.error ?? '本轮图片生成已失败，请在新一轮重试');
+    return { item };
+  }
+
+  imageFailure(userId: string, messageId: string): string | null {
+    return this.message(userId, messageId).imageFailure;
+  }
+
+  markImageFailed(scope: ProductionMessageScope, itemId: string | null | undefined, error: string) {
+    const message = this.message(scope.user.id, scope.messageId, scope.conversationId);
+    const safeError = error.slice(0, 500);
+    if (message.plan && itemId) {
+      const plan = storedProductionPlan.parse(JSON.parse(message.plan));
+      const item = plan.items.find((entry) => entry.id === itemId && entry.kind === 'image');
+      if (
+        !item ||
+        this.forMessage(scope.user.id, scope.messageId).some(
+          (file) => file.deliveryItemId === itemId,
+        )
+      )
+        return;
+      item.status = 'failed';
+      item.error = safeError;
+      this.ctx.db.run(
+        `UPDATE messages SET production_plan=? WHERE id=? AND conversation_id=?
+         AND EXISTS(SELECT 1 FROM conversations WHERE id=messages.conversation_id AND user_id=?)`,
+        JSON.stringify(plan),
+        scope.messageId,
+        scope.conversationId,
+        scope.user.id,
+      );
+    } else {
+      this.ctx.db.run(
+        `UPDATE messages SET production_image_failure=? WHERE id=? AND conversation_id=?
+         AND EXISTS(SELECT 1 FROM conversations WHERE id=messages.conversation_id AND user_id=?)`,
+        safeError,
+        scope.messageId,
+        scope.conversationId,
+        scope.user.id,
+      );
+    }
+  }
+
   findCreated(userId: string, idempotencyKey: string): ProductionArtifact | undefined {
     const row = this.ctx.db.get<{ id: string }>(
       'SELECT id FROM production_artifacts WHERE user_id=? AND idempotency_key=?',
@@ -277,6 +443,21 @@ export class ProductionService extends Service {
       )
     )
       throw new HttpError(404, '生成消息不存在');
+    if (validated.deliveryItemId && !validated.messageId)
+      throw new HttpError(400, '交付项目必须绑定生成消息');
+    if (validated.messageId) {
+      const kind = productionImageMimeTypes.includes(validated.mimeType) ? 'image' : 'file';
+      const format = Object.entries(productionMimeTypes).find(
+        ([, mime]) => mime === validated.mimeType,
+      )?.[0] as ProductionFormat | undefined;
+      const delivery = this.deliveryItem(
+        { user, conversationId: conversation.id, messageId: validated.messageId },
+        validated.deliveryItemId,
+        kind,
+        format,
+      );
+      if (delivery.artifact) return delivery.artifact;
+    }
     if (!(input.data instanceof Uint8Array) || input.data.byteLength > productionLimits.fileBytes)
       throw new HttpError(400, '产物文件超过 20 MiB 限制');
     const hash = createHash('sha256').update(input.data).digest('hex');
@@ -288,8 +469,9 @@ export class ProductionService extends Service {
         content_hash: string;
         conversation_id: string | null;
         message_id: string | null;
+        delivery_item_id: string | null;
       }>(
-        'SELECT id,name,mime_type,content_hash,conversation_id,message_id FROM production_artifacts WHERE user_id=? AND idempotency_key=?',
+        'SELECT id,name,mime_type,content_hash,conversation_id,message_id,delivery_item_id FROM production_artifacts WHERE user_id=? AND idempotency_key=?',
         user.id,
         validated.idempotencyKey,
       );
@@ -299,7 +481,8 @@ export class ProductionService extends Service {
           existing.mime_type !== validated.mimeType ||
           existing.content_hash !== hash ||
           existing.conversation_id !== conversation.id ||
-          existing.message_id !== (validated.messageId ?? null)
+          existing.message_id !== (validated.messageId ?? null) ||
+          existing.delivery_item_id !== (validated.deliveryItemId ?? null)
         )
           throw new HttpError(409, '产物请求标识已被其他内容使用');
         return this.get(user.id, existing.id);
@@ -321,8 +504,8 @@ export class ProductionService extends Service {
     signal?.throwIfAborted();
     this.ctx.db.run(
       `INSERT INTO production_artifacts(id,user_id,conversation_id,message_id,group_id,name,mime_type,
-       size,data,content_hash,created_at,temporary_started_at,expires_at,idempotency_key)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       size,data,content_hash,created_at,temporary_started_at,expires_at,idempotency_key,delivery_item_id)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
       user.id,
       conversation.id,
@@ -337,6 +520,7 @@ export class ProductionService extends Service {
       groupId ? null : createdAt,
       expiresAt,
       validated.idempotencyKey ?? null,
+      validated.deliveryItemId ?? null,
     );
     return this.get(user.id, id);
   }

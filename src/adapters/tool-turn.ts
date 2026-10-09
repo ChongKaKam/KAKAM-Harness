@@ -8,6 +8,7 @@ import type {
   ToolStep,
   ToolEvent,
   ToolCall,
+  ToolTurnOptions,
 } from './registry';
 
 // Provider wire objects stay opaque to chat, including reasoning/signature blocks.
@@ -101,6 +102,7 @@ export async function* generateToolTurn(
   steps: ToolStep[],
   signal: AbortSignal,
   effort: ReasoningEffort = 'none',
+  options: ToolTurnOptions = {},
 ): AsyncIterable<ToolEvent> {
   const responses = mode === 'responses';
   const anthropic = mode === 'anthropic-messages';
@@ -131,6 +133,9 @@ export async function* generateToolTurn(
   const body: Wire = {
     model,
     stream: true,
+    // Some Anthropic models reject forced tool_choice even without thinking.
+    // Keep their automatic selection and enforce actual completion in the caller.
+    ...(!anthropic && options.requireTool ? { tool_choice: 'required' } : {}),
     ...(responses
       ? {
           store: false,

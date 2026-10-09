@@ -26,7 +26,7 @@ const extensions: Record<ProductionFormat, string> = {
   xlsx: 'xlsx',
   pptx: 'pptx',
 };
-const mimeTypes: Record<ProductionFormat, string> = {
+export const productionMimeTypes: Record<ProductionFormat, string> = {
   text: 'text/plain',
   markdown: 'text/markdown',
   json: 'application/json',
@@ -278,5 +278,5 @@ export async function renderProduction(input: {
   }
   if (data.byteLength > productionLimits.fileBytes)
     throw new HttpError(400, '产物超过 20 MiB 文件限制');
-  return { name, mimeType: mimeTypes[format], data };
+  return { name, mimeType: productionMimeTypes[format], data };
 }

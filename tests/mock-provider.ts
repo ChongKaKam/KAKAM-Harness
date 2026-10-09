@@ -1,5 +1,6 @@
 import { skillProviderFixture } from './skill-provider-fixture';
 import { productionProviderFixture } from './production-provider-fixture';
+import { deliveryProviderFixture } from './delivery-provider-fixture';
 import express from 'express';
 import { createServer } from 'node:http';
 export const imageData =
@@ -78,6 +79,13 @@ export async function mockProvider(portNumber = 0) {
   const decisions: unknown[] = [];
   app.post('/v1/images/generations', (req, res) => {
     requests.push(req.body);
+    if (req.body.model === 'production-image-failure') {
+      res.status(502).json({
+        error: { message: 'mock image failure' },
+        usage: { input_tokens: 12, output_tokens: 17, total_tokens: 29 },
+      });
+      return;
+    }
     res.json({
       data: [{ b64_json: imageData.slice(imageData.indexOf(',') + 1) }],
       usage: { input_tokens: 12, output_tokens: 17, total_tokens: 29 },
@@ -194,6 +202,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/chat/completions', (req, res) => {
     requests.push(req.body);
+    if (deliveryProviderFixture(req.body, 'chat-completions', res)) return;
     if (productionProviderFixture(req.body, 'chat-completions', res)) return;
     if (skillProviderFixture(req.body, 'chat-completions', res)) return;
     if (req.body.model === 'upstream-error') {
@@ -236,6 +245,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/responses', (req, res) => {
     requests.push(req.body);
+    if (deliveryProviderFixture(req.body, 'responses', res)) return;
     if (productionProviderFixture(req.body, 'responses', res)) return;
     if (skillProviderFixture(req.body, 'responses', res)) return;
     if (req.body.model === 'upstream-error') {
@@ -289,6 +299,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/messages', (req, res) => {
     requests.push(req.body);
+    if (deliveryProviderFixture(req.body, 'anthropic-messages', res)) return;
     if (productionProviderFixture(req.body, 'anthropic-messages', res)) return;
     if (skillProviderFixture(req.body, 'anthropic-messages', res)) return;
     anthropicHeaders.push(req.headers);

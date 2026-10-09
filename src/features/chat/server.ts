@@ -2,7 +2,7 @@ import { skillSelections } from '../extensions/skill-runtime';
 import type { ContextRecorder } from '../extensions/context-observer';
 import { appendMemoryBlocks } from '../extensions/memory-context';
 import type { SelectedSkill, SkillRead } from '../skills/types';
-import { generateReply, aggregateCalls } from './skill-generation';
+import { generateReply, aggregateCalls, prepareConversationTools } from './skill-generation';
 import { generationDeadline } from './generation-deadline';
 import type { ExtensionCall } from '../../shared/types';
 import { modesSchema } from '../extensions/server';
@@ -30,6 +30,7 @@ const inputSchema = z
     modelId: z.string().uuid(),
     skills: skillSelections.optional(),
     extensions: modesSchema.default({}),
+    productionMode: z.enum(['auto', 'required']).default('auto'),
     requestId: z.string().uuid().optional(),
     replaceLastMessageId: z.string().uuid().optional(),
     reasoningEffort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).default('none'),
@@ -51,7 +52,7 @@ function validateImages(images: Attachment[]) {
   }
 }
 const messageColumns =
-  'm.id,m.role,m.content,m.images,m.extensions,m.skills,m.skill_reads AS skillReads,m.calls,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,m.error,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
+  'm.id,m.role,m.content,m.images,m.extensions,m.skills,m.skill_reads AS skillReads,m.calls,m.production_mode AS productionMode,m.model_name AS modelName,m.status,m.created_at AS createdAt,m.duration_ms AS durationMs,m.error,u.input_tokens AS input,u.output_tokens AS output,u.total_tokens AS total';
 function messages(ctx: Context, id: string): Message[] {
   const owner = ctx.db.get<{ user_id: string }>('SELECT user_id FROM conversations WHERE id=?', id);
   return ctx.db
@@ -100,6 +101,7 @@ function messages(ctx: Context, id: string): Message[] {
         ...(m.role === 'assistant'
           ? {
               artifacts: owner ? ctx.production.forMessage(owner.user_id, m.id) : [],
+              productionDelivery: owner ? ctx.production.delivery(owner.user_id, m.id) : null,
               usage: calls.length
                 ? aggregateCalls(calls)
                 : input !== null && output !== null && total !== null
@@ -133,7 +135,13 @@ export const server = {
     const snapshot = (id: string) => {
       const current = active.get(id)?.message;
       return messages(ctx, id).map((message) =>
-        message.id === current?.id ? { ...current, artifacts: message.artifacts } : message,
+        message.id === current?.id
+          ? {
+              ...current,
+              artifacts: message.artifacts,
+              productionDelivery: message.productionDelivery,
+            }
+          : message,
       );
     };
     const emit = (res: Response, data: StreamEvent) => {
@@ -309,6 +317,7 @@ export const server = {
       }
       validateImages(input.images);
       const model = ctx.models.authorize(user, input.modelId, 'llm');
+      prepareConversationTools(ctx, user, input.modelId, input.content, input.productionMode);
       const selectedSkills =
         input.skills ??
         skillSelections.parse(
@@ -383,6 +392,7 @@ export const server = {
           images: [],
           modelName: model.label,
           status: 'streaming',
+          productionMode: input.productionMode,
           createdAt: now,
         },
       };
@@ -391,16 +401,17 @@ export const server = {
         if (input.replaceLastMessageId) {
           ctx.db.run('DELETE FROM messages WHERE id=? AND conversation_id=?', latest[0].id, id);
           ctx.db.run(
-            'UPDATE messages SET content=?,images=?,skills=? WHERE id=? AND conversation_id=?',
+            'UPDATE messages SET content=?,images=?,skills=?,production_mode=? WHERE id=? AND conversation_id=?',
             input.content,
             JSON.stringify(input.images),
             JSON.stringify(skillSnapshot),
+            input.productionMode,
             input.replaceLastMessageId,
             id,
           );
         } else {
           ctx.db.run(
-            'INSERT INTO messages(id,conversation_id,role,content,images,created_at,skills) VALUES(?,?,?,?,?,?,?)',
+            'INSERT INTO messages(id,conversation_id,role,content,images,created_at,skills,production_mode) VALUES(?,?,?,?,?,?,?,?)',
             randomUUID(),
             id,
             'user',
@@ -408,10 +419,11 @@ export const server = {
             JSON.stringify(input.images),
             now,
             JSON.stringify(skillSnapshot),
+            input.productionMode,
           );
         }
         ctx.db.run(
-          'INSERT INTO messages(id,conversation_id,role,content,model_name,status,created_at) VALUES(?,?,?,?,?,?,?)',
+          'INSERT INTO messages(id,conversation_id,role,content,model_name,status,created_at,production_mode) VALUES(?,?,?,?,?,?,?,?)',
           messageId,
           id,
           'assistant',
@@ -419,6 +431,7 @@ export const server = {
           model.label,
           'streaming',
           now,
+          input.productionMode,
         );
         ctx.db.run(
           'UPDATE messages SET skills=?,skill_reads=? WHERE id=?',
@@ -547,6 +560,8 @@ export const server = {
           await generateReply(ctx, {
             user,
             conversationId: id,
+            requestContent: input.content,
+            productionMode: input.productionMode,
             modelId: input.modelId,
             messageId,
             messages: processed.messages,
@@ -561,7 +576,13 @@ export const server = {
             productionProgress: () => {
               deadline.touch();
               generation.message.artifacts = ctx.production.forMessage(user.id, messageId);
-              broadcast({ type: 'artifacts', messageId, artifacts: generation.message.artifacts });
+              generation.message.productionDelivery = ctx.production.delivery(user.id, messageId);
+              broadcast({
+                type: 'artifacts',
+                messageId,
+                artifacts: generation.message.artifacts,
+                productionDelivery: generation.message.productionDelivery,
+              });
             },
             progress: (skillReads: SkillRead[], calls: ExtensionCall[]) => {
               deadline.touch();
@@ -608,6 +629,7 @@ export const server = {
           deadline.close();
           generation.message.status = status;
           generation.message.artifacts = ctx.production.forMessage(user.id, messageId);
+          generation.message.productionDelivery = ctx.production.delivery(user.id, messageId);
           generation.message.usage = aggregateCalls(generation.message.calls ?? []);
           const durationMs = Math.round(performance.now() - started);
           generation.message.durationMs = durationMs;

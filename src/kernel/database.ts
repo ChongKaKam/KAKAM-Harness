@@ -337,6 +337,27 @@ export class Database extends Service {
       CREATE INDEX IF NOT EXISTS idx_production_artifacts_group ON production_artifacts(group_id);
       CREATE INDEX IF NOT EXISTS idx_production_artifacts_expiry ON production_artifacts(expires_at) WHERE expires_at IS NOT NULL;
     `);
+    for (const [column, declaration] of [
+      [
+        'production_mode',
+        "TEXT NOT NULL DEFAULT 'auto' CHECK(production_mode IN ('auto','required'))",
+      ],
+      ['production_plan', 'TEXT'],
+      ['production_image_failure', 'TEXT'],
+    ]) {
+      if (!this.all<{ name: string }>('PRAGMA table_info(messages)').some((c) => c.name === column))
+        this.connection.exec(`ALTER TABLE messages ADD COLUMN ${column} ${declaration}`);
+    }
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(production_artifacts)').some(
+        (c) => c.name === 'delivery_item_id',
+      )
+    )
+      this.connection.exec('ALTER TABLE production_artifacts ADD COLUMN delivery_item_id TEXT');
+    this.connection.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_production_artifacts_delivery_item
+      ON production_artifacts(user_id,message_id,delivery_item_id) WHERE delivery_item_id IS NOT NULL;
+    `);
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

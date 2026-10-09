@@ -61,7 +61,7 @@ function ProductionPageContent() {
           <div className="llm-production-guide">
             <p>
               选择已启用工具调用的聊天模型，再提出具体要求，例如「将结果生成 Excel
-              文件供我下载」或「生成一张产品插画」。
+              文件供我下载」或「生成一张产品插画」。输入栏可选择「必须产物」，本轮按真实文件检查交付。
             </p>
             <p>
               未分组聊天拥有独立临时空间，产物保留{' '}

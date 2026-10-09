@@ -83,8 +83,8 @@ export class ExtensionsService extends Service {
   registerConversationTools(provider: ConversationToolProvider) {
     return this.conversationToolRegistry.register(provider);
   }
-  conversationTools(user: User) {
-    return this.conversationToolRegistry.select(user);
+  conversationTools(user: User, request = '', requireDelivery = false) {
+    return this.conversationToolRegistry.select(user, request, requireDelivery);
   }
   private entries = new Map<string, Registered>();
   private utilities = new Map<

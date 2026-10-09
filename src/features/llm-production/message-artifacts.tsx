@@ -1,13 +1,97 @@
-import { Download, File, Image } from 'lucide-react';
-import type { ProductionArtifact } from './types';
+import { Check, ChevronDown, Download, File, Image, X } from 'lucide-react';
+import type { ProductionArtifact, ProductionDelivery } from './types';
 import { productionBytes, productionDownload, productionExpiry } from './presentation';
 import './production.css';
 
-export function MessageArtifacts({ artifacts }: { artifacts?: ProductionArtifact[] }) {
-  if (!artifacts?.length) return null;
+export function MessageArtifacts({
+  artifacts,
+  delivery,
+  messageStatus,
+}: {
+  artifacts?: ProductionArtifact[];
+  delivery?: ProductionDelivery | null;
+  messageStatus?: 'complete' | 'error' | 'cancelled' | 'streaming';
+}) {
+  if (!artifacts?.length && !delivery) return null;
+  const completed = delivery?.items.filter((item) => item.status === 'complete').length ?? 0;
+  const failed = delivery?.items.some((item) => item.status === 'failed');
   return (
     <div className="llm-production-message-artifacts" aria-label="本轮生成的产物">
-      {artifacts.map((artifact) => (
+      {delivery?.decision === 'clarify' && (
+        <div className="llm-production-clarification">
+          <strong role="status">产物需求待补充</strong>
+          <p>{delivery.question || '请补充需要交付的文件或图片、内容与格式。'}</p>
+        </div>
+      )}
+      {delivery?.decision === 'deliver' && (
+        <details className="llm-production-delivery">
+          <summary className="llm-production-delivery-summary">
+            <File size={16} aria-hidden="true" />
+            <strong>产物交付</strong>
+            <span
+              className="llm-production-delivery-progress"
+              data-status={
+                failed ? 'failed' : completed === delivery.items.length ? 'complete' : 'pending'
+              }
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              完成 {completed}/{delivery.items.length}
+              {failed
+                ? ' · 部分失败'
+                : messageStatus === 'cancelled'
+                  ? ' · 已停止'
+                  : messageStatus === 'error' && completed < delivery.items.length
+                    ? ' · 未完成'
+                    : ''}
+            </span>
+            <ChevronDown size={16} className="llm-production-delivery-chevron" aria-hidden="true" />
+          </summary>
+          <div
+            className="llm-production-delivery-body"
+            role="region"
+            aria-label="产物交付清单"
+            tabIndex={0}
+          >
+            <ol>
+              {delivery.items.map((item) => (
+                <li key={item.id} className="llm-production-delivery-item">
+                  <div className="llm-production-delivery-item-heading">
+                    <strong>{item.name}</strong>
+                    <span className="llm-production-delivery-item-state" data-status={item.status}>
+                      {item.status === 'complete' ? (
+                        <Check size={14} aria-hidden="true" />
+                      ) : item.status === 'failed' ? (
+                        <X size={14} aria-hidden="true" />
+                      ) : null}
+                      {item.status === 'complete'
+                        ? '已生成'
+                        : item.status === 'failed'
+                          ? '生成失败'
+                          : messageStatus === 'cancelled'
+                            ? '已停止'
+                            : messageStatus === 'streaming'
+                              ? '待生成'
+                              : '未完成'}
+                    </span>
+                  </div>
+                  <span className="llm-production-delivery-item-format">
+                    {item.kind === 'image' ? '图片' : (item.format?.toUpperCase() ?? '文件')}
+                  </span>
+                  {item.brief && <p>{item.brief}</p>}
+                  {item.error && <p className="llm-production-delivery-error">{item.error}</p>}
+                  {item.status === 'complete' &&
+                    !artifacts?.some((artifact) => artifact.id === item.artifactId) && (
+                      <p className="llm-production-delivery-unavailable">文件已清理或暂不可用。</p>
+                    )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </details>
+      )}
+      {artifacts?.map((artifact) => (
         <a
           key={artifact.id}
           className="llm-production-message-file"

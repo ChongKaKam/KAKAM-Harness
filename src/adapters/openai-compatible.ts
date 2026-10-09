@@ -1,5 +1,5 @@
 import { generateToolTurn } from './tool-turn';
-import type { ToolDefinition, ToolStep } from './registry';
+import type { ToolDefinition, ToolStep, ToolTurnOptions } from './registry';
 import type { ModelAdapter, ProviderConnection, ProviderMessage, ProviderEvent } from './registry';
 import type { ReasoningEffort } from '../shared/types';
 import { HttpError } from '../kernel/http';
@@ -68,6 +68,7 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
     steps: ToolStep[],
     signal: AbortSignal,
     effort?: ReasoningEffort,
+    options?: ToolTurnOptions,
   ) {
     return generateToolTurn(
       connection.apiMode ?? 'chat-completions',
@@ -78,6 +79,7 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
       steps,
       signal,
       effort,
+      options,
     );
   }
   async discover(c: ProviderConnection) {

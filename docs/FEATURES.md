@@ -393,7 +393,7 @@ Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭�
 
 主指令最长 20000 字符，标题 80、简介 160；标签最多 8 个、每个 24 字符，大小写无关去重。最多 16 个参考文件，每个 40000 字符，正文与参考内容合计 200000 字符。仅接受 references/ 或 assets/ 下的 md/txt/json/csv 相对路径，拒绝绝对路径、空路径段、点路径段及重复路径。
 
-每轮最多选择 8 个 Skill；主文档与引用片段累计最多 80000 个 UTF-16 字符。模型读工具为 `skills_read({skillId,path,offset,limit})`，单次 limit 为 1–12000，最多读取 16 次，最多 8 次模型请求。返回 content、totalCharacters 和 nextOffset；同样的技能/路径/offset/limit 重复读取终止本轮。首次主文档载入和工具读取均记录具体版本与范围。
+每轮最多选择 8 个 Skill；主文档与引用片段累计最多 80000 个 UTF-16 字符。模型读工具为 `skills_read({skillId,path,offset,limit})`，单次 limit 为 1–12000，与其他聊天工具共用最多 16 次调用。单独使用 Skill 最多 8 次模型请求；交付计划可在同一调用预算内扩展请求轮数，见 [产物契约](LLM_PRODUCTION.md#接入与任务)。返回 content、totalCharacters 和 nextOffset；同样的技能/路径/offset/limit 重复读取终止本轮。首次主文档载入和工具读取均记录具体版本与范围。
 
 `ModelsService` 返回 toolCalling 布尔能力；管理员创建模型时可设置，修改时省略保留旧值。Jev 不支持此能力。旧模型默认 false，不进行付费自动探测；支持三种聊天协议的工具映射，但具体兼容供应商仍需支持对应协议。
 
@@ -429,5 +429,7 @@ Hand-off 使用 `registerUtility` 托管的显式辅助调用，不加入聊天 
 ## 产物与聊天工具注册
 
 `llm-production` 为 Core，服务端和客户端仍显式双注册。`ctx.extensions.registerConversationTools(provider)` 注册受控异步工具，并通过 disposer 撤销；统一派发不依赖某个可选插件。工具参数、服务 / API、空间及保留规则见 [产物契约](LLM_PRODUCTION.md)。`ModelAdapter.generateImage` 为可选非流式接口，使用 `ModelsService.generateImage` 授权、实际用量和格式校验。
+
+`conversationTools(user, request, requireDelivery = false)` 接收原始当前提问和用户选择的强制策略；provider 可选 `requirement(user, request, requireDelivery?)` 预检，`requirements(scope)` 声明动态交付要求，`tools(user, scope?)` 按当前计划决定工具可用性。selection 提供 toolsFor(scope) 和 pending(scope)，Chat 每轮刷新工具并在结束前验证真实交付。要求包含 toolName、instructions、failureMessage、satisfied(scope) 与可选 stopOnFailure / maxRounds；扩轮最多 16，调用总数仍为 16。作用域及 requireDelivery 由服务器绑定，完成策略由 provider 声明，Chat 不硬编码业务工具。`generateTurn` 的 effort 后新增可选 `{ requireTool?: boolean }`，兼容现有调用；Adapter 按协议映射，当前 OpenAI-compatible 发 required，Anthropic 由交付指令和完成校验约束。明确触发、计划与协议限制集中在 [产物契约](LLM_PRODUCTION.md#触发与交付校验)。
 
 ClientFeature 可提供 `settingsComponent` 与 `topbarComponent`：前者在设置容器呈现同一能力的设置，后者仅在当前 feature 页面贡献顶栏操作。Shell 不硬编码产物导航；聊天的 topbarComponent 使用产物组件，侧栏统一管理由产物 feature 的 workspace 注册提供。交互见 [UI 指南](UI_GUIDE.md#产物空间)。

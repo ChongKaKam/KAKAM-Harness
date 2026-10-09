@@ -6,6 +6,7 @@ import type { SkillSession } from '../extensions/skill-runtime';
 import type { ContextRecorder } from '../extensions/context-observer';
 import type { ContextCompression } from '../../shared/context';
 import type { MemoryPreparation, MemoryContextRange } from '../../shared/memory';
+import type { ProductionMode } from '../llm-production/types';
 import { skillLimits, type SkillRead } from '../skills/types';
 import { HttpError } from '../../kernel/http';
 
@@ -21,6 +22,28 @@ export function aggregateCalls(calls: ExtensionCall[]) {
   );
 }
 
+export function prepareConversationTools(
+  ctx: Context,
+  user: User,
+  modelId: string,
+  content: string,
+  productionMode: ProductionMode = 'auto',
+) {
+  const selection = ctx.extensions.conversationTools(user, content, productionMode === 'required');
+  if ((selection.requirements ?? []).length) {
+    const model = ctx.models.authorize(user, modelId, 'llm');
+    if (
+      !model.toolCalling ||
+      !ctx.models.adapter(ctx.models.connection(model.providerId).apiMode).generateTurn
+    )
+      throw new HttpError(
+        400,
+        '当前聊天模型未启用工具调用，无法生成产物；请选择已启用工具调用的模型',
+      );
+  }
+  return selection;
+}
+
 export async function generateReply(
   ctx: Context,
   options: {
@@ -28,6 +51,8 @@ export async function generateReply(
     modelId: string;
     messageId: string;
     conversationId: string;
+    requestContent?: string;
+    productionMode?: ProductionMode;
     messages: ProviderMessage[];
     effort: ReasoningEffort;
     signal: AbortSignal;
@@ -49,22 +74,63 @@ export async function generateReply(
   const model = ctx.models.authorize(user, options.modelId, 'llm');
   const connection = ctx.models.connection(model.providerId);
   const adapter = ctx.models.adapter(connection.apiMode);
-  const production =
-    model.toolCalling && adapter.generateTurn ? ctx.extensions.conversationTools(user) : undefined;
-  const tools = [...(session?.tools() ?? []), ...(production?.tools ?? [])];
-  if (new Set(tools.map((tool) => tool.name)).size !== tools.length)
-    throw new HttpError(500, '工具名称冲突');
+  const selection = prepareConversationTools(
+    ctx,
+    user,
+    options.modelId,
+    options.requestContent ?? options.messages.at(-1)?.content ?? '',
+    options.productionMode,
+  );
+  const production = model.toolCalling && adapter.generateTurn ? selection : undefined;
+  const requirementScope = {
+    user,
+    conversationId: options.conversationId,
+    messageId,
+    requestId: messageId,
+    signal,
+    requireDelivery: options.productionMode === 'required',
+  };
+  const pending = () =>
+    production?.pending?.(requirementScope) ??
+    (production?.requirements ?? []).filter(
+      (requirement) => !requirement.satisfied(requirementScope),
+    );
   const messages = options.messages.map((message, index) =>
     index === options.messages.length - 1 && production?.tools.length
       ? { ...message, content: `${production.instructions}\n\n${message.content}` }
       : message,
   );
-  for (let round = 0; round < skillLimits.rounds; round++) {
+  let roundLimit = skillLimits.rounds;
+  const extendRounds = (requirements: ReturnType<typeof pending>) => {
+    for (const requirement of requirements)
+      if (requirement.maxRounds && Number.isFinite(requirement.maxRounds))
+        roundLimit = Math.max(roundLimit, Math.min(skillLimits.reads, requirement.maxRounds));
+  };
+  for (let round = 0; round < roundLimit; round++) {
     signal.throwIfAborted();
     session?.assertActive();
+    const tools = [
+      ...(session?.tools() ?? []),
+      ...(production?.toolsFor?.(requirementScope) ?? production?.tools ?? []),
+    ];
+    if (new Set(tools.map((tool) => tool.name)).size !== tools.length)
+      throw new HttpError(500, '工具名称冲突');
+    const outstanding = pending();
+    extendRounds(outstanding);
+    const instructions = outstanding
+      .map((requirement) => requirement.instructions)
+      .filter((instruction) => !production?.instructions.includes(instruction))
+      .join('\n\n');
+    const roundMessages = instructions
+      ? messages.map((message, index) =>
+          index === messages.length - 1
+            ? { ...message, content: `${instructions}\n\n${message.content}` }
+            : message,
+        )
+      : messages;
     const authorized = ctx.models.authorize(user, options.modelId, 'llm');
     if (tools.length && (!authorized.toolCalling || !adapter.generateTurn))
-      throw new HttpError(400, '此 Skill 包含参考文档，请选择已启用工具调用的模型');
+      throw new HttpError(400, '当前模型无法继续调用工具，请选择已启用工具调用的模型');
     const call: ExtensionCall = {
       id: round === 0 ? messageId : randomUUID(),
       stage: `回答 · 第 ${round + 1} 次请求`,
@@ -92,7 +158,7 @@ export async function generateReply(
     try {
       options.recorder?.request({
         callId: call.id,
-        messages,
+        messages: roundMessages,
         tools,
         steps: steps.map(({ text, turn, results }) => ({ text, calls: turn.calls, results })),
         memory: options.memory,
@@ -105,13 +171,14 @@ export async function generateReply(
         ? adapter.generateTurn!(
             connection,
             model.name,
-            messages,
+            roundMessages,
             tools,
             steps,
             signal,
             options.effort,
+            { requireTool: outstanding.length > 0 },
           )
-        : adapter.generate(connection, model.name, messages, signal, options.effort);
+        : adapter.generate(connection, model.name, roundMessages, signal, options.effort);
       for await (const event of events) {
         signal.throwIfAborted();
         if (event.type === 'usage') call.usage = event.usage;
@@ -138,7 +205,11 @@ export async function generateReply(
       );
       publish();
     }
-    if (!turn?.calls.length) return;
+    if (!turn?.calls.length) {
+      const missing = pending()[0];
+      if (missing) throw new HttpError(502, missing.failureMessage);
+      return;
+    }
     const results: ToolStep['results'] = [];
     for (const tool of turn.calls) {
       signal.throwIfAborted();
@@ -156,6 +227,7 @@ export async function generateReply(
                   messageId,
                   requestId: call.id,
                   signal,
+                  requireDelivery: requirementScope.requireDelivery,
                 },
                 tool,
               )
@@ -164,6 +236,21 @@ export async function generateReply(
               })();
       results.push({ id: tool.id, output });
       options.productionProgress();
+      const remaining = pending();
+      extendRounds(remaining);
+      const failed = remaining.find(
+        (requirement) => requirement.toolName === tool.name && requirement.stopOnFailure,
+      );
+      if (failed) {
+        let reason = failed.failureMessage;
+        try {
+          const result = JSON.parse(output) as { error?: unknown };
+          if (typeof result.error === 'string') reason = result.error;
+        } catch {
+          /* Plain tool output still uses the registered safe failure message. */
+        }
+        throw new HttpError(502, reason);
+      }
     }
     steps.push({ turn, results, text: visibleText });
     publish();

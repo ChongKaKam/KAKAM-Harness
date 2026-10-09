@@ -1,5 +1,5 @@
 import { generateToolTurn } from './tool-turn';
-import type { ToolDefinition, ToolStep } from './registry';
+import type { ToolDefinition, ToolStep, ToolTurnOptions } from './registry';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
 import type { ReasoningEffort } from '../shared/types';
@@ -38,6 +38,7 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
     steps: ToolStep[],
     signal: AbortSignal,
     effort?: ReasoningEffort,
+    options?: ToolTurnOptions,
   ) {
     return generateToolTurn(
       'anthropic-messages',
@@ -48,6 +49,7 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
       steps,
       signal,
       effort,
+      options,
     );
   }
   async discover(connection: ProviderConnection): Promise<string[]> {

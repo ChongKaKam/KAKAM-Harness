@@ -44,6 +44,9 @@ export interface ToolStep {
   turn: ToolTurn;
   results: { id: string; output: string }[];
 }
+export interface ToolTurnOptions {
+  requireTool?: boolean;
+}
 export type ToolEvent = ProviderEvent | { type: 'turn'; turn: ToolTurn };
 export interface DecisionInput {
   state: string;
@@ -73,6 +76,7 @@ export interface ModelAdapter {
     steps: ToolStep[],
     signal: AbortSignal,
     effort?: ReasoningEffort,
+    options?: ToolTurnOptions,
   ): AsyncIterable<ToolEvent>;
   decide?(
     connection: ProviderConnection,

@@ -31,7 +31,7 @@
 - Context Manager 的只读观察器与异步处理器分别经 extensions 注册；压缩仅替换请求历史，保留原文，节点摘要在完成回答后生成。辅助模型逐调用授权并记录实际用量，契约见 [上下文管理](docs/CONTEXT_MANAGER.md)。
 - Memory 只经 `extensions` 注册的 provider 接入聊天，Chat 不直接依赖可停用的 manager。策略必须实现服务端契约和同 ID / settingsKey / configVersion 的设置 UI；权限、作用域、写入模式、幂等与预算由 Manager 强制校验，策略不拿数据库连接。独立 PostgreSQL 按 `MEMORY_NAMESPACE` 和 owner 隔离，不能把 namespace 当作用户可选租户。
 - 新长期记忆必须待用户显式纳入，自动写入、手动创建和 Remember 确认均不能跳过；正文修改重新待纳入。纳入记录真实确认时间，历史未知时间不回填。Remember 预览绑定本人已完成问答原文与哈希，确认和来源回溯重新校验；模型不能批准自己的候选。详细状态和 API 见 [Memory API](docs/MEMORY_API.md)。
-- `llm-production` 是 Core，工具向 extensions 注册，用户 / 聊天 / 消息由服务器绑定，文件保持私有。未分组聊天保留 3–7 天，分组共享且默认不过期；迁移、删除、清理和幂等见 [产物契约](docs/LLM_PRODUCTION.md)。固定文档生成器不代表脚本沙箱已实现。
+- `llm-production` 是 Core，工具向 extensions 注册，用户 / 聊天 / 消息由服务器绑定，文件保持私有。Auto 由主模型选择工具；必须产物模式先声明不可缩减的交付计划，需求不足可澄清，每项绑定真实文件并检查类型 / 明确格式。先校验配置与授权，完成前逐项核对交付；文字或代码块不能替代成功生成，失败图片不自动重复付费。未分组聊天保留 3–7 天，分组共享且默认不过期；触发、迁移、删除、清理和幂等见 [产物契约](docs/LLM_PRODUCTION.md)。固定文档生成器不执行模型脚本。
 - 客户端不导入 `server.ts`、Node 模块或密钥；共享 DTO 放 `src/shared/` 或 feature 的纯类型文件，用 `import type` 明确边界。
 
 ## 必须保留的行为
