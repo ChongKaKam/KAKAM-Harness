@@ -49,7 +49,6 @@
 }
 :root .button.primary,
 :root .send-button,
-:root .logo,
 :root .attachment-list button,
 :root .toast {
   background: var(--primary);
@@ -61,7 +60,6 @@
   background: var(--primary-hover);
   border-color: var(--primary-hover);
 }
-:root .logo span,
 :root .toast button {
   color: inherit;
 }

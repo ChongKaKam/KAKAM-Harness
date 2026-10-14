@@ -114,6 +114,8 @@ export function UiProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.style.colorScheme = resolvedTheme;
+    const favicon = document.querySelector<HTMLLinkElement>('#app-favicon');
+    if (favicon) favicon.href = `/brand/favicon-${resolvedTheme}.png`;
     localStorage.setItem('drift:theme', preferences.theme);
   }, [resolvedTheme, preferences.theme]);
   useEffect(() => {

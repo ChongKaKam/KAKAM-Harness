@@ -378,9 +378,8 @@
     min-height: 0;
   }
   .login-story > .brand .logo {
-    width: 29px;
-    height: 29px;
-    font-size: var(--font-heading-large);
+    width: 28px;
+    height: 28px;
   }
   .login-story > .brand strong {
     font-size: var(--font-caption);

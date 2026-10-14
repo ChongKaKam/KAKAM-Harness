@@ -224,29 +224,17 @@ small,
   flex-shrink: 0;
 }
 .logo {
-  width: 35px;
-  height: 35px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-alt);
-  color: var(--on-primary);
-  font-family: Georgia, serif;
-  font-size: var(--font-ui);
-  letter-spacing: -2px;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-panel);
+  display: block;
+  object-fit: contain;
   flex-shrink: 0;
-  padding-right: 3px;
-  line-height: 1;
-}
-.logo span {
-  color: var(--faint);
 }
 .logo.small {
-  width: 27px;
-  height: 27px;
-  font-size: var(--font-heading-large);
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
 }
 .brand {
   display: flex;

@@ -16,7 +16,6 @@
   --font-hero: calc(2.125rem * var(--font-scale));
   --font-hero-wide: calc(2.375rem * var(--font-scale));
   --font-display: calc(2.6875rem * var(--font-scale));
-  --font-brand: calc(1.875rem * var(--detail-scale));
   --font-ornament: 4.375rem;
 }
 body {
@@ -327,11 +326,4 @@ textarea {
   :root .avatar-setting .grow {
     display: none;
   }
-}
-/* Brand glyphs are decorative, not body text. Keep their original visual size. */
-:root .logo {
-  font-size: var(--font-brand);
-}
-:root .logo.small {
-  font-size: calc(1.5rem * var(--detail-scale));
 }

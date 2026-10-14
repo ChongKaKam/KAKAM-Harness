@@ -42,6 +42,8 @@
 
 没有预置或虚构模型、聊天或 Token 消耗。首次运行后需要管理员接入模型。
 
+品牌使用灯塔插画，网页 Logo 与标签页图标随白天 / 黑夜 / 跟随系统切换；PWA 与苹果主屏幕安装图标默认使用白天版。图标与安装元数据已配置，尚无离线缓存；生产安装使用 HTTPS。素材位置与替换方法见 [品牌图标](docs/UI_GUIDE.md#品牌-logo标签页与安装图标)。
+
 ## 一键启动（Docker，推荐）
 
 需要 Docker Engine / Docker Desktop、Compose v2+、Bash、OpenSSL。

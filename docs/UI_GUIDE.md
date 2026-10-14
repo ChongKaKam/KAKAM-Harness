@@ -4,11 +4,21 @@
 
 ## 信息架构与视觉分工
 
-- Shell 包含品牌、主导航、对话列表、用户入口与内容区域，使用**纯黑白灰**。不要恢复灰褐色框架或让绿色 / Color Pattern 接管整页文字。
+- Shell 包含品牌、主导航、对话列表、用户入口与内容区域，使用**纯黑白灰**；品牌 Logo 保留固定插画配色。不要恢复灰褐色框架或让绿色 / Color Pattern 接管整页文字。
 - 工作区放对话、Skill 库、信息中转站、记忆等产品能力；统计独立分组；左下角用户入口进入设置。通用设置、账户设置、相关信息及管理员页面均属于设置容器。
 - feature 页面只负责自己的内容，不再创建第二套全局侧栏、用户菜单或主题 Provider。功能管理区分 Core / Plugin；普通用户不能看到管理员操作。
 - Color Pattern 给卡片、对话分组、图表、图标与边框分配多色；正文和辅助文字仍保持中性色。用户选的是色系与组件颜色，不是把页面所有元素染成一种颜色。
-- 空白对话首页只显示个性化问候语与聊天输入框，不放引导卡片、模型数量或品牌标语；使用现有 `Logo`（d·）、Chatbot 的 Bot 默认头像以及 `UserAvatar`，不在新页面各自创造品牌标识。
+- 空白对话首页只显示个性化问候语与聊天输入框，不放引导卡片、模型数量或品牌标语；使用现有 `Logo`（灯塔插画）、Chatbot 的 Bot 默认头像以及 `UserAvatar`，不在新页面各自创造品牌标识。
+
+## 品牌 Logo、标签页与安装图标
+
+品牌素材集中在 [`public/brand/`](../public/brand/)，由 Vite 原样复制到 `dist/client/brand/`，网页通过 `/brand/` 访问。素材保留完整方形画面与原始配色，只按使用位置缩小尺寸；不要通过 CSS 反色或 Color Pattern 改色。
+
+- 公共 `Logo` 位于 [`components.tsx`](../src/client/components.tsx)，读取 `useUi().resolvedTheme`，使用 `logo-light-192.png` / `logo-dark-192.png`。侧栏、登录、加载与关于页共用同一组件；默认 36px，`small` 为 28px，手机登录页为 28px，不随字号放大。
+- [`index.html`](../index.html) 声明 32px favicon；`UiProvider` 在白天 / 黑夜 / 跟随系统变化时更新 `#app-favicon`，与页面实际主题一致。React 加载前使用白天版。
+- [`manifest.webmanifest`](../public/manifest.webmanifest) 声明 Drift Space 的名称、根路径启动入口、独立窗口与 192px / 512px 白天图标；`apple-touch-icon.png` 为 180px 白天版。安装图标固定使用白天版，不承诺随网页主题实时切换，已有安装的更新由浏览器与系统控制。
+
+这里只提供图标与安装元数据，没有 Service Worker 或离线缓存。生产安装应通过 HTTPS，localhost 可用于开发检查。替换品牌时同步更新这些素材、HTML 引用和 manifest；无需修改模型头像设置或新增主题状态。
 
 ## 组件放在哪里
 

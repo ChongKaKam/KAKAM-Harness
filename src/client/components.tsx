@@ -1,10 +1,17 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { X, LoaderCircle, ArrowUpRight } from 'lucide-react';
+import { useUi } from './ui-preferences';
 export function Logo({ small = false }: { small?: boolean }) {
+  const { resolvedTheme } = useUi();
   return (
-    <span className={`logo ${small ? 'small' : ''}`}>
-      d<span>·</span>
-    </span>
+    <img
+      className={`logo ${small ? 'small' : ''}`}
+      src={`/brand/logo-${resolvedTheme}-192.png`}
+      alt="Drift Space Logo"
+      width={small ? 28 : 36}
+      height={small ? 28 : 36}
+      draggable={false}
+    />
   );
 }
 export function PageHeader({
