@@ -1,0 +1,185 @@
+.relay-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.relay-search {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: var(--space-2);
+  min-width: 160px;
+  padding: 0 var(--space-3);
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+:root .relay-search input[type='search'] {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  font-size: var(--font-ui);
+}
+.relay-search:has(input:focus-visible) {
+  border-color: var(--muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.relay-filters,
+.relay-content-tools,
+.relay-card-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.relay-filters .button[aria-pressed='true'] {
+  background: var(--selection);
+  border-color: var(--muted);
+}
+.relay-count,
+.relay-meta,
+.relay-editor-hint {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+.relay-count {
+  white-space: nowrap;
+}
+.relay-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-3);
+}
+:root .relay-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border-color: color-mix(in srgb, var(--item-color) 22%, var(--line));
+  background: color-mix(in srgb, var(--item-soft) 65%, var(--surface));
+}
+.relay-card-top {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+}
+.relay-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  background: var(--item-soft);
+  color: var(--item-color);
+}
+.relay-card-top h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-heading-small);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.relay-meta {
+  overflow-wrap: anywhere;
+}
+.relay-meta span {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.relay-content-tools {
+  justify-content: space-between;
+}
+.relay-content {
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  overflow-wrap: anywhere;
+}
+.relay-content .markdown,
+.relay-editor-preview .markdown {
+  font-size: var(--font-ui);
+}
+.relay-source {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: var(--font-code);
+  line-height: 1.6;
+}
+.relay-card-footer {
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--item-color) 18%, var(--line));
+}
+:root .relay-editor {
+  width: 720px;
+}
+.relay-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--font-ui);
+}
+.relay-editor textarea {
+  display: block;
+  min-height: 280px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: var(--font-code);
+  line-height: 1.7;
+}
+.relay-editor-preview {
+  min-height: 280px;
+  max-height: 400px;
+  padding: var(--space-3);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.relay-editor-hint {
+  margin-top: var(--space-2);
+}
+.relay-confirm-copy {
+  font-size: var(--font-ui);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1100px) {
+  .relay-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .relay-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .relay-search {
+    flex-basis: 100%;
+  }
+  :root .relay-page .button,
+  :root .relay-page .icon-button,
+  :root .relay-editor .button {
+    min-height: 44px;
+  }
+  :root .relay-card .icon-button {
+    min-width: 44px;
+  }
+}

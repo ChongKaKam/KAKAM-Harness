@@ -203,6 +203,8 @@ Skill 库兼容回归位于 `tests/prompts.test.ts`（编辑、标签校验、�
 
 Skill 文档读取与工具循环回归在 `tests/skills.test.ts`，模型工具夹具在 `tests/skill-provider-fixture.ts`，覆盖三种协议、版本绑定、读取权限、累计用量、断线、停用和停止。迁移覆盖在 `tests/kernel.test.ts`，浏览器在 `tests/e2e/skills.spec.ts`；原提示词用例继续验证兼容接口和管理页面。后续执行环境的工作范围集中在 [Skill TODO](SKILLS_TODO.md)，这些能力尚未实现。
 
+信息中转站的针对性回归为 `npx tsx --test tests/relay.test.ts`，覆盖私人权限、输入、固定 72 小时到期、显式持久化、清理、启停、旧库升级与重启保存；构建后运行 `npx playwright test tests/e2e/relay.spec.ts` 验证 Markdown / 源码、复制、编辑、确认、筛选、删除及明暗 / 大字号 / 手机布局。均使用临时 SQLite，不调用模型。
+
 Embedding 的针对性回归使用 `npx tsx --test tests/embedding.test.ts tests/model-diagnostics.test.ts`，包含部分真实用量、无用量、维度、乱序 / 重复 index、无效与零向量、模型授权和旧模型类型迁移。所有请求都指向本地 mock，数据库使用临时目录。Memory 集成验证使用隔离的 PostgreSQL/pgvector，不能将开发或生产连接地址用作测试夹具；具体环境和用例见 [策略开发指南](MEMORY_AGENTS.md#验证)。
 
 ## 产物空间验证

@@ -358,6 +358,24 @@ export class Database extends Service {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_production_artifacts_delivery_item
       ON production_artifacts(user_id,message_id,delivery_item_id) WHERE delivery_item_id IS NOT NULL;
     `);
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS relay_cards (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        color_slot INTEGER CHECK(color_slot BETWEEN 0 AND 63),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        expires_at TEXT,
+        persisted_at TEXT,
+        CHECK((persisted_at IS NULL AND expires_at IS NOT NULL) OR
+              (persisted_at IS NOT NULL AND expires_at IS NULL))
+      );
+      CREATE INDEX IF NOT EXISTS idx_relay_cards_owner ON relay_cards(user_id,created_at);
+      CREATE INDEX IF NOT EXISTS idx_relay_cards_expiry ON relay_cards(expires_at)
+        WHERE expires_at IS NOT NULL;
+    `);
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

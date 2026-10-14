@@ -271,6 +271,25 @@ ctx.effect(() => {
 
 `ctx.effect` 的释放负责卸载，不能只创建定时器而依赖进程退出。需要在数据库关闭前等待任务落盘时，参考 chat 注册 `ctx.kernel.onShutdown` 的方式；这是进程关闭协调，不能单独替代可选插件停用时的清理。数据库 `transaction` 是同步的，先完成外部 I/O 再在同步事务里提交关联写入。
 
+## 信息中转站
+
+`relay` 是可停用的工作区插件，入口为 `#/relay`，代码位于 [`src/features/relay/`](../src/features/relay/)。仅依赖 db / http，不调用模型；卡片按当前认证账户私有保存，管理员也不能读取其他账户的内容。SQLite `relay_cards` 表与索引由平台数据库追加创建。
+
+| API                           | 行为                                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/relay`              | 返回本人仍有效的卡片，按创建时间倒序；同时清理到期记录                                                                          |
+| `POST /api/relay`             | 创建临时卡片；`content` 必填，最多 100000 字符且不能全为空白；`title` 可选，去首尾空白后最多 120 字符，空标题显示「未命名卡片」 |
+| `GET /api/relay/:id`          | 读取本人有效卡片                                                                                                                |
+| `PATCH /api/relay/:id`        | 修改 title / content / colorSlot；至少提供一项，colorSlot 为 null 或 0–63 的整数；不接受所有者、到期或持久化字段                |
+| `POST /api/relay/:id/persist` | 必须显式传 `{ "confirmed": true }`；记录服务器确认时间并取消到期，重复确认保留首次时间                                          |
+| `DELETE /api/relay/:id`       | 删除本人有效卡片                                                                                                                |
+
+DTO 为 `id / title / content / colorSlot / createdAt / updatedAt / expiresAt / persistedAt`，时间均为服务器 UTC ISO 字符串。创建时固定 `expiresAt = createdAt + 72 小时`，编辑与换色不会续期。持久化后 `expiresAt=null`，正文修改仍长期保留；只能手动删除，不提供重新临时化入口。到期使用 `expiresAt <= now` 边界，读取、修改、删除和持久化均返回 404，不能复活到期卡片。
+
+插件激活时清理一次，此后每分钟删除到期记录；列表读取也清理。所有按 ID 的接口独立校验到期，清理任务尚未执行也不可访问。停用撤销路由与定时器；停用 / 服务关闭期间不执行后台清理，重新激活先清理过期数据，有效与持久化卡片保留。当前只支持用户从其他平台手动复制粘贴及登录后跨设备访问，没有第三方推送、匿名投递、文件上传或外部平台连接。
+
+卡片渲染、复制与交互见 [UI 指南](UI_GUIDE.md#信息中转站)。
+
 ## 添加模型 Adapter
 
 实际契约在 [`src/adapters/registry.ts`](../src/adapters/registry.ts)：

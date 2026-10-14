@@ -17,6 +17,7 @@ import * as search from '../features/search/server';
 import * as chat from '../features/chat/server';
 import * as usage from '../features/usage/server';
 import * as prompts from '../features/prompts/server';
+import * as relay from '../features/relay/server';
 import * as preferences from '../features/preferences/server';
 import * as contextManager from '../features/context-manager/server';
 import { createMemoryFeature, manifest as memory } from '../features/memory/server';
@@ -32,6 +33,7 @@ export async function createApp(config: Config) {
     await kernel.register(chat.manifest, chat.createChatFeature(config.maxConcurrentChats));
     await kernel.register(usage.manifest, usage.server);
     await kernel.register(prompts.manifest, prompts.server);
+    await kernel.register(relay.manifest, relay.server);
     await kernel.register(preferences.manifest, preferences.server);
     await kernel.register(contextManager.manifest, contextManager.server);
     await kernel.register(

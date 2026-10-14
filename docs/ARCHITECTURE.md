@@ -10,7 +10,7 @@ flowchart TD
     App --> Kernel[KH-Kernel]
     Kernel --> Engine[Cordis Context / Service / inject / effect]
     Engine --> Core[Core: auth users models extensions chat usage preferences]
-    Engine --> Plugins[Plugin: prompts search context-manager memory]
+    Engine --> Plugins[Plugin: prompts relay search context-manager memory]
     UI[React Web Shell + Client Registry] --> HTTP[Express /api + 已验证 Request.user]
     HTTP --> Routes[HttpService / 活动 Router 列表]
     Routes --> Core
@@ -30,7 +30,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → llm-production → search → chat → usage → prompts → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → llm-production → search → chat → usage → prompts → relay → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
 每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
@@ -48,6 +48,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `usage`           | core   | 真实用量记录、汇总与活动数据                                           | 统计                                 |
 | `preferences`     | core   | 明暗模式、Color Pattern、Chatbot 头像                                  | 通用设置                             |
 | `prompts`         | plugin | Skill 管理、版本与参考文件、简介模型、聊天载入                         | 工作区                               |
+| `relay`           | plugin | 私有 Markdown 中转卡片、三天到期、确认持久化、复制                     | 工作区                               |
 | `context-manager` | plugin | 历史压缩、上下文快照、节点摘要与 LLM hand-off                          | 回复抽屉 / 设置                      |
 | `memory`          | plugin | 三层记忆、pgvector 召回、LLM 抽取 / Remember、长期纳入、策略配置和 API | 工作区与设置；上下文抽屉展示实际注入 |
 
@@ -95,18 +96,19 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 
 ### 数据归属
 
-| 数据                           | 当前持久化位置                                               | 边界                                                           |
-| ------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------- |
-| 账户 / 头像 / 会话             | `users`、`sessions`                                          | 会话只存 token 摘要，客户端持有原 token                        |
-| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`                        | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                  |
-| 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages`           | 图片随消息保存在数据库，访问检查用户归属                       |
-| 用量                           | `usage`                                                      | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL       |
-| 插件启停 / Skill               | `settings`、`skills`、`skill_versions`、`prompt_preferences` | 停用保留数据，重启恢复启停状态                                 |
-| 三层记忆 / 向量 / 策略配置     | 独立 PostgreSQL 的 memory_* 表                               | namespace + owner 隔离；备份需配套 pg_dump                     |
-| 上下文快照 / 交接模型偏好      | `context_snapshots`、`context_preferences`                   | 按账户与对话隔离，编辑 / 重试保留快照，删除对话级联清理        |
-| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                             | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源      |
-| 字号                           | localStorage `drift:font-size:<userId>`                      | 按账户和当前浏览器保存，不随服务器备份迁移                     |
-| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`               | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束 |
+| 数据                           | 当前持久化位置                                               | 边界                                                                                   |
+| ------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| 账户 / 头像 / 会话             | `users`、`sessions`                                          | 会话只存 token 摘要，客户端持有原 token                                                |
+| 来源 / 模型 / 授权             | `providers`、`models`、`model_grants`                        | API Key 密文的解密依赖 `.env` 中的 APP_SECRET                                          |
+| 对话 / 消息 / 图片             | `conversations`、`conversation_groups`、`messages`           | 图片随消息保存在数据库，访问检查用户归属                                               |
+| 用量                           | `usage`                                                      | 用户查看自己，管理员查看全局；没有真实 usage 就保留 NULL                               |
+| 插件启停 / Skill               | `settings`、`skills`、`skill_versions`、`prompt_preferences` | 停用保留数据，重启恢复启停状态                                                         |
+| 信息中转卡片                   | `relay_cards`                                                | 按账户隔离；固定 72 小时到期，显式确认后取消到期；[API 与清理](FEATURES.md#信息中转站) |
+| 三层记忆 / 向量 / 策略配置     | 独立 PostgreSQL 的 memory_* 表                               | namespace + owner 隔离；备份需配套 pg_dump                                             |
+| 上下文快照 / 交接模型偏好      | `context_snapshots`、`context_preferences`                   | 按账户与对话隔离，编辑 / 重试保留快照，删除对话级联清理                                |
+| 明暗模式 / 色系 / Chatbot 头像 | `ui_preferences`                                             | 以 user_id 隔离；浏览器有外观缓存，服务器是账户持久化来源                              |
+| 字号                           | localStorage `drift:font-size:<userId>`                      | 按账户和当前浏览器保存，不随服务器备份迁移                                             |
+| 最近模型 / 思考程度            | `kh:model` / `drift:effort:<userId>:<modelId>`               | 最近模型是浏览器级偏好，实际使用仍受用户模型列表和后端授权约束                         |
 
 平台 SQLite 表结构和追加迁移集中在 [`kernel/database.ts`](../src/kernel/database.ts)。其事务回调同步执行，不能把 async 函数 / await 放入其中；网络 I/O 应在事务外完成。Memory 独立 PostgreSQL 表由 [`kernel/memory-database.ts`](../src/kernel/memory-database.ts) 在插件初始化时集中迁移，允许异步数据库事务，但模型 / 网络请求仍不能放入事务。两种数据库之间没有跨库外键或分布式事务。未来改变持久化格式时要兼容已有数据，具体扩展步骤见功能指南。
 

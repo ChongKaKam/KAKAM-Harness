@@ -9,6 +9,7 @@ import {
   GitBranch,
   Brain,
   FolderOpen,
+  Inbox,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ExtensionsPage } from '../features/extensions/client';
@@ -26,6 +27,8 @@ import { UsersPage } from '../features/users/client';
 import { ModelsPage } from '../features/models/client';
 import { PromptsPage } from '../features/prompts/client';
 import { PromptsSettings } from '../features/prompts/settings';
+import { RelayPage } from '../features/relay/client';
+import { manifest as relay } from '../features/relay/manifest';
 import { ContextManagerSettings } from '../features/context-manager/client';
 import { MemoryPage, MemorySettingsPage } from '../features/memory/client';
 import { manifest as memory } from '../features/memory/manifest';
@@ -104,6 +107,7 @@ export const clientFeatures: ClientFeature[] = [
     settingsLabel: '记忆管理',
     settingsComponent: MemorySettingsPage,
   },
+  { placement: 'workspace', manifest: relay, icon: Inbox, component: RelayPage },
   { placement: 'statistics', manifest: usage, icon: ChartNoAxesCombined, component: UsagePage },
   { placement: 'settings', manifest: models, icon: Layers, component: ModelsPage },
   { placement: 'settings', manifest: users, icon: Users, component: UsersPage },
