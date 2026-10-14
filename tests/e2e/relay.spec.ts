@@ -110,6 +110,29 @@ test('relay fits light and dark themes, large type and phone with focus restorat
       const bounds = (await dialog.boundingBox())!;
       expect(bounds.x).toBeGreaterThanOrEqual(0);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+      const titleBounds = (await dialog
+        .getByRole('textbox', { name: '标题', exact: true })
+        .boundingBox())!;
+      const contentBounds = (await dialog
+        .getByRole('textbox', { name: 'Markdown 内容' })
+        .boundingBox())!;
+      expect(Math.abs(contentBounds.x - titleBounds.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(contentBounds.width - titleBounds.width)).toBeLessThanOrEqual(1);
+      const captionBounds = (await dialog.locator('.relay-editor-toolbar > span').boundingBox())!;
+      const previewButton = dialog.getByRole('button', { name: '预览渲染' });
+      const buttonBounds = (await previewButton.boundingBox())!;
+      expect(
+        Math.abs(
+          captionBounds.y + captionBounds.height / 2 - (buttonBounds.y + buttonBounds.height / 2),
+        ),
+      ).toBeLessThanOrEqual(1);
+      await dialog.screenshot({
+        path: `test-results/relay-editor-${theme}-${info.project.name}.png`,
+      });
+      await previewButton.click();
+      const previewBounds = (await dialog.getByRole('region', { name: '卡片预览' }).boundingBox())!;
+      expect(Math.abs(previewBounds.x - titleBounds.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(previewBounds.width - titleBounds.width)).toBeLessThanOrEqual(1);
       await page.keyboard.press('Escape');
       await expect(trigger).toBeFocused();
       await page.screenshot({

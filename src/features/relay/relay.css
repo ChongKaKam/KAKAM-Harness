@@ -137,8 +137,13 @@
   margin: var(--space-4) 0 var(--space-2);
   font-size: var(--font-ui);
 }
+.relay-editor-toolbar .button {
+  margin-top: 0;
+  flex-shrink: 0;
+}
 .relay-editor textarea {
   display: block;
+  width: 100%;
   min-height: 280px;
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: var(--font-code);
