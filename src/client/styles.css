@@ -13,7 +13,7 @@
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   --width: 240px;
-  --topbar-height: 44px;
+  --topbar-height: 64px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -22,15 +22,31 @@
   --space-8: 32px;
   --space-10: 40px;
   --space-12: 48px;
-  --radius-hover: 4px;
-  --radius-control: 6px;
-  --radius-panel: 8px;
-  --radius-floating: 12px;
-  --control-sm: 24px;
-  --control-md: 28px;
-  --control-lg: 32px;
-  --shadow-surface: none;
-  --shadow-floating: 0 4px 12px #00000014, 0 16px 40px #00000012;
+  --radius-hover: 8px;
+  --radius-control: 12px;
+  --radius-panel: 16px;
+  --radius-floating: 24px;
+  --radius-hub: 28px;
+  --control-sm: 32px;
+  --control-md: 40px;
+  --control-lg: 44px;
+  --shadow-color: #000;
+  --shadow-sm:
+    0 1px 3px color-mix(in srgb, var(--shadow-color) 4%, transparent),
+    0 4px 12px color-mix(in srgb, var(--shadow-color) 2%, transparent);
+  --shadow-md:
+    0 2px 6px color-mix(in srgb, var(--shadow-color) 5%, transparent),
+    0 12px 32px color-mix(in srgb, var(--shadow-color) 4%, transparent);
+  --shadow-lg:
+    0 4px 12px color-mix(in srgb, var(--shadow-color) 6%, transparent),
+    0 20px 48px color-mix(in srgb, var(--shadow-color) 5%, transparent);
+  --shadow-xl:
+    0 8px 20px color-mix(in srgb, var(--shadow-color) 8%, transparent),
+    0 24px 64px color-mix(in srgb, var(--shadow-color) 5%, transparent);
+  --shadow-surface: var(--shadow-sm);
+  --shadow-floating: var(--shadow-lg);
+  --duration-fast: 160ms;
+  --ease-out: cubic-bezier(0.2, 0, 0.2, 1);
 }
 * {
   box-sizing: border-box;
@@ -79,10 +95,10 @@ textarea:focus-visible {
 input,
 select,
 textarea {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+  padding: var(--space-3);
   max-width: 100%;
 }
 input::placeholder,
@@ -161,8 +177,8 @@ small,
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
   background: var(--surface);
   padding: 9px 14px;
   font-size: var(--font-caption);
@@ -285,7 +301,7 @@ small,
   margin-bottom: 12px;
 }
 .panel {
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface);
   box-shadow: var(--shadow-surface);

@@ -2,23 +2,28 @@
   position: fixed;
   inset: auto;
   margin: 0;
-  padding: 8px;
+  padding: var(--space-2);
   width: min(300px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 0;
+  border-radius: var(--radius-floating);
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 12px 40px #0002;
+  box-shadow: var(--shadow-lg);
+}
+:root .skills-attachment-menu:popover-open {
+  border-radius: var(--radius-floating);
+  box-shadow: var(--shadow-lg);
 }
 .skills-attachment-menu > button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   width: 100%;
-  padding: 12px;
-  border-radius: 8px;
+  min-height: 44px;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
   font-size: var(--font-ui);
   text-align: left;
 }
@@ -42,12 +47,12 @@
 .skills-chip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
   max-width: 100%;
-  padding: 3px 5px 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
   background: var(--surface-alt);
   font-size: var(--font-caption);
 }
@@ -114,14 +119,14 @@
 .skills-picker-list {
   display: grid;
   align-content: start;
-  gap: 0;
+  gap: var(--space-2);
   flex: 0 1 auto;
   min-height: 0;
   max-height: min(420px, 50dvh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  border-top: 1px solid var(--line);
-  padding: 0 4px 0 0;
+  border: 0;
+  padding: var(--space-2) var(--space-1) var(--space-2) 0;
 }
 :root .skills-picker-item {
   display: grid;
@@ -129,14 +134,15 @@
   align-items: center;
   column-gap: 12px;
   row-gap: 4px;
-  padding: 12px 8px;
+  padding: var(--space-3);
   border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
   min-width: 0;
 }
-.skills-picker-item.is-selected {
+:root .skills-picker-item.is-selected {
   background: var(--selection);
+  box-shadow: var(--shadow-sm);
 }
 .skills-picker-item .check-row {
   grid-column: 1;
@@ -144,7 +150,7 @@
   margin: 0;
   font-size: var(--font-ui);
   cursor: pointer;
-  min-height: 32px;
+  min-height: 44px;
 }
 .skills-picker-item .check-row input {
   width: 20px;
@@ -205,7 +211,7 @@
   margin: 0;
 }
 :root .skills-picker-actions .button {
-  min-height: 32px;
+  min-height: 44px;
   max-width: 100%;
   padding: 4px 8px;
   border: 0;
@@ -220,10 +226,12 @@
 }
 .skills-preview {
   grid-column: 1 / -1;
-  margin-top: 4px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
   overflow-wrap: anywhere;
   max-height: min(40dvh, 340px);
   overflow-y: auto;
@@ -239,19 +247,20 @@
   align-items: center;
   flex-shrink: 0;
   justify-content: space-between;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-  margin-top: 8px;
+  border: 0;
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
 }
 .skills-picker-footer .button {
-  min-height: 40px;
+  min-height: 44px;
 }
 .skills-files {
   min-width: 0;
   padding: 0;
-  margin: 14px 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  margin: var(--space-4) 0;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface-alt);
 }
 .skills-files > summary {
   display: flex;
@@ -259,7 +268,8 @@
   justify-content: space-between;
   gap: 12px;
   cursor: pointer;
-  padding: 12px 14px;
+  min-height: 44px;
+  padding: var(--space-4);
   font-size: var(--font-ui);
   font-weight: 600;
 }
@@ -276,26 +286,29 @@
 }
 .skills-files > fieldset {
   border: 0;
-  border-top: 1px solid var(--line);
   margin: 0;
-  padding: 10px 14px 14px;
+  padding: 0 var(--space-4) var(--space-4);
   min-width: 0;
 }
 .skills-file {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 12px;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  margin-bottom: var(--space-3);
 }
 .skills-details {
-  margin: 8px 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  margin: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
   color: var(--muted);
   font-size: var(--font-caption);
 }
 .skills-details > summary {
   cursor: pointer;
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: var(--space-3);
 }
 .skills-details-content {
   max-height: min(300px, 40dvh);
@@ -310,8 +323,8 @@
 }
 @media (pointer: coarse) {
   .skills-chip .icon-button {
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .skills-picker-item .check-row,
   .skills-picker-actions .button,

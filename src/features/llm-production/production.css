@@ -31,9 +31,13 @@
 .llm-production-view-toggle {
   display: flex;
   gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
 }
 .llm-production-view-toggle [aria-pressed='true'] {
-  background: var(--selection);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .llm-production-group-section {
   margin-bottom: var(--space-8);
@@ -61,15 +65,22 @@
   min-width: 0;
   padding: var(--space-4);
   text-align: left;
-  border: 1px solid var(--item-line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface);
   color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
 }
 .llm-production-group-card:hover,
 .llm-production-group-card[aria-pressed='true'] {
-  border-color: var(--item-color);
   background: var(--item-soft);
+  box-shadow: var(--shadow-md);
+}
+.llm-production-group-card[aria-pressed='true'] .llm-production-group-icon {
+  background: var(--item-fill);
 }
 .llm-production-group-icon {
   display: grid;
@@ -119,13 +130,15 @@
   padding: 0;
   overflow: hidden;
   text-align: left;
-  border: 1px solid var(--item-line);
+  border: 0;
   border-radius: var(--radius-panel);
   color: var(--ink);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 160ms ease;
 }
 .llm-production-conversation-card:hover {
-  border-color: var(--item-color);
+  box-shadow: var(--shadow-md);
 }
 .llm-production-conversation-cover {
   display: grid;
@@ -135,7 +148,7 @@
   flex-shrink: 0;
   background: var(--item-soft);
   color: var(--item-color);
-  border-bottom: 1px solid var(--item-line);
+  border: 0;
 }
 .llm-production-conversation-cover > svg {
   width: 48px;
@@ -187,7 +200,7 @@
   width: 64px;
   height: 80px;
   border-bottom: 0;
-  border-right: 1px solid var(--item-line);
+  border-right: 0;
 }
 .llm-production-conversation-grid.is-list .llm-production-conversation-cover > svg {
   width: 28px;
@@ -247,14 +260,17 @@
   min-width: 0;
   margin: 0;
   padding: 0 var(--space-3);
-  border: 1px solid var(--line);
+  min-height: 44px;
+  border: 0;
   border-radius: var(--radius-control);
   color: var(--muted);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .llm-production-search:focus-within {
-  border-color: var(--muted);
-  outline: 3px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-md);
 }
 :root .llm-production-search input {
   min-width: 0;
@@ -285,8 +301,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--line);
+  padding: var(--space-4);
+  margin-bottom: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface-alt);
   min-width: 0;
 }
 .llm-production-file-icon {
@@ -296,10 +315,10 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-control);
   color: var(--muted);
-  background: var(--surface-alt);
+  background: var(--surface);
 }
 .llm-production-file-info {
   flex: 1;
@@ -329,9 +348,10 @@
 .llm-production-delete-confirm {
   padding: var(--space-4);
   margin-bottom: var(--space-4);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-alt);
+  box-shadow: var(--shadow-sm);
   font-size: var(--font-ui);
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -354,7 +374,7 @@
 .llm-production-delivery,
 .llm-production-clarification {
   min-width: 0;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-alt);
   font-size: var(--font-ui);
@@ -372,7 +392,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--control-lg);
+  min-height: 44px;
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
   list-style: none;
@@ -421,8 +441,13 @@
 }
 .llm-production-delivery-item {
   margin: 0;
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--line);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.llm-production-delivery-item + .llm-production-delivery-item {
+  margin-top: var(--space-2);
 }
 .llm-production-delivery-item-heading {
   display: flex;
@@ -460,7 +485,7 @@
   gap: var(--space-2);
   min-width: 0;
   padding: var(--space-2) 0;
-  border-top: 1px solid var(--line);
+  border: 0;
 }
 .llm-production-composer-control > label {
   flex-direction: row;
@@ -472,7 +497,7 @@
 :root .llm-production-composer-control > select {
   width: auto;
   min-width: 0;
-  min-height: var(--control-lg);
+  min-height: 44px;
   padding: var(--space-1) var(--space-2);
   color: var(--ink);
   background: var(--surface-alt);
@@ -488,11 +513,13 @@
 .llm-production-delivery-summary:focus-visible,
 .llm-production-delivery-body:focus-visible,
 .llm-production-composer-control > select:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .llm-production-delivery-chevron {
+  .llm-production-delivery-chevron,
+  .llm-production-group-card,
+  .llm-production-conversation-card {
     transition: none;
   }
 }
@@ -502,14 +529,16 @@
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   color: var(--ink);
   background: var(--surface-alt);
+  box-shadow: var(--shadow-sm);
   text-decoration: none;
 }
 .llm-production-message-file:hover {
   background: var(--soft);
+  box-shadow: var(--shadow-md);
 }
 .llm-production-message-file-info {
   display: flex;
@@ -558,11 +587,12 @@
   margin-bottom: var(--space-2);
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-alt);
   color: var(--ink);
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
 }
 .llm-production-image-thumbnail > img {
   display: block;
@@ -590,16 +620,17 @@
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--ink);
   font-size: var(--font-caption);
   line-height: 1.6;
+  box-shadow: var(--shadow-sm);
 }
 .llm-production-image-thumbnail:focus-visible,
 .llm-production-preview-text:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 :root .modal.llm-production-preview {
@@ -644,7 +675,7 @@
   min-width: 0;
   min-height: 160px;
   padding: var(--space-4);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-alt);
 }
@@ -660,7 +691,7 @@
   padding: var(--space-4);
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-alt);
   overflow-wrap: anywhere;
@@ -691,7 +722,7 @@
   gap: var(--space-2);
   min-height: 200px;
   padding: var(--space-6);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-alt);
   color: var(--muted);
@@ -711,8 +742,9 @@
   height: 100dvh;
   max-height: 100dvh;
   margin: 0;
-  border-width: 0 0 0 1px;
-  border-radius: 0;
+  border: 0;
+  border-radius: var(--radius-floating) 0 0 var(--radius-floating);
+  box-shadow: var(--shadow-lg);
   padding: var(--space-6);
   overflow-y: auto;
 }
@@ -732,7 +764,7 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-6) 0;
-  border-bottom: 1px solid var(--line);
+  border: 0;
 }
 .llm-production-settings-section:first-child {
   padding-top: 0;
@@ -846,5 +878,6 @@
   }
   :root .modal.llm-production-drawer {
     padding: var(--space-4);
+    border-radius: 0;
   }
 }

@@ -1,23 +1,38 @@
-/* The last, shared visual layer. Feature CSS keeps layout and behavior; these tokens
-   give every view the same compact rhythm without tinting the neutral Shell. */
+/* Shared Modern Borderless surfaces. Feature CSS owns its structure and states;
+   background, breathing room and soft elevation replace decorative outlines. */
 :root .panel {
+  border: 0;
   border-radius: var(--radius-panel);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 }
 :root .button,
-:root input:not([type='checkbox']):not([type='radio']):not([type='range']),
+:root :where(input:not([type='checkbox']):not([type='radio']):not([type='range'])),
 :root select,
 :root textarea {
+  border: 0;
   border-radius: var(--radius-control);
+}
+:root :where(input:not([type='checkbox']):not([type='radio']):not([type='range'])),
+:root select,
+:root textarea {
+  min-height: var(--control-lg);
+  background: var(--surface-alt);
 }
 :root .button {
   min-height: max(var(--control-lg), 2.2em);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  box-shadow: var(--shadow-sm);
   transition:
-    background-color 100ms ease,
-    border-color 100ms ease,
-    opacity 150ms ease,
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out),
     transform 100ms ease;
+}
+:root .button:hover:not(:disabled) {
+  box-shadow: var(--shadow-md);
+}
+:root .button.soft {
+  box-shadow: none;
 }
 :root .button:active:not(:disabled),
 :root .icon-button:active:not(:disabled),
@@ -36,10 +51,12 @@
 :root .badge,
 :root .nav-plugin,
 :root .version-label {
+  border: 0;
   border-radius: var(--radius-hover);
 }
 :root .notice,
 :root .error-note {
+  border: 0;
   border-radius: var(--radius-control);
   padding: var(--space-3) var(--space-4);
   line-height: 1.55;
@@ -48,30 +65,33 @@
   padding: var(--space-12) var(--space-4);
 }
 
-/* Shell: the navigation is a quiet frame, not another floating card. */
+/* A neutral canvas, spacious navigation and a continuous content area. */
 :root .sidebar {
   padding: var(--space-4) var(--space-3) var(--space-3);
 }
 :root .sidebar > .brand {
-  padding: var(--space-1) var(--space-2) var(--space-6);
+  padding: var(--space-2) var(--space-2) var(--space-8);
 }
 :root .new-chat {
-  min-height: 36px;
+  min-height: var(--control-lg);
   padding: var(--space-2) var(--space-3);
+  border: 0;
   border-radius: var(--radius-control);
-  box-shadow: none;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
 }
 :root .sidebar-search {
-  min-height: 36px;
-  margin: var(--space-2) 0 var(--space-1);
-  padding: 0 var(--space-2);
+  min-height: var(--control-lg);
+  margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-3);
   gap: var(--space-2);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--radius-control);
-  background: var(--surface-alt);
+  background: transparent;
 }
 :root .sidebar-search:focus-within {
-  border-color: var(--line);
+  background: var(--surface);
 }
 :root .sidebar-search:has(input:focus-visible) {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
@@ -79,7 +99,7 @@
 :root .sidebar-search input {
   flex: 1;
   min-width: 0;
-  min-height: 34px;
+  min-height: var(--control-lg);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -103,27 +123,41 @@
 :root .nav-item,
 :root .conversation-open {
   min-height: var(--control-lg);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-hover);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
   line-height: 1.4;
   transition: background-color 100ms ease;
+}
+:root .nav-item.active {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 :root .conversation-link,
 :root .profile {
   border-radius: var(--radius-control);
 }
 :root .sidebar-footer {
+  border: 0;
   margin-top: var(--space-3);
   padding-top: var(--space-3);
 }
+:root .profile {
+  padding: var(--space-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
 :root .shell {
+  border: 0;
   border-radius: 0;
+  background: var(--canvas);
   box-shadow: none;
 }
 :root .topbar {
   height: var(--topbar-height);
-  padding: 0 var(--space-6);
+  padding: 0 var(--space-8);
+  border: 0;
   border-radius: 0;
+  background: var(--canvas);
   gap: var(--space-3);
 }
 :root .breadcrumb {
@@ -132,16 +166,17 @@
 :root .version-label {
   padding: var(--space-1) var(--space-2);
   letter-spacing: 0;
+  background: var(--soft);
 }
 
-/* Main views share a compact title-to-content rhythm. */
+/* Page hierarchy comes from typography and space. */
 :root .shell > .page,
 :root .settings-page {
-  padding: var(--space-8) var(--space-10) var(--space-12);
+  padding: var(--space-10) var(--space-12) var(--space-12);
 }
 :root .page-heading {
   gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-8);
 }
 :root .page-heading p {
   margin-top: var(--space-1);
@@ -159,31 +194,46 @@
   margin: var(--space-4) 0 var(--space-4);
 }
 :root .tabs {
-  gap: var(--space-6);
-  margin-bottom: var(--space-4);
+  gap: var(--space-1);
+  margin-bottom: var(--space-6);
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--soft);
+  width: fit-content;
+  max-width: 100%;
 }
 :root .tabs > button {
-  padding: var(--space-2) 0;
+  min-height: var(--control-lg);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-hover);
+}
+:root .tabs > button.active {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 :root .tabs > button.active:after {
-  height: 1px;
-  background: var(--ink);
+  display: none;
 }
 
-/* Chat and its editor keep reading room while actions become more precise. */
+/* The editor is the primary elevated surface on the chat canvas. */
 :root .chat-page.is-home {
   padding-top: var(--space-12);
 }
 :root .home-intro {
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-10);
 }
 :root .composer {
-  padding: var(--space-3) var(--space-4) var(--space-2);
+  padding: var(--space-4);
+  border: 0;
   border-radius: var(--radius-floating);
-  box-shadow: none;
+  box-shadow: var(--shadow-md);
 }
 :root .composer:focus-within {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: var(--shadow-md);
+}
+:root .composer-wrap {
+  background: var(--canvas);
 }
 :root .composer-format {
   gap: var(--space-1);
@@ -211,10 +261,13 @@
 :root .message.user .message-content {
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-panel);
+  border: 0;
+  background: var(--surface-alt);
 }
 :root .code-container,
 :root .markdown-table,
 :root .composer-code-node {
+  border: 0;
   border-radius: var(--radius-panel);
 }
 :root .code-toolbar {
@@ -224,7 +277,7 @@
   padding: var(--space-4);
 }
 
-/* Settings, account, model and plugin surfaces use rows rather than cards in cards. */
+/* One elevated surface per settings section keeps related controls together. */
 :root .settings-heading {
   margin-bottom: var(--space-6);
 }
@@ -238,18 +291,21 @@
 }
 :root .settings-navigation button {
   min-height: var(--control-lg);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-hover);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
   gap: var(--space-2);
 }
+:root .settings-navigation button.active {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
 :root .settings-content .preferences-section {
-  padding: 0 0 var(--space-8);
-  margin: 0 0 var(--space-8);
+  padding: var(--space-6);
+  margin: 0 0 var(--space-6);
   border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 :root .settings-content .preferences-section:last-child {
   border-bottom: 0;
@@ -266,24 +322,58 @@
 :root .theme-option,
 :root .font-option,
 :root .pattern-color {
+  border: 0;
   border-radius: var(--radius-control);
   padding: var(--space-3);
+  background: var(--surface-alt);
+}
+:root .theme-option.selected,
+:root .font-option.selected {
+  background: var(--selection);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 :root .font-preview {
+  border: 0;
+  background: var(--surface-alt);
   border-radius: var(--radius-panel);
   margin-top: var(--space-4);
 }
+:root .theme-swatch {
+  border: 0;
+  border-radius: var(--radius-hover);
+}
+:root .pattern-tabs {
+  gap: var(--space-2);
+  border: 0;
+}
+:root .pattern-tabs > button {
+  min-height: var(--control-lg);
+  border: 0;
+  border-radius: var(--radius-control);
+}
+:root .pattern-tabs > button[aria-selected='true'] {
+  background: var(--surface-alt);
+}
+:root .color-choice {
+  min-height: var(--control-lg);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+}
+:root .color-choice[aria-checked='true'] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
 :root .pattern-card {
-  border: 1px solid var(--item-line);
+  border: 0;
   border-radius: var(--radius-panel);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 }
 :root .pattern-preview-grid {
   gap: var(--space-3);
   margin: var(--space-4) 0;
 }
 :root .about-card {
-  padding: 0;
+  padding: var(--space-6);
   border: 0;
 }
 :root .feature-groups {
@@ -295,8 +385,12 @@
 :root .feature-groups .feature-row {
   display: flex;
   align-items: center;
-  padding: var(--space-3);
-  gap: var(--space-3);
+  padding: var(--space-4);
+  gap: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 :root .feature-groups .feature-row > .grow {
   min-width: 0;
@@ -319,7 +413,7 @@
   border-radius: var(--radius-panel);
 }
 :root .models-provider-list {
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
 :root .models-sort-table th,
 :root .models-sort-table td {
@@ -332,12 +426,12 @@
   border-radius: var(--radius-control);
 }
 
-/* Data stays dense; only floating surfaces cast shadows. */
+/* Data cards share the same low elevation; overlays sit above them. */
 :root .stats-grid {
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 :root .stat-card {
-  padding: var(--space-4);
+  padding: var(--space-6);
 }
 :root .usage-chart {
   padding: var(--space-4);
@@ -347,11 +441,16 @@
 :root .table-wrap td {
   padding: var(--space-2) var(--space-3);
   line-height: 20px;
+  border-bottom: 0;
+}
+:root .table-wrap tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-alt) 50%, transparent);
 }
 :root .table-wrap tbody tr:hover {
   background: var(--surface-alt);
 }
 :root .modal {
+  border: 0;
   padding: var(--space-6);
   border-radius: var(--radius-floating);
   box-shadow: var(--shadow-floating);
@@ -365,6 +464,7 @@
 :root .skills-attachment-menu,
 :root .ds-tooltip,
 :root .toast {
+  border: 0;
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-floating);
 }
@@ -373,9 +473,18 @@
 }
 :root .login-story {
   padding: var(--space-10) var(--space-12);
+  border: 0;
+  background: var(--sidebar);
 }
 :root .login-form {
   padding: var(--space-12) var(--space-10);
+  background: var(--canvas);
+}
+:root .login-box {
+  padding: var(--space-8);
+  border-radius: var(--radius-floating);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
 }
 :root .login-box input {
   padding: var(--space-3);
@@ -420,6 +529,7 @@
     position: static;
     gap: var(--space-2);
     padding-bottom: var(--space-3);
+    border: 0;
   }
   :root .settings-navigation button,
   :root .button,
@@ -450,7 +560,7 @@
     padding-top: var(--space-8);
   }
   :root .settings-content .preferences-section {
-    padding-bottom: var(--space-6);
+    padding: var(--space-4);
     margin-bottom: var(--space-6);
   }
   :root .feature-groups .feature-row {
@@ -464,5 +574,11 @@
   }
   :root .modal {
     padding: var(--space-4);
+  }
+  :root .login-form {
+    padding: var(--space-6) var(--space-4) var(--space-12);
+  }
+  :root .login-box {
+    padding: var(--space-6);
   }
 }

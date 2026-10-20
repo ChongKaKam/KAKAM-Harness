@@ -10,6 +10,8 @@ import {
   Pencil,
   PanelLeftClose,
   Check,
+  MessageSquare,
+  LayoutGrid,
 } from 'lucide-react';
 import { SettingsPage } from './settings';
 import { APP_VERSION } from '../shared/version';
@@ -22,6 +24,7 @@ import { clientFeatures } from './registry';
 import { Logo, Spinner, PageHeader, ErrorNote } from './components';
 import { UserAvatar } from './user-avatar';
 import { Login } from '../features/auth/client';
+import './mobile-navigation.css';
 import type {
   Conversation,
   ConversationGroup,
@@ -47,6 +50,9 @@ export default function App() {
   const [groups, setGroups] = useState<ConversationGroup[]>([]);
   const [route, setRoute] = useState(readRoute);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileLayout, setMobileLayout] = useState(
+    () => window.matchMedia('(max-width: 760px)').matches,
+  );
   const [search, setSearch] = useState('');
   const { chatDraft, setChatDraft, resetChatDrafts } = useChatDrafts(
     user?.id,
@@ -57,8 +63,16 @@ export default function App() {
   const [toastPaused, setToastPaused] = useState(false);
   const [loadError, setLoadError] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const sidebarOpenerRef = useRef<HTMLElement | null>(null);
   const activeUserId = useRef<string | undefined>(undefined);
   activeUserId.current = user?.id;
+  const openNavigation = useCallback(() => {
+    sidebarOpenerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setMobileOpen(true);
+  }, []);
   useEffect(() => {
     api<{ user: User }>('/auth/me')
       .then((d) => setUser(d.user))
@@ -69,6 +83,82 @@ export default function App() {
     return () => window.removeEventListener('kh:unauthorized', unauthorized);
   }, []);
   useEffect(() => activate(user?.id), [user?.id, activate]);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)');
+    const change = () => {
+      setMobileLayout(media.matches);
+      if (!media.matches) setMobileOpen(false);
+    };
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+  useEffect(() => {
+    if (!mobileLayout || !mobileOpen || !user) return;
+    const opener = sidebarOpenerRef.current;
+    const sidebar = sidebarRef.current;
+    sidebar?.querySelector<HTMLButtonElement>('button')?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || document.querySelector('dialog[open]')) return;
+      const controls = sidebar?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), a[href], [tabindex="0"]',
+      );
+      const visible = Array.from(controls ?? []).filter(
+        (control) => control.getClientRects().length > 0,
+      );
+      const first = visible[0];
+      const last = visible.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    window.addEventListener('keydown', trapFocus);
+    return () => {
+      window.removeEventListener('keydown', trapFocus);
+      if (opener instanceof HTMLElement && opener.isConnected && opener.getClientRects().length)
+        opener.focus({ preventScroll: true });
+    };
+  }, [mobileLayout, mobileOpen, user?.id]);
+  useEffect(() => {
+    const layout = layoutRef.current;
+    const viewport = window.visualViewport;
+    if (!mobileLayout || checking || !user || !layout || !viewport) return;
+    let frame = 0;
+    const update = () => {
+      const editing = document.activeElement?.matches(
+        'input:not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"]',
+      );
+      const keyboardOpen = editing && viewport.scale === 1 && innerHeight - viewport.height > 120;
+      layout.dataset.mobileKeyboard = keyboardOpen ? 'open' : 'closed';
+      if (viewport.scale === 1)
+        layout.style.setProperty(
+          '--mobile-viewport-height',
+          `${Math.round(viewport.height + viewport.offsetTop)}px`,
+        );
+      else layout.style.removeProperty('--mobile-viewport-height');
+    };
+    const scheduleUpdate = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    };
+    update();
+    viewport.addEventListener('resize', scheduleUpdate);
+    viewport.addEventListener('scroll', scheduleUpdate);
+    document.addEventListener('focusin', scheduleUpdate);
+    document.addEventListener('focusout', scheduleUpdate);
+    return () => {
+      cancelAnimationFrame(frame);
+      viewport.removeEventListener('resize', scheduleUpdate);
+      viewport.removeEventListener('scroll', scheduleUpdate);
+      document.removeEventListener('focusin', scheduleUpdate);
+      document.removeEventListener('focusout', scheduleUpdate);
+      delete layout.dataset.mobileKeyboard;
+      layout.style.removeProperty('--mobile-viewport-height');
+    };
+  }, [mobileLayout, checking, user?.id]);
   const refresh = useCallback(async () => {
     if (!user) return;
     const [m, f, c, g] = await Promise.all([
@@ -130,17 +220,18 @@ export default function App() {
     const shortcut = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setMobileOpen(true);
+        openNavigation();
         setTimeout(() => searchRef.current?.focus(), 0);
       }
-      if (e.key === 'Escape') setMobileOpen(false);
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open]'))
+        setMobileOpen(false);
     };
     window.addEventListener('keydown', shortcut);
     return () => {
       window.removeEventListener('hashchange', change);
       window.removeEventListener('keydown', shortcut);
     };
-  }, []);
+  }, [openNavigation]);
   useEffect(() => {
     if (!toast || toastPaused) return;
     const timer = setTimeout(() => setToast(''), 4000);
@@ -214,7 +305,7 @@ export default function App() {
         setDraftSkills,
       }}
     >
-      <div className="app-layout">
+      <div className="app-layout" ref={layoutRef}>
         {mobileOpen && (
           <button
             className="sidebar-shade"
@@ -222,7 +313,13 @@ export default function App() {
             onClick={() => setMobileOpen(false)}
           />
         )}
-        <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="主导航">
+        <aside
+          id="workspace-sidebar"
+          ref={sidebarRef}
+          className={`sidebar ${mobileOpen ? 'open' : ''}`}
+          aria-label="主导航"
+          inert={mobileLayout && !mobileOpen}
+        >
           <div className="brand">
             <Logo />
             <div>
@@ -329,12 +426,14 @@ export default function App() {
             </div>
           </div>
         </aside>
-        <main className="shell">
+        <main className="shell" inert={mobileLayout && mobileOpen}>
           <header className="topbar">
             <button
               className="icon-button mobile-only"
               aria-label="打开导航"
-              onClick={() => setMobileOpen(true)}
+              aria-controls="workspace-sidebar"
+              aria-expanded={mobileOpen}
+              onClick={openNavigation}
             >
               <Menu size={20} />
             </button>
@@ -395,6 +494,38 @@ export default function App() {
             !loadError && <Spinner />
           )}
         </main>
+        <nav className="mobile-navigation" aria-label="快捷导航" inert={mobileOpen}>
+          {available.some((feature) => feature.manifest.id === 'chat') && (
+            <button
+              className={`mobile-navigation-item ${route.page === 'chat' ? 'active' : ''}`}
+              aria-current={route.page === 'chat' && !mobileOpen ? 'page' : undefined}
+              onClick={() => navigate('chat', route.page === 'chat' ? route.id : undefined)}
+            >
+              <MessageSquare size={20} aria-hidden="true" />
+              <span>对话</span>
+            </button>
+          )}
+          <button
+            className={`mobile-navigation-item ${mobileOpen || (route.page !== 'chat' && route.page !== 'settings') ? 'active' : ''}`}
+            aria-current={
+              route.page !== 'chat' && route.page !== 'settings' && !mobileOpen ? 'page' : undefined
+            }
+            aria-controls="workspace-sidebar"
+            aria-expanded={mobileOpen}
+            onClick={openNavigation}
+          >
+            <LayoutGrid size={20} aria-hidden="true" />
+            <span>工作区</span>
+          </button>
+          <button
+            className={`mobile-navigation-item ${route.page === 'settings' ? 'active' : ''}`}
+            aria-current={route.page === 'settings' && !mobileOpen ? 'page' : undefined}
+            onClick={() => navigate('settings')}
+          >
+            <Settings size={20} aria-hidden="true" />
+            <span>设置</span>
+          </button>
+        </nav>
         {toast && (
           <div
             role="status"

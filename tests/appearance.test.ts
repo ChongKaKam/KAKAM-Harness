@@ -23,7 +23,7 @@ test('neutral shell and every pattern component retain readable text in both mod
     const shell = shellTokens(mode);
     for (const [token, color] of Object.entries(shell))
       assert.ok(/^#([0-9a-f]{2})\1\1$/i.test(color), `${mode}/${token} must be pure grayscale`);
-    for (const background of ['--surface', '--sidebar', '--surface-alt'] as const)
+    for (const background of ['--canvas', '--surface', '--sidebar', '--surface-alt'] as const)
       for (const text of ['--ink', '--muted', '--faint'] as const)
         assert.ok(contrast(shell[text], shell[background]) >= 4.5, `${mode}/${text}/${background}`);
     assert.ok(contrast(shell['--primary'], shell['--on-primary']) >= 4.5);

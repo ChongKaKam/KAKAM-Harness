@@ -1,0 +1,118 @@
+.mobile-navigation {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .app-layout {
+    --mobile-dock-space: calc(100px + env(safe-area-inset-bottom, 0px));
+  }
+
+  :root .app-layout > .shell {
+    min-height: var(--mobile-viewport-height, 100dvh);
+    padding-bottom: var(--mobile-dock-space);
+  }
+
+  :root .app-layout .chat-page:not(.is-home) {
+    height: calc(
+      var(--mobile-viewport-height, 100dvh) - var(--topbar-height) - var(--mobile-dock-space)
+    );
+  }
+
+  :root .app-layout .chat-page.is-home {
+    min-height: calc(
+      var(--mobile-viewport-height, 100dvh) - var(--topbar-height) - var(--mobile-dock-space)
+    );
+  }
+
+  :root .app-layout .chat-page.is-home .chat-column {
+    min-height: calc(
+      var(--mobile-viewport-height, 100dvh) - var(--topbar-height) - var(--mobile-dock-space) -
+        var(--space-8) * 2
+    );
+  }
+
+  :root .app-layout .chat-page:not(.is-home) .composer-wrap {
+    padding-bottom: 0;
+  }
+
+  :root .app-layout > .mobile-navigation {
+    position: fixed;
+    z-index: 25;
+    left: max(var(--space-4), env(safe-area-inset-left, 0px));
+    right: max(var(--space-4), env(safe-area-inset-right, 0px));
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: var(--space-1);
+    max-width: 420px;
+    margin-inline: auto;
+    padding: var(--space-2);
+    border: 0;
+    border-radius: var(--radius-hub);
+    background: var(--surface);
+    box-shadow: var(--shadow-xl);
+  }
+
+  :root .mobile-navigation > .mobile-navigation-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    min-width: 0;
+    min-height: 60px;
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+    border-radius: 20px;
+    background: transparent;
+    color: var(--muted);
+    font-size: var(--font-caption);
+    line-height: 1.2;
+    font-weight: 500;
+    transition:
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  :root .mobile-navigation > .mobile-navigation-item.active {
+    background: var(--selection);
+    color: var(--accent);
+  }
+
+  :root .mobile-navigation > .mobile-navigation-item:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    outline-offset: 2px;
+  }
+
+  :root .mobile-navigation > .mobile-navigation-item:active {
+    transform: scale(0.97);
+  }
+
+  :root .app-layout > .toast {
+    bottom: calc(var(--mobile-dock-space) + var(--space-3));
+  }
+
+  .app-layout[data-mobile-keyboard='open'] {
+    --mobile-dock-space: 0px;
+  }
+
+  :root .app-layout[data-mobile-keyboard='open'] > .mobile-navigation {
+    display: none;
+  }
+
+  :root .app-layout[data-mobile-keyboard='open'] .chat-page:not(.is-home) .composer-wrap {
+    padding-bottom: var(--space-2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .mobile-navigation > .mobile-navigation-item {
+    transition: none;
+  }
+
+  :root .mobile-navigation > .mobile-navigation-item:active {
+    transform: none;
+  }
+}

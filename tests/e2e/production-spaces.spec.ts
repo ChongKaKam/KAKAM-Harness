@@ -124,9 +124,7 @@ test('conversation artifact cards use pattern icons, filter sources and retain s
       expect(
         await groupButton.evaluate((element) => element.style.getPropertyValue('--item-color')),
       ).toBe(expected.tokens['--item-color']);
-      expect(await cards.first().evaluate((element) => getComputedStyle(element).boxShadow)).toBe(
-        'none',
-      );
+      await expect(cards.first()).not.toHaveCSS('box-shadow', 'none');
       await page.screenshot({
         path: info.outputPath(`production-spaces-${theme}.png`),
         fullPage: true,

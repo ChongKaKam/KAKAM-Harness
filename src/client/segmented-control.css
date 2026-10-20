@@ -3,24 +3,28 @@
   isolation: isolate;
   display: inline-grid;
   grid-template-columns: repeat(var(--ds-segment-count), minmax(0, 1fr));
-  padding: 3px;
-  gap: 2px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  padding: var(--space-1);
+  gap: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
   background: var(--surface-alt);
 }
 .ds-segmented-control-indicator {
   position: absolute;
   z-index: 0;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc((100% - 6px - (var(--ds-segment-count) - 1) * 2px) / var(--ds-segment-count));
-  border: 1px solid var(--line);
-  border-radius: 5px;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  left: var(--space-1);
+  width: calc(
+    (100% - var(--space-2) - (var(--ds-segment-count) - 1) * var(--space-1)) /
+      var(--ds-segment-count)
+  );
+  border: 0;
+  border-radius: var(--radius-hover);
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
   pointer-events: none;
-  transform: translateX(calc(var(--ds-segment-index) * (100% + 2px)));
+  transform: translateX(calc(var(--ds-segment-index) * (100% + var(--space-1))));
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .ds-segmented-control-option {
@@ -40,10 +44,13 @@
   cursor: pointer;
 }
 .ds-segmented-control-label {
-  display: block;
-  padding: 7px 10px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-hover);
   text-align: center;
   font-size: var(--font-caption);
   color: var(--muted);
@@ -53,6 +60,7 @@
 }
 .ds-segmented-control-input:checked + .ds-segmented-control-label {
   color: var(--ink);
+  font-weight: 600;
 }
 .ds-segmented-control-input:focus-visible + .ds-segmented-control-label {
   outline: 2px solid var(--ink);
@@ -72,13 +80,5 @@
   .ds-segmented-control-indicator,
   .ds-segmented-control-label {
     transition: none;
-  }
-}
-@media (max-width: 600px) {
-  .ds-segmented-control-label {
-    min-height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 }

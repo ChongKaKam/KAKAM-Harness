@@ -46,18 +46,18 @@
 - 保留提交幂等、重连 snapshot 替换、账号切换隔离和关机前保存状态。当前任务不能跨服务重启续跑，不得声称具备持久任务队列。
 - 来源表单只探测模型列表，不发聊天或隐式保存配置；连通性测试绑定已保存的具体模型，记录首段文本与总耗时、真实用量，失败也保留已上报用量。诊断结果的 HTTP 200 不等于 ok=true。
 - `none` 思考程度表示省略上游字段，不保证关闭模型内部推理。
-- UI 设置位于左下角用户入口的设置页；统计独立分组；管理员功能位于设置页。普通 feature 不应硬编码 Shell 导航。
+- UI 设置位于桌面左下角用户入口与手机底部「设置」入口；统计独立分组；管理员功能位于设置页。手机「工作区」打开现有侧栏，普通 feature 不应硬编码 Shell 导航。
 
 ## UI 约定
 
-- Web Shell 使用纯黑白灰；品牌 Logo 保留固定灯塔插画配色，网页 Logo 与 favicon 跟随实际明暗主题，安装图标默认白天版，素材与契约见 [UI 指南](docs/UI_GUIDE.md#品牌-logo标签页与安装图标)。其他装饰色来自 Color Pattern 的组件背景、边框、图标与图表。成功 / 失败状态采用独立的绿色 / 红色语义配色，兼容明暗主题并保留文字标签。不要把整个 Shell 染成主题色。
-- Quiet Precision 的公共间距、圆角、控件尺寸和表面层级以 `styles.css` token 与最后导入的 `quiet-precision.css` 为准；静态区域不用阴影，阴影只给浮层。局部状态仍放所属 feature CSS，新增固定间距遵循 4px 网格。
+- Web Shell 使用纯黑白灰；品牌 Logo 保留固定灯塔插画配色，网页 Logo 与 favicon 跟随实际明暗主题，安装图标默认白天版，素材与契约见 [UI 指南](docs/UI_GUIDE.md#品牌-logo标签页与安装图标)。其他装饰色来自 Color Pattern 的组件背景、图标与图表。成功 / 失败状态采用独立的绿色 / 红色语义配色，兼容明暗主题并保留文字标签。不要把整个 Shell 染成主题色。
+- Modern Borderless 的公共间距、圆角、控件尺寸和表面层级以 `styles.css` token 与最后导入的 `modern-borderless.css` 为准。卡片、控件和弹层去掉装饰描边，通过画布 / 表面背景、留白与低透明度阴影区分层次；静态卡片可用 `--shadow-sm`，聊天输入用 `--shadow-md`，浮层与手机导航使用更高层级。保留清晰焦点、选中反馈和 Markdown 结构线。局部状态仍放所属 feature CSS，新增固定间距遵循 4px 网格。
 - 复用 `PageHeader`、`Empty`、`Spinner`、`ErrorNote`、`Modal`、`UserAvatar`、`AssistantAvatar`、`Markdown` 与现有按钮 / 表单类。
 - 字号使用 `--font-chat/input/ui/code/caption/title` 等语义变量。保持四档字号、辅助说明至少 12px；不使用整页 `zoom` 或 `transform: scale`，不随字号放大侧栏宽度。
 - 对话分组使用 Color Pattern；普通对话条目、消息气泡和助手头像保持灰度。分组删除解除归属并清理对应 Memory，保留对话与消息。
 - 用 `usePatternColors()` 与稳定 key 分配颜色，手动颜色存 `colorSlot`。不要在 render 中随机配色或自己拼一套色板。
 - 新 CSS 优先放 feature / 组件旁，使用命名空间类和公共 token。不要追加全局 `button`、`p`、`span` 或 `.hljs-*` 覆盖去修局部显示。
-- 保留明暗模式、键盘焦点、中文输入法、手机触控与大字号布局。弹窗复用原生 dialog；轻量浮层可参照 `ModelPicker` 的 Popover，处理 Escape、关闭与焦点恢复。
+- 保留明暗模式、键盘焦点、中文输入法、手机触控与大字号布局。手机底部导航包含对话 / 工作区 / 设置，内容预留导航与安全区空间；输入聚焦且软键盘缩小可视视口时隐藏导航。弹窗复用原生 dialog；轻量浮层可参照 `ModelPicker` 的 Popover，处理 Escape、关闭与焦点恢复。
 - 聊天内容复用安全的 Markdown 渲染管线；不直接执行用户 / 模型 HTML。语法高亮独立于 Shell 和 Color Pattern，明暗主题都要检查。
 
 ## 验证与交付

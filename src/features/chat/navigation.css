@@ -42,13 +42,13 @@
   margin-left: -20px;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--line);
+  border: 0;
   background: var(--surface);
   color: var(--accent);
   border-radius: 50%;
   display: grid;
   place-items: center;
-  box-shadow: 0 3px 14px #00000018;
+  box-shadow: var(--shadow-md);
   z-index: 12;
 }
 .latest-message:hover {
@@ -112,11 +112,11 @@
   max-height: 180px;
   overflow: auto;
   padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-alt);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 5px 20px #00000020;
+  box-shadow: var(--shadow-lg);
   font-size: var(--font-caption);
   overflow-wrap: anywhere;
   pointer-events: none;
