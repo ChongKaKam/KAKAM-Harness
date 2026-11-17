@@ -126,6 +126,55 @@
   padding-top: var(--space-2);
   border-top: 1px solid color-mix(in srgb, var(--item-color) 18%, var(--line));
 }
+.relay-attachments {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.relay-attachment {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-radius: var(--radius-control);
+}
+.relay-editor .relay-attachment {
+  background: var(--surface-alt);
+}
+.relay-attachment-info {
+  flex: 1 1 128px;
+  min-width: 0;
+}
+.relay-attachment-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--ink);
+  font-size: var(--font-ui);
+  overflow-wrap: anywhere;
+}
+.relay-attachment-name svg {
+  flex: none;
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  color: var(--muted);
+}
+.relay-attachment-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+.relay-attachment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-inline-start: auto;
+}
 :root .relay-editor {
   width: 720px;
 }
@@ -162,6 +211,30 @@
 .relay-editor-hint {
   margin-top: var(--space-2);
 }
+.relay-editor-attachments {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.relay-attachment-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.relay-attachment-picker .relay-editor-hint,
+.relay-upload-progress .relay-editor-hint {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.relay-upload-progress {
+  display: grid;
+  gap: var(--space-1);
+}
+.relay-upload-progress progress {
+  width: 100%;
+  accent-color: var(--primary);
+}
 .relay-confirm-copy {
   font-size: var(--font-ui);
   line-height: 1.7;
@@ -181,10 +254,12 @@
   }
   :root .relay-page .button,
   :root .relay-page .icon-button,
-  :root .relay-editor .button {
+  :root .relay-editor .button,
+  :root .relay-editor .relay-attachment .icon-button {
     min-height: 44px;
   }
-  :root .relay-card .icon-button {
+  :root .relay-card .icon-button,
+  :root .relay-editor .relay-attachment .icon-button {
     min-width: 44px;
   }
 }

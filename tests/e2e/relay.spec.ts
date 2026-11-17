@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { useFixtureSession } from '../e2e-session';
 
 test('relay creates rendered Markdown cards, switches source, copies, edits, confirms persistence and deletes', async ({
@@ -71,6 +72,44 @@ test('relay creates rendered Markdown cards, switches source, copies, edits, con
     .click();
   await expect(card).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('relay uploads and downloads an attachment without text and confirms its own persistence', async ({
+  page,
+}, info) => {
+  await useFixtureSession(page);
+  const title = `仅附件 ${info.project.name}`;
+  const filename = '文档.zip';
+  const buffer = Buffer.from([0, 255, 32, 13, 10]);
+  await page.goto('/#/relay');
+  await page.getByRole('button', { name: '新建卡片', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '新建卡片' });
+  await editor.getByRole('textbox', { name: '标题', exact: true }).fill(title);
+  await editor
+    .getByLabel('选择附件')
+    .setInputFiles({ name: filename, mimeType: 'application/zip', buffer });
+  await editor.getByRole('button', { name: '保存卡片' }).click();
+  const card = page.getByRole('article', { name: title, exact: true });
+  const downloadLink = card.getByRole('link', { name: `下载 ${filename}` });
+  const [download] = await Promise.all([page.waitForEvent('download'), downloadLink.click()]);
+  expect(download.suggestedFilename()).toBe(filename);
+  expect(await readFile((await download.path())!)).toEqual(buffer);
+  const persist = card.getByRole('button', { name: `持久化附件 ${filename}` });
+  await persist.click();
+  await page
+    .getByRole('dialog', { name: '持久化附件' })
+    .getByRole('button', { name: '确认持久化' })
+    .click();
+  await expect(persist).toHaveCount(0);
+  await page.reload();
+  await expect(downloadLink).toBeVisible();
+  await expect(persist).toHaveCount(0);
+  await card.getByRole('button', { name: `删除附件 ${filename}` }).click();
+  await page
+    .getByRole('dialog', { name: '删除附件' })
+    .getByRole('button', { name: '确认删除' })
+    .click();
+  await expect(downloadLink).toHaveCount(0);
 });
 
 test('relay fits light and dark themes, large type and phone with focus restoration', async ({

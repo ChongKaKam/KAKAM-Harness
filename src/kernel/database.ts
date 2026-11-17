@@ -375,6 +375,20 @@ export class Database extends Service {
       CREATE INDEX IF NOT EXISTS idx_relay_cards_owner ON relay_cards(user_id,created_at);
       CREATE INDEX IF NOT EXISTS idx_relay_cards_expiry ON relay_cards(expires_at)
         WHERE expires_at IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS relay_attachments (
+        id TEXT PRIMARY KEY,
+        card_id TEXT NOT NULL REFERENCES relay_cards(id) ON DELETE CASCADE,
+        filename TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL CHECK(size_bytes BETWEEN 0 AND 314572800),
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        persisted_at TEXT,
+        CHECK((persisted_at IS NULL AND expires_at IS NOT NULL) OR
+              (persisted_at IS NOT NULL AND expires_at IS NULL))
+      );
+      CREATE INDEX IF NOT EXISTS idx_relay_attachments_card ON relay_attachments(card_id,created_at);
+      CREATE INDEX IF NOT EXISTS idx_relay_attachments_expiry ON relay_attachments(expires_at)
+        WHERE expires_at IS NOT NULL;
     `);
     ctx.on('dispose', () => this.connection.close());
   }

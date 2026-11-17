@@ -273,7 +273,7 @@ ctx.effect(() => {
 
 ## 信息中转站
 
-`relay` 是可停用的工作区插件，入口为 `#/relay`，代码位于 [`src/features/relay/`](../src/features/relay/)。仅依赖 db / http，不调用模型；卡片按当前认证账户私有保存，管理员也不能读取其他账户的内容。SQLite `relay_cards` 表与索引由平台数据库追加创建。
+`relay` 是可停用的工作区插件，入口为 `#/relay`，代码位于 [`src/features/relay/`](../src/features/relay/)。仅依赖 db / http，不调用模型。卡片与附件按认证账户隔离，管理员也不能读取其他账户的内容。`relay_cards` 与 `relay_attachments` 由 SQLite 追加迁移创建，附件字节存放在 `DATA_DIR/relay-attachments`，文件名使用服务器生成的 ID。
 
 | API                           | 行为                                                                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -282,11 +282,27 @@ ctx.effect(() => {
 | `GET /api/relay/:id`          | 读取本人有效卡片                                                                                                                |
 | `PATCH /api/relay/:id`        | 修改 title / content / colorSlot；至少提供一项，colorSlot 为 null 或 0–63 的整数；不接受所有者、到期或持久化字段                |
 | `POST /api/relay/:id/persist` | 必须显式传 `{ "confirmed": true }`；记录服务器确认时间并取消到期，重复确认保留首次时间                                          |
-| `DELETE /api/relay/:id`       | 删除本人有效卡片                                                                                                                |
+| `DELETE /api/relay/:id`       | 删除本人卡片及所有附件，包含已持久化的附件                                                                                      |
 
-DTO 为 `id / title / content / colorSlot / createdAt / updatedAt / expiresAt / persistedAt`，时间均为服务器 UTC ISO 字符串。创建时固定 `expiresAt = createdAt + 72 小时`，编辑与换色不会续期。持久化后 `expiresAt=null`，正文修改仍长期保留；只能手动删除，不提供重新临时化入口。到期使用 `expiresAt <= now` 边界，读取、修改、删除和持久化均返回 404，不能复活到期卡片。
+附件 API 使用以下路径。表中的 `cardId` 和 `attachmentId` 来自服务器。
 
-插件激活时清理一次，此后每分钟删除到期记录；列表读取也清理。所有按 ID 的接口独立校验到期，清理任务尚未执行也不可访问。停用撤销路由与定时器；停用 / 服务关闭期间不执行后台清理，重新激活先清理过期数据，有效与持久化卡片保留。当前只支持用户从其他平台手动复制粘贴及登录后跨设备访问，没有第三方推送、匿名投递、文件上传或外部平台连接。
+| API                                                          | 行为                                                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `POST /api/relay/:cardId/attachments`                        | 在正文仍有效的卡片上开始上传，JSON 传 `filename` 和 `sizeBytes`，返回 `{ id, cardId }` |
+| `POST /api/relay/attachments`                                | 开始上传新建纯附件卡片的第一个文件，另可传 `title`，上传完成时才创建卡片               |
+| `PUT /api/relay/:cardId/attachments/:attachmentId/upload`    | 按 `?offset=` 顺序提交二进制分段，返回 `{ received }`，完成时另返回 `attachment`       |
+| `DELETE /api/relay/:cardId/attachments/:attachmentId/upload` | 取消未完成上传                                                                         |
+| `GET /api/relay/:cardId/attachments/:attachmentId/download`  | 验证账户和有效期后，以附件下载原始文件                                                 |
+| `POST /api/relay/:cardId/attachments/:attachmentId/persist`  | 显式传 `{ "confirmed": true }` 持久化该附件，重复确认保留首次时间                      |
+| `DELETE /api/relay/:cardId/attachments/:attachmentId`        | 删除该附件                                                                             |
+
+单个文件上限为 300 MB（314572800 字节）。文件在最后一段完成后出现在所有者的卡片中。最近成功的分段可按相同偏移重试，未完成的上传空闲一小时后清理，服务重启或插件重新启用后需重新开始上传。
+
+分段请求使用 `application/octet-stream`，每段最多 8 MiB，以适应代理的请求体限制。详见 [Cloudflare 413 说明](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/4xx-client-error/error-413/)。
+
+卡片 DTO 含 `contentExpired` 和 `attachments`。附件 DTO 为 `id / filename / sizeBytes / createdAt / expiresAt / persistedAt`，时间为服务器 UTC ISO 字符串。正文自卡片创建、附件自上传完成起固定保留 72 小时。编辑与换色不会续期，确认持久化只取消对应正文或附件的到期时间。到期条件是 `expiresAt <= now`。正文到期后删除标题和正文，仍有有效附件时返回 `contentExpired: true` 的附件卡片，允许下载、持久化或删除现有附件；最后一个有效附件消失后卡片一并移除。
+
+插件激活及每分钟清理到期数据和遗留文件，列表读取也清理到期记录。按 ID 的接口独立校验有效期。停用撤销路由与定时器，重新激活后先清理到期数据，有效和已持久化内容继续保留。
 
 卡片渲染、复制与交互见 [UI 指南](UI_GUIDE.md#信息中转站)。
 

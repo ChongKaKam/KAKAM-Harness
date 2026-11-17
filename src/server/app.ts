@@ -33,7 +33,7 @@ export async function createApp(config: Config) {
     await kernel.register(chat.manifest, chat.createChatFeature(config.maxConcurrentChats));
     await kernel.register(usage.manifest, usage.server);
     await kernel.register(prompts.manifest, prompts.server);
-    await kernel.register(relay.manifest, relay.server);
+    await kernel.register(relay.manifest, relay.createRelayFeature(config.dataDir));
     await kernel.register(preferences.manifest, preferences.server);
     await kernel.register(contextManager.manifest, contextManager.server);
     await kernel.register(
@@ -75,7 +75,13 @@ export async function createApp(config: Config) {
       const allowed = config.publicOrigin ?? `${req.protocol}://${req.get('host')}`;
       if (req.get('origin') && req.get('origin') !== allowed)
         return next(new HttpError(403, '请求来源不被允许'));
-      if (!req.is('application/json')) return next(new HttpError(415, '请求必须为 JSON'));
+      if (relay.isAttachmentChunkRequest(req.method, req.path)) {
+        const contentType = req.get('content-type')?.toLowerCase();
+        if (contentType !== 'application/octet-stream')
+          return next(new HttpError(415, '上传分段必须为二进制数据'));
+      } else if (!req.is('application/json')) {
+        return next(new HttpError(415, '请求必须为 JSON'));
+      }
     }
     next();
   });
