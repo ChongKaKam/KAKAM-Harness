@@ -306,6 +306,25 @@ ctx.effect(() => {
 
 卡片渲染、复制与交互见 [UI 指南](UI_GUIDE.md#信息中转站)。
 
+## OpenAI API 转发
+
+`openai-gateway` 是管理员自用的可选插件，依赖 `db / http / models / kernel`。网页管理使用管理员登录 Cookie，SDK 请求使用 `Authorization: Bearer <转发密钥>`。两种凭据各自用于对应的接口。[用户接入与 Codex 示例](../README.md#在开发机上通过本站调用-openai)
+
+| 方法和路径                                  | 行为                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `GET /api/admin/openai-gateway`             | 列出可签发的官方来源和本人密钥的名称、前缀、来源及创建时间                   |
+| `POST /api/admin/openai-gateway/keys`       | 传 `{name, providerId}`，成功以 HTTP 201 返回 `{key}`，完整密钥只返回这一次  |
+| `DELETE /api/admin/openai-gateway/keys/:id` | 按当前管理员与密钥 ID 撤销，后续请求立即失效                                 |
+| `GET /api/openai/v1/models`                 | 按绑定来源和当前授权列出已启用的 LLM，`data[].id` 是客户端应使用的上游模型名 |
+| `POST /api/openai/v1/responses`             | 接收原生 Responses 请求，支持 JSON、SSE 和显式重放工具调用及结果             |
+| `POST /api/openai/v1/chat/completions`      | 接收原生 Chat Completions 请求，支持 JSON 和 SSE，流式请求向上游索取实际用量 |
+
+每把密钥绑定签发人和一个已保存 OpenAI Key 的官方来源。每次请求重新验证签发人处于启用状态且仍为管理员，核对来源仍使用官方 API 地址及支持的协议。生成时逐次校验模型授权和工具、图片能力。上游主机固定为 `api.openai.com`，模型名只在绑定的来源中解析。
+
+网关强制 `store: false`，历史由客户端维护。Responses 续接时显式发送前轮的消息、工具调用和工具结果；带 ID 的推理项需要随附加密内容。存储响应引用（如 `previous_response_id`）、后台任务、项目文件 ID、远端容器和文件检索工具不在支持范围内。文件读取等本地工具由调用客户端执行。网关只记录请求用量、状态及归属，不创建站内对话或保存提示词、回答正文。
+
+并发按签发管理员合计，网关与网页聊天分别计数，均读取 `MAX_CONCURRENT_CHATS`（默认 5）。达到上限返回 429。单次转发最长 10 分钟，客户端断开、停用插件或服务关闭会取消进行中的上游请求。每次出站调用各记一条 `[OpenAI Gateway] 模型名` 用量，按上游最新累计值记录，缺失字段保留 NULL。
+
 ## 添加模型 Adapter
 
 实际契约在 [`src/adapters/registry.ts`](../src/adapters/registry.ts)：

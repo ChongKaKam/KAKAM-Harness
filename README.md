@@ -27,6 +27,7 @@
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 账户                | 邮箱 + 显示名称 + 密码注册（首位为管理员），邮箱登录、旧账户绑定邮箱、资料与密码修改、管理用户和角色                                                                                          |
 | 模型来源            | 仅管理员可见；设置 Base URL / API Key；编辑 / 删除来源；主动探测与定时检查模型列表接口；Chat Completions / Responses / Anthropic Messages / Jev 协议；可选平台链接                            |
+| OpenAI API 转发     | 管理员为开发机签发专用密钥，通过本站 HTTPS 地址使用 OpenAI SDK 或 Codex CLI，逐台撤销访问                                                                                                     |
 | 白名单 / 模型注册表 | SQLite `models` 表 + `ModelsService`；手动添加或从探测结果加入；逐模型 LLM / Jev / Embedding / Image 类型、启停、能力、维度与授权；拖动排序与 LLM 默认模型；连通性测试与实际维度诊断          |
 | 聊天                | 私有会话、历史持久化、搜索标题、重命名、删除、SSE 流式回复、默认每用户 5 个并行聊天、离开后后台生成与重连同步、停止生成、会话独立草稿、编辑最后一问及换模型再次生成；按用户和模型记忆思考等级 |
 | 多模态              | 文字 + 图片；PNG/JPEG/WebP，每条最多 4 张、每张 5 MB；需选择支持图片的模型                                                                                                                    |
@@ -65,6 +66,35 @@
 5. 回到「对话」，选择模型并开始聊天。
 
 本地模型在宿主机运行时，容器中使用 `http://host.docker.internal:端口/v1`。容器内的 `localhost` 指向容器自身。
+
+## 在开发机上通过本站调用 OpenAI
+
+1. 管理员在「设置 → 管理员 → 模型与接入」保存官方来源，Base URL 填 `https://api.openai.com/v1`，选择 Responses 或 Chat Completions，填入 OpenAI API Key。将需要的 LLM 加入白名单并启用。Codex 读文件、运行命令需要模型勾选「支持工具调用」，发送图片还需要勾选「支持图片输入」。
+2. 在「设置 → 管理员 → OpenAI API 转发」复制本站 Base URL，选择该来源，用设备名签发转发密钥。完整的 `dsk_` 密钥仅在签发时显示一次。每台开发机使用自己的密钥，在同一页面撤销后，该设备的后续请求会被拒绝。
+3. 开发机使用本站的 **HTTPS** Base URL 和刚签发的转发密钥。OpenAI SDK 可以直接设置 `base_url` 和 `api_key`。服务器需要能访问官方 API，费用计入所选来源的 OpenAI 项目。
+
+### 临时启动一个 Codex CLI 会话
+
+在已有项目目录运行下面的 zsh 示例。将示例域名换成页面上复制的 Base URL，将 `已启用的模型ID` 换成来源中的精确模型名。提示输入时粘贴开发机的转发密钥。所有 provider 参数仅作用于这次命令，桌面 App 和已有 CLI 的默认配置都可继续使用。[Codex 配置参考](https://developers.openai.com/codex/config-reference)
+
+```zsh
+(
+  read -rs 'DRIFT_CODEX_KEY?粘贴开发机转发密钥并回车：'
+  printf '\n'
+  export DRIFT_CODEX_KEY
+  codex --no-daemon -s read-only -m '已启用的模型ID' \
+    -c 'model_provider="drift"' \
+    -c 'model_providers.drift.name="Drift Space"' \
+    -c 'model_providers.drift.base_url="https://drift.example.com/api/openai/v1"' \
+    -c 'model_providers.drift.env_key="DRIFT_CODEX_KEY"' \
+    -c 'model_providers.drift.wire_api="responses"' \
+    -c 'model_providers.drift.supports_websockets=false'
+)
+```
+
+验证时，在包含 README.md 的项目里先问「请实际读取 README.md，列出前两个标题」。在同一会话追问「再读一次文件，引用第二个标题下面的第一句」。检查工具输出和两次回答是否与开发机上的文件一致。这两步会向 OpenAI 发起模型请求。Codex 在开发机上按本地权限读取文件，并通过网关把相关内容与工具结果送给模型；网站的「统计」中可按 `[OpenAI Gateway]` 识别用量。
+
+此入口支持模型列表、Responses 和 Chat Completions 的 JSON / SSE。客户端需携带历史和工具结果来续问。接口范围、模型权限和并发设置见[网关契约](docs/FEATURES.md#openai-api-转发)。
 
 ## 聊天并发与再次生成
 

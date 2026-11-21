@@ -30,9 +30,9 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 
 ## 装配和运行路径
 
-服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → extensions → llm-production → search → chat → usage → prompts → relay → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
+服务端入口 [`server/main.ts`](../src/server/main.ts) 读取配置并调用 `createApp(config)`。后者创建 Kernel，按 auth → users → models → openai-gateway → extensions → llm-production → search → chat → usage → prompts → relay → preferences → context-manager → memory 注册，再启动 Context。Kernel 先安装 Database、HttpService、AdapterRegistry 和 OpenAI 兼容、Anthropic Messages、Jev Adapter。新增 feature 需要显式导入和 `kernel.register()`，没有目录自动发现。
 
-每个请求先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
+浏览器 API 先经过全局 HTTP / Origin / JSON 校验，再从 Cookie 解析 `req.user`，最后进入活动 Router。开发机转发入口在自己的 Router 中独立验证 Bearer 密钥。Kernel 负责装配与启停，并不是每个业务 HTTP 请求都调用一次的分发器。`HttpService.register()` 返回移除 Router 的函数；它是路由卸载能立即生效的关键。
 
 客户端入口 [`client/main.tsx`](../src/client/main.tsx) 创建 UiProvider 和 App。App 解析 hash 路由、加载当前用户、获取服务器 feature 状态；编译期 `clientFeatures` 与运行时目录取交集，决定可见组件。UI 隐藏不代表后端已经鉴权，后端仍独立执行权限与归属校验。
 
@@ -41,6 +41,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `auth`            | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像                       | 登录页 / 设置中的账户设置            |
 | `users`           | core   | 管理用户、角色、停用、重置与会话撤销                                   | 管理员设置                           |
 | `models`          | core   | ModelsService、来源、白名单、模型授权、连通性测试                      | 管理员设置；聊天可见已授权模型       |
+| `openai-gateway`  | plugin | 开发机转发密钥与 OpenAI HTTP / SSE 网关                                | 管理员设置                           |
 | `extensions`      | core   | 托管能力注册、Auto 决策、辅助模型用量                                  | 管理员设置；聊天能力开关             |
 | `search`          | plugin | Perplexity 搜索、查询生成与来源记录                                    | 拓展能力的子设置页                   |
 | `llm-production`  | core   | ProductionService、文件 / 图片生成、私有空间、下载与清理               | 聊天右上角 / 工作区 / 设置           |
@@ -56,7 +57,7 @@ Models 的管理页受管理员限制，但已授权模型列表 API 向普通�
 
 ## 关键边界
 
-- `Context` 是共享能力，不放 `currentUser`。每个 HTTP 请求通过 HttpOnly Cookie 解析出自己的 `Request.user`；跨 feature 服务显式接收 `User` 参数。
+- `Context` 是共享能力，不放 `currentUser`。网页 API 请求通过 HttpOnly Cookie 解析出自己的 `Request.user`；跨 feature 服务显式接收 `User` 参数。
 - `models` 是白名单。探测到的供应商模型不会自动启用；管理员明确创建白名单条目。来源 `providers` 与模型 `models` 分表，授权 `model_grants` 以 `(model_id,user_id)` 为复合主键。
 - `ModelsService.authorize(user, modelId)` 在每次模型调用前检查白名单、enabled 和授权。管理员也不能调用停用的模型。撤销权限对下一次请求生效，已在执行的请求可完成或由用户停止。
 - 所有会话操作同时检查 `conversation.id + user.id`。管理员可管理用户及全局统计，但会话 API 不提供读取其他用户对话的旁路。
@@ -80,6 +81,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - 新用户提供 email / displayName / password；邮箱去掉首尾空白并转小写，以大小写无关唯一索引保证不重复，显示名称不作为身份标识。`users.email` 追加迁移允许旧账户暂为 NULL；旧 username 仅用于凭原密码绑定邮箱，不伪造地址或修改原用户 ID。更改邮箱需要当前密码并撤销其他会话，管理员变更邮箱会撤销该用户会话。
 - Session 使用随机 256-bit token，数据库只保存 SHA-256 摘要；HttpOnly + SameSite=Strict Cookie，7 天过期。停用 / 改角色 / 管理员重置密码会撤销对应账户 session。
 - API Key 使用 AES-256-GCM 加密，密钥从 `APP_SECRET` 派生。查询响应仅返回 `hasKey`，错误不反射上游凭据。管理员主动连通性测试可接收经脱敏且限长的输入 / 输出 / 错误诊断，只存在本次响应，不写数据库；普通模型调用不启用捕获。诊断契约见 [功能指南](FEATURES.md#来源探测与模型连通性测试)。
+- 开发机转发密钥由 32 字节随机数生成，SQLite 仅保存摘要、显示前缀与管理员 / 来源绑定。网关验证开发机身份后读取该来源的加密 OpenAI Key，向固定官方地址发出请求；角色、来源、模型授权与能力均按当前配置检查。客户端持有会话历史和工具执行权限。接口及生命周期见 [OpenAI API 转发](FEATURES.md#openai-api-转发)。
 - 修改 API 要求 JSON 与匹配 Origin（浏览器请求）。登录限速、CSP、HTML 非执行渲染、Mermaid strict 模式作为补充。
 - `providers.api_mode` 追加迁移默认 `chat-completions`。`ModelsService.adapter(apiMode)` 将 Chat Completions / Responses 路由到 OpenAI 兼容 Adapter，将 `anthropic-messages` 路由到独立 Anthropic Adapter；探测、测试和聊天必须统一使用此映射。思考字段只在非 none 时发送。`ui_preferences` 以 user_id 隔离主题和头像。
 - 来源地址只允许管理员配置 HTTP(S)，默认不跟随重定向。支持内网模型是预期能力，因此没有阻止管理员选择私网地址。插件与管理员都属于可信边界，不能用它作为不可信租户任意网络访问的平台。

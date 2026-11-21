@@ -10,6 +10,7 @@ import {
   Brain,
   FolderOpen,
   Inbox,
+  KeyRound,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ExtensionsPage } from '../features/extensions/client';
@@ -25,6 +26,8 @@ import { manifest as production } from '../features/llm-production/manifest';
 import { UsagePage } from '../features/usage/client';
 import { UsersPage } from '../features/users/client';
 import { ModelsPage } from '../features/models/client';
+import { GatewaySettingsPage } from '../features/openai-gateway/client';
+import { manifest as openaiGateway } from '../features/openai-gateway/manifest';
 import { PromptsPage } from '../features/prompts/client';
 import { PromptsSettings } from '../features/prompts/settings';
 import { RelayPage } from '../features/relay/client';
@@ -110,6 +113,12 @@ export const clientFeatures: ClientFeature[] = [
   { placement: 'workspace', manifest: relay, icon: Inbox, component: RelayPage },
   { placement: 'statistics', manifest: usage, icon: ChartNoAxesCombined, component: UsagePage },
   { placement: 'settings', manifest: models, icon: Layers, component: ModelsPage },
+  {
+    placement: 'settings',
+    manifest: openaiGateway,
+    icon: KeyRound,
+    component: GatewaySettingsPage,
+  },
   { placement: 'settings', manifest: users, icon: Users, component: UsersPage },
   {
     placement: 'settings',

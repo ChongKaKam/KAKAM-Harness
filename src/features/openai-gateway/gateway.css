@@ -1,0 +1,47 @@
+.openai-gateway-panel {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding: var(--space-6);
+  min-width: 0;
+}
+
+.openai-gateway-panel > .button,
+.openai-gateway-form > .button {
+  justify-self: start;
+}
+
+.openai-gateway-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.openai-gateway-panel label {
+  margin: 0;
+  min-width: 0;
+}
+
+.openai-gateway-keys {
+  list-style: none;
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+}
+
+.openai-gateway-keys li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.openai-gateway-secret {
+  margin: var(--space-4) 0;
+}
+
+.openai-gateway-secret textarea {
+  font-family: monospace;
+  font-size: var(--font-code);
+}

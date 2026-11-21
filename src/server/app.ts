@@ -18,6 +18,7 @@ import * as chat from '../features/chat/server';
 import * as usage from '../features/usage/server';
 import * as prompts from '../features/prompts/server';
 import * as relay from '../features/relay/server';
+import * as openaiGateway from '../features/openai-gateway/server';
 import * as preferences from '../features/preferences/server';
 import * as contextManager from '../features/context-manager/server';
 import { createMemoryFeature, manifest as memory } from '../features/memory/server';
@@ -27,6 +28,10 @@ export async function createApp(config: Config) {
     await kernel.register(auth, authFeature(config));
     await kernel.register(users.manifest, users.server);
     await kernel.register(models, modelsFeature(config.secret));
+    await kernel.register(
+      openaiGateway.manifest,
+      openaiGateway.createGatewayFeature(config.maxConcurrentChats),
+    );
     await kernel.register(extensions.manifest, extensions.server);
     await kernel.register(production.manifest, production.server);
     await kernel.register(search.manifest, search.server);

@@ -390,6 +390,16 @@ export class Database extends Service {
       CREATE INDEX IF NOT EXISTS idx_relay_attachments_expiry ON relay_attachments(expires_at)
         WHERE expires_at IS NOT NULL;
     `);
+    this.connection.exec(`CREATE TABLE IF NOT EXISTS openai_gateway_keys (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      prefix TEXT NOT NULL,
+      key_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_openai_gateway_keys_user ON openai_gateway_keys(user_id, created_at)`);
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {
