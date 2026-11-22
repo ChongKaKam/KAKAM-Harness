@@ -321,6 +321,8 @@ ctx.effect(() => {
 | `POST /api/openai/v1/responses`             | 接收原生 Responses 请求，支持 JSON、SSE 和显式重放工具调用及结果                |
 | `POST /api/openai/v1/chat/completions`      | 接收原生 Chat Completions 请求，支持 JSON 和 SSE，流式请求向上游索取实际用量    |
 
+公开静态文件 `/export-cc-switch.sh` 在设备上读取已有的 `codex-drift` 连接，只在本机生成含设备凭据的 CC Switch 导入文件。
+
 每次请求重新校验设备密钥、签发人当前管理员身份和启用状态。模型 ID、工具能力、图像输入和模型额度由上游项目校验。本站聊天、模型管理的来源、授权与窗口设置仅用于站内功能。
 
 升级会保留旧设备的标识、密钥摘要和签发记录。原绑定同一个有效官方来源的管理员可直接沿用该来源的密文；有多个旧来源时，每把可用旧设备密钥先沿用其原来源的独立凭据。管理员保存新的 OpenAI Key 后，本人的设备统一使用新凭据。

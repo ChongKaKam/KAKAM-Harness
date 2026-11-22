@@ -295,6 +295,19 @@ function GatewaySettingsContent() {
             ) : (
               <p className="small muted">保存 OpenAI 密钥后即可签发设备密钥。</p>
             )}
+            <details>
+              <summary>将已有的 codex-drift 配置导入 CC Switch</summary>
+              <p className="small muted">
+                在已配置的开发机上运行以下命令，再在装有 CC Switch 的电脑上打开生成的 HTML。
+                文件包含这台设备的密钥。
+              </p>
+              <code className="openai-gateway-command">
+                curl -fsSL https://drift.kakamlab.com/export-cc-switch.sh | bash
+              </code>
+              <a href="/export-cc-switch.sh" download>
+                下载配置导出脚本
+              </a>
+            </details>
           </section>
           <section className="panel openai-gateway-panel">
             <h2>已签发的密钥</h2>

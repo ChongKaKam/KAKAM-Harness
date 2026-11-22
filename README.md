@@ -89,6 +89,14 @@ bash install-codex-drift.sh
 
 启动器使用独立的 Codex 配置。可传入 `-m 模型ID` 选择 OpenAI 项目可访问的 Codex 兼容模型，或附加 `-s read-only` 试读项目。在含有 README.md 的项目里，可先让 Codex 实际读取该文件、列出前两个标题，再在同一会话追问第二个标题下的第一句话。[Codex 配置参考](https://developers.openai.com/codex/config-reference)
 
+如已在这台机器使用 Drift 正式站的 `codex-drift`，可用同一账号导出 CC Switch 配置（需要 Python 3）：
+
+```sh
+curl -fsSL https://drift.kakamlab.com/export-cc-switch.sh | bash
+```
+
+脚本从本机连接文件读取设备密钥和地址，优先使用最近的 Drift 会话模型。在安装了 CC Switch 的电脑上打开输出的 HTML，点击「导入到 CC Switch」。生成的文件含本机设备密钥，按密钥保管。
+
 管理员从「统计 → 用量统计 → OpenAI 转发看板」查看本人签发密钥的调用，也可从转发设置页打开。看板提供最近 7、30 或 90 天的缓存命中率、成功率、平均返回时间、Token 消耗和每日趋势。[指标定义与接口范围](docs/FEATURES.md#转发看板指标)
 
 ## 聊天并发与再次生成
