@@ -1,10 +1,12 @@
 # 记忆策略 / Agent 开发指南
 
+本指南适用于 PostgreSQL Memory 插件。新聊天的私有会话文档、项目发布和个人偏好由 [Harness](HARNESS.md) 负责，初始化和回答均无需运行检索或抽取模型。
+
 本文描述当前构建期扩展契约。三层记忆的用户设置、数据库、HTTP 输入和错误详见 [Memory API](MEMORY_API.md)，部署配置见 [README](../README.md#记忆模块与-postgresql)。策略是可信的应用代码，尚无在线安装、执行沙箱、第三方代码上传或外部 Agent 专用 Token 鉴权。
 
 ## Manager 与策略的职责
 
-`memory` 是可停用插件。Chat 只调用 `extensions` 核心的 [MemoryProvider](../src/features/extensions/memory-provider.ts)，插件注册 Manager 实现；Chat 不导入 Manager、PostgreSQL Repository 或策略模块。回答前 `prepare` 生成记忆块，回答成功并持久化后 `complete` 抽取新记忆，编辑 / 重试调用 `invalidate`，删除范围调用 `removeScope`。可选 `applied` 标记实际请求已使用该次准备结果。
+`memory` 是可停用插件，通过 `extensions` 注册 [MemoryProvider](../src/features/extensions/memory-provider.ts)。该契约提供准备记忆块、完成后抽取、来源失效与范围清理等钩子，管理端还可执行显式操作。新 Harness 保留原用户内容和相关接口，生成路径独立于旧 provider。
 
 Manager 控制当前用户、对话 / 分组归属、模型授权、输入长度、数据库查询范围、有效状态、内容版本、候选审批、长期纳入、写入模式、最终条数 / 字节预算、超时、删除和操作幂等。策略负责根据已限定的候选选择 ID、提供理由，以及提出带证据的记忆草稿。策略不能通过输出 owner、scopeId、active、admittedAt、批准标志或任意正文绕过 Manager。
 

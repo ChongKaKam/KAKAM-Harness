@@ -21,6 +21,8 @@ export interface ContextRequest {
   compression?: ContextCompression;
   memory?: MemoryPreparation;
   memoryRanges?: MemoryContextRange[];
+  /** Start of the original current input after trusted per-request prefixes. */
+  currentOffset?: number;
   callId: string;
   messages: ProviderMessage[];
   tools: ToolDefinition[];
@@ -29,6 +31,7 @@ export interface ContextRequest {
     text: string;
     calls: { id: string; name: string; arguments: unknown }[];
     results: { id: string; output: string }[];
+    steering?: string[];
   }[];
 }
 

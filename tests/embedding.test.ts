@@ -62,22 +62,20 @@ after(async () => {
   });
 });
 
-test('compatible Embedding handles both source modes, reordered indexes and partial usage', async () => {
-  for (const apiMode of ['chat-completions', 'responses'] as const) {
-    const result = await new OpenAICompatibleAdapter().embed(
-      { baseUrl: providerUrl, apiKey: 'fixture', apiMode },
-      'embedding',
-      ['a', 'b'],
-      AbortSignal.timeout(2000),
-      2,
-    );
-    assert.deepEqual(result.vectors, [
-      [1, 2],
-      [1, 2],
-    ]);
-    assert.equal(result.dimensions, 2);
-    assert.deepEqual(result.usage, { input: 7, output: null, total: 7 });
-  }
+test('compatible Embedding handles reordered indexes and partial usage on a Responses source', async () => {
+  const result = await new OpenAICompatibleAdapter().embed(
+    { baseUrl: providerUrl, apiKey: 'fixture', apiMode: 'responses' },
+    'embedding',
+    ['a', 'b'],
+    AbortSignal.timeout(2000),
+    2,
+  );
+  assert.deepEqual(result.vectors, [
+    [1, 2],
+    [1, 2],
+  ]);
+  assert.equal(result.dimensions, 2);
+  assert.deepEqual(result.usage, { input: 7, output: null, total: 7 });
 });
 
 test('malformed vectors and upstream HTTP errors retain reported usage', async () => {
@@ -161,7 +159,7 @@ async function fixture() {
     'Fixture',
     providerUrl,
     kernel.ctx.models.encrypt('fixture'),
-    'chat-completions',
+    'responses',
   );
   const app = express();
   app.use(express.json());

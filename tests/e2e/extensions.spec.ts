@@ -3,6 +3,90 @@ import { useFixtureSession } from '../e2e-session';
 import { chooseModel } from './controls';
 import { fontSizes } from '../../src/shared/typography';
 
+test('Auto failure is visible while the answer completes and survives reload', async ({
+  page,
+}, info) => {
+  await useFixtureSession(page);
+  const provider = await (
+    await page.request.post('/api/admin/providers', {
+      data: {
+        name: `Auto fallback ${info.project.name}`,
+        apiMode: 'anthropic-messages',
+        baseUrl: 'http://127.0.0.1:3211/v1',
+        apiKey: 'fixture',
+      },
+    })
+  ).json();
+  const model = await (
+    await page.request.post('/api/admin/models', {
+      data: {
+        providerId: provider.id,
+        name: 'test-text',
+        label: `Claude fallback ${info.project.name}`,
+      },
+    })
+  ).json();
+  let conversationId: string | undefined;
+  try {
+    await page.request.patch('/api/features/search', { data: { enabled: true } });
+    await page.request.patch('/api/admin/search', {
+      data: { baseUrl: 'http://127.0.0.1:3211', apiKey: 'fixture', maxQueries: 3, maxResults: 5 },
+    });
+    await page.request.patch('/api/admin/extensions/search', {
+      data: { enabled: true, strategy: 'llm', llmModelId: model.id, decisionModelId: null },
+    });
+    await page.goto('/#/chat');
+    await chooseModel(page, { id: model.id });
+    const conversation = await (await page.request.post('/api/conversations', { data: {} })).json();
+    conversationId = conversation.id;
+    const accepted = await page.request.post(`/api/conversations/${conversation.id}/messages`, {
+      data: { modelId: model.id, content: '[bad-json] 请继续回答', extensions: { search: 'auto' } },
+    });
+    expect(accepted.status()).toBe(202);
+    await page.request.get(`/api/conversations/${conversation.id}/events`);
+    const saved = await (await page.request.get(`/api/conversations/${conversation.id}`)).json();
+    const answer = saved.messages.at(-1);
+    expect(answer.status).toBe('complete');
+    expect(answer.extensions[0].fallback).toBe('skip');
+    await page.goto(`/#/chat/${conversation.id}`);
+    const message = page.locator(`[data-message-id="${answer.id}"]`);
+    const summary = message.locator('.extensions-result summary');
+    for (const theme of ['light', 'dark']) {
+      await page.request.patch('/api/preferences', { data: { theme, assistantIcon: null } });
+      await page.reload();
+      await expect(summary).not.toBeVisible();
+      await message.locator('.harness-progress > summary').click();
+      await expect(summary).toBeVisible();
+      await expect(summary).toContainText('未生效，已跳过并继续聊天');
+      await expect(message.locator('.extensions-result')).not.toHaveAttribute('open', '');
+      await expect(message.locator('.markdown')).toContainText('你好');
+      await summary.click();
+      await expect(message.locator('.extensions-result-body')).toContainText(
+        '本轮未使用该能力的结果',
+      );
+      await expect(message.locator('.extensions-result-body')).toContainText('结构');
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await message.locator('.extensions-result').scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: info.outputPath(`auto-fallback-${theme}.png`),
+        fullPage: true,
+      });
+    }
+  } finally {
+    await page.request.patch('/api/admin/extensions/search', {
+      data: { enabled: true, strategy: 'llm', llmModelId: null, decisionModelId: null },
+    });
+    await page.request.patch('/api/admin/search', { data: { apiKey: '' } });
+    await page.request.patch('/api/preferences', {
+      data: { theme: 'system', assistantIcon: null },
+    });
+    if (conversationId) await page.request.delete(`/api/conversations/${conversationId}`);
+    await page.request.delete(`/api/admin/providers/${provider.id}`);
+  }
+});
+
 test('capability settings, Search toggle, sources, Jev selection and responsive themes', async ({
   page,
 }, info) => {
@@ -90,7 +174,10 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     await expect(trigger).toBeFocused();
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('搜索最新信息并提供来源');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    const result = page.locator('.extensions-result');
+    const message = page.locator('.message.assistant').last();
+    const progress = message.locator('.harness-progress > summary');
+    const result = message.locator('.extensions-result');
+    await progress.click();
     await expect(result.locator('summary')).toContainText('完成');
     conversations.push(page.url().split('/chat/')[1]);
     await result.locator('summary').click();
@@ -103,6 +190,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     );
     await expect(result).toContainText('<script>not executed</script>');
     await page.reload();
+    await progress.click();
     await expect(result.locator('summary')).toContainText('2 个来源');
     await trigger.click();
     await expect(popup.getByRole('radio', { name: 'Auto · 自动判断' })).toBeChecked();
@@ -110,6 +198,7 @@ test('capability settings, Search toggle, sources, Jev selection and responsive 
     for (const theme of ['light', 'dark']) {
       await page.request.patch('/api/preferences', { data: { theme, assistantIcon: null } });
       await page.reload();
+      await progress.click();
       await result.locator('summary').click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       for (const size of fontSizes) {

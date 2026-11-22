@@ -39,7 +39,7 @@ test('Jev diagnosis exposes English native input and HTTP 401 output without exp
   assert.ok(!JSON.stringify(result).includes('test-jev-key'));
 });
 
-for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages', 'jev'] as const) {
+for (const apiMode of ['responses', 'anthropic-messages', 'jev'] as const) {
   test(`${apiMode} diagnostic captures actual request and output while preserving provider usage`, async () => {
     const adapter =
       apiMode === 'jev'

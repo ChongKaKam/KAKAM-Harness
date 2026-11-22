@@ -1,0 +1,202 @@
+.harness-progress,
+.harness-archive,
+.harness-entry,
+.harness-file-preview {
+  background: var(--surface-alt);
+  border-radius: var(--radius-control);
+  padding: 12px 16px;
+}
+.harness-progress {
+  margin-bottom: 8px;
+  font-size: var(--font-ui);
+}
+.harness-progress > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.harness-progress > summary::-webkit-details-marker {
+  display: none;
+}
+.harness-progress > summary svg,
+.harness-progress > summary small {
+  flex-shrink: 0;
+}
+.harness-progress > summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harness-progress-chevron {
+  margin-inline-start: auto;
+}
+.harness-progress[open] .harness-progress-chevron {
+  transform: rotate(180deg);
+}
+.harness-progress small,
+.harness-entry small,
+.harness-file small,
+.harness-steer-note {
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+.harness-progress > summary small {
+  margin-inline-start: 8px;
+}
+.harness-progress-body {
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+.harness-progress-body ol,
+.harness-progress-body ul {
+  padding-inline-start: 24px;
+}
+.harness-steer-note {
+  display: block;
+  margin-inline: 12px;
+}
+.harness-archive,
+.harness-actions,
+.harness-row,
+.harness-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.harness-archive,
+.harness-row {
+  justify-content: space-between;
+}
+.harness-workspace-trigger {
+  margin-inline-start: auto;
+}
+.modal.harness-workspace {
+  width: min(880px, calc(100vw - 32px));
+  max-height: min(88dvh, 840px);
+  overflow: auto;
+}
+.harness-tabs {
+  margin-block: 8px 16px;
+}
+.harness-tabs button[aria-pressed='true'],
+.harness-file[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--surface);
+}
+.harness-tabs .icon-button {
+  margin-inline-start: auto;
+}
+.harness-document-layout {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
+  align-items: start;
+}
+.harness-document-index,
+.harness-form,
+.harness-editor {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.harness-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.harness-form input,
+.harness-form select,
+.harness-form textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.harness-file {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-align: start;
+  width: 100%;
+  padding: 8px;
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+}
+.harness-file span,
+.harness-file-preview,
+.harness-entry,
+.harness-form h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.harness-file small {
+  display: block;
+  color: inherit;
+}
+.harness-file-preview {
+  max-height: 40dvh;
+  overflow: auto;
+}
+.harness-entry p,
+.harness-form p,
+.harness-form h3 {
+  margin: 0;
+}
+.harness-entry p {
+  white-space: pre-wrap;
+}
+.harness-form > button {
+  justify-self: start;
+}
+.harness-entry {
+  display: grid;
+  gap: 8px;
+}
+@media (max-width: 700px) {
+  .harness-document-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .harness-document-index {
+    max-height: 24dvh;
+    overflow: auto;
+  }
+  .harness-workspace button,
+  .harness-workspace select,
+  .harness-workspace-trigger {
+    min-height: 44px;
+  }
+}
+.harness-share-references > summary {
+  cursor: pointer;
+}
+.harness-form .harness-reference-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.harness-reference-choice input {
+  width: auto;
+}
+.harness-file-excerpt {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.harness-question {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+  overflow-wrap: anywhere;
+}
+.harness-question p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.harness-question small {
+  color: var(--muted);
+  font-size: var(--font-caption);
+}

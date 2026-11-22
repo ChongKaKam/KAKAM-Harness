@@ -12,6 +12,8 @@ export interface ProviderConnection {
   baseUrl: string;
   apiKey: string;
   apiMode?: ApiMode;
+  contextWindowTokens?: number | null;
+  maxOutputTokens?: number | null;
   diagnostics?: ProviderDiagnostics;
 }
 export interface ProviderMessage {
@@ -43,6 +45,8 @@ export interface ToolTurn {
 export interface ToolStep {
   turn: ToolTurn;
   results: { id: string; output: string }[];
+  /** User input accepted after this completed step and before the next model call. */
+  steering?: string[];
 }
 export interface ToolTurnOptions {
   requireTool?: boolean;

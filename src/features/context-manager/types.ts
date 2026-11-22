@@ -50,7 +50,7 @@ export interface ContextPreferences {
   handoffModelId: string | null;
   compressionEnabled: boolean;
   compressionModelId: string | null;
-  compressionThreshold: number;
+  compressionThreshold: number | null;
   compressionKeepTurns: number;
   compressionMaxCharacters: number;
   trajectoryEnabled: boolean;

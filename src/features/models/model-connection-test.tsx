@@ -10,6 +10,7 @@ export function ModelConnectionProbe({
   modelName,
   apiMode,
   kind = 'llm',
+  toolCalling,
   busy,
   onTesting,
   onResult,
@@ -18,29 +19,32 @@ export function ModelConnectionProbe({
   modelName: string;
   apiMode: ApiMode;
   kind?: Model['kind'];
+  toolCalling?: boolean;
   busy: boolean;
   onTesting: (value: boolean) => void;
   onResult?: (result: ModelConnectionTest) => void;
 }) {
   const [effort, setEffort] = useState<ReasoningEffort>('none');
-  const [testing, setTesting] = useState(false);
+  const [activeMode, setActiveMode] = useState<'text' | 'tools'>();
+  const testing = Boolean(activeMode);
   const [result, setResult] = useState<ModelConnectionTest>();
   const [error, setError] = useState('');
-  async function test() {
-    setTesting(true);
+  async function test(mode: 'text' | 'tools') {
+    setActiveMode(mode);
     onTesting(true);
     setError('');
     setResult(undefined);
     try {
       const tested = await post<ModelConnectionTest>(`/admin/models/${modelId}/test`, {
         reasoningEffort: effort,
+        mode,
       });
       setResult(tested);
       onResult?.(tested);
     } catch (error) {
       setError((error as Error).message);
     } finally {
-      setTesting(false);
+      setActiveMode(undefined);
       onTesting(false);
     }
   }
@@ -57,6 +61,12 @@ export function ModelConnectionProbe({
       {apiMode === 'jev' && (
         <p className="small muted">
           使用英文 state 和 Choice 问题调用 /systemone。HTTP 401 表示鉴权失败，与中文支持无关。
+        </p>
+      )}
+      {kind === 'llm' && toolCalling && (
+        <p className="small muted">
+          工具测试沿用 Auto
+          工具选择，最多发起两次模型请求，验证工具调用和工具结果回传。每轮单独计量。
         </p>
       )}
       <div className="models-probe-controls">
@@ -81,10 +91,25 @@ export function ModelConnectionProbe({
             </select>
           </label>
         )}
-        <button type="button" className="button" onClick={test} disabled={testing || busy}>
+        <button
+          type="button"
+          className="button"
+          onClick={() => void test('text')}
+          disabled={testing || busy}
+        >
           <Radio size={15} />
-          {testing ? '正在测试…' : '测试连通性'}
+          {activeMode === 'text' ? '正在测试…' : '测试连通性'}
         </button>
+        {kind === 'llm' && toolCalling && (
+          <button
+            type="button"
+            className="button"
+            onClick={() => void test('tools')}
+            disabled={testing || busy}
+          >
+            {activeMode === 'tools' ? '正在测试工具…' : '测试工具调用'}
+          </button>
+        )}
       </div>
       {testing && (
         <p role="status" className="small muted">
@@ -94,8 +119,28 @@ export function ModelConnectionProbe({
       {result && (
         <div className="models-probe-result" role="status">
           <strong>
-            {result.ok ? '连接成功' : '连接测试未通过'} · {apiModeLabels[result.apiMode]}
+            {result.toolRounds
+              ? result.ok
+                ? '工具测试通过'
+                : '工具测试未通过'
+              : result.ok
+                ? '连接成功'
+                : '连接测试未通过'}{' '}
+            · {apiModeLabels[result.apiMode]}
           </strong>
+          {result.toolRounds && (
+            <ol className="small">
+              {['请求只读工具', '引用工具结果'].map((label, index) => {
+                const round = result.toolRounds?.[index];
+                return (
+                  <li key={label}>
+                    {label} · {round ? (round.ok ? '通过' : '未通过') : '未发起'}
+                    {round && ` · Token ${round.usage?.total ?? '未上报'}`}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
           <dl className="models-probe-metrics">
             {kind === 'embedding' ? (
               <>
@@ -168,7 +213,9 @@ export function ModelConnectionProbe({
           <ErrorNote text={result.error} />
           {result.diagnostics && (
             <details className="models-probe-log" open={!result.ok}>
-              <summary>诊断日志 · 输入 / 输出 / 错误</summary>
+              <summary>
+                诊断日志 · {result.toolRounds ? '最近一轮请求' : '输入 / 输出 / 错误'}
+              </summary>
               <p className="small muted">
                 密钥已脱敏；日志仅用于本次测试，不会存入数据库。
                 {result.diagnostics.truncated && '内容过长，已截断。'}

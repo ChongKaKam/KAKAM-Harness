@@ -67,6 +67,8 @@ test('Skill attachments remain available to text models, stream reference reads 
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   const assistant = page.locator('.message.assistant').last();
   await expect(assistant).toContainText('已按 Skill 完成');
+  await expect(assistant.locator('.skills-details summary')).not.toBeVisible();
+  await assistant.locator('.harness-progress > summary').click();
   await assistant.locator('.skills-details summary').click();
   await expect(assistant.locator('.skills-details')).toContainText('references/style.md');
   await expect(assistant).toContainText('130 tokens');

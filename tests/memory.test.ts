@@ -18,7 +18,7 @@ import type {
   MemoryRememberPreview,
   MemorySourceExcerpt,
 } from '../src/shared/memory';
-import type { Message } from '../src/shared/types';
+import type { Message, User } from '../src/shared/types';
 import type { ContextSnapshot } from '../src/features/context-manager/types';
 
 const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
@@ -28,6 +28,7 @@ let app: Awaited<ReturnType<typeof createApp>>;
 let fixture: Awaited<ReturnType<typeof memoryProviderFixture>>;
 let server: ReturnType<typeof createServer>;
 let directory: string, base: string, admin: string, member: string, memberId: string;
+let memberUser: User;
 let conversationId: string, groupId: string, latestUserId: string, firstTurnId: string;
 const models = new Map<string, string>();
 const items = new Map<string, MemoryItem>();
@@ -119,6 +120,7 @@ before(async () => {
   const registered = await register('memory-member@example.test');
   member = registered.cookie;
   memberId = registered.user.id;
+  memberUser = registered.user;
   const provider = await json(
     '/admin/providers',
     'POST',
@@ -126,7 +128,7 @@ before(async () => {
       name: 'Memory fixture',
       baseUrl: fixture.url,
       apiKey: 'fixture-only',
-      apiMode: 'chat-completions',
+      apiMode: 'responses',
     },
     admin,
   );
@@ -308,7 +310,7 @@ test(
 );
 
 test(
-  'a completed chat injects scoped memories once, extracts evidence-backed candidates, and invalidates sources when edited',
+  'new Harness chat stays isolated from an enabled legacy provider, which can still recall, extract and invalidate sources directly',
   enabled,
   async () => {
     groupId = (await json('/conversation-groups', 'POST', { name: '记忆测试分组' })).id;
@@ -358,30 +360,28 @@ test(
       revision: excluded.revision,
       selections: { [items.get('user')!.id]: null },
     });
-    const turn = await chat('我喜欢中文回答，项目使用中文说明；现在实现记忆功能。');
+    const requestStart = fixture.requests.length;
+    const current = '我喜欢中文回答，项目使用中文说明；现在实现记忆功能。';
+    const turn = await chat(current);
     firstTurnId = turn.requestId;
     const snapshot = await json<ContextSnapshot>(
       `/context-manager/conversations/${conversationId}/turns/${turn.requestId}`,
     );
-    assert.deepEqual(
-      snapshot.sections.map((x) => x.id),
-      ['system', 'long-term', 'group', 'session', 'current'],
+    assert.ok(
+      snapshot.sections.every((section) => section.entries.every((entry) => !entry.memoryId)),
     );
-    assert.equal(snapshot.sections.flatMap((x) => x.entries).filter((x) => x.memoryId).length, 3);
-    const upstream = fixture.requests.findLast((x) => {
-      const text = x.messages?.at(-1)?.content;
-      return (
-        text?.includes('<retrieved_memory') &&
-        !text.startsWith('Select useful saved memories') &&
-        !text.startsWith('Extract durable user memories')
-      );
-    })!;
-    assert.ok(upstream);
-    assert.ok(!JSON.stringify(upstream).includes(items.get('outside')!.content));
-    assert.equal(
-      snapshot.characters,
-      upstream.messages!.reduce((count, message) => count + message.content.length, 0),
-    );
+    const sent = fixture.requests.slice(requestStart);
+    assert.equal(sent.length, 1, 'the main reply is the only provider call for the new chat');
+    const upstream = JSON.stringify(sent[0].input);
+    assert.ok(upstream.includes(current));
+    assert.ok(!upstream.includes('<retrieved_memory'));
+    for (const item of items.values()) {
+      assert.ok(!upstream.includes(item.content));
+      assert.ok(!JSON.stringify(snapshot).includes(item.content));
+    }
+    assert.deepEqual(await json(`${m}/operations?messageId=${turn.requestId}`), []);
+    const manager = app.kernel.ctx.memory;
+    await manager.complete(manager.turnFromDatabase(memberUser, conversationId, turn.requestId));
     const extraction = await waitFor(
       () => json<MemoryOperation[]>(`${m}/operations?conversationId=${conversationId}`),
       (rows) => rows.some((x) => x.type === 'extract' && ['complete', 'error'].includes(x.state)),
@@ -455,6 +455,7 @@ test(
       writeModes: { user: 'off', group: 'off', session: 'off' },
     });
     await chat('原问题已修改，请不要沿用先前结论。', { replaceLastMessageId: latestUserId });
+    await manager.invalidate(memberUser, conversationId, turn.messages[0].id);
     assert.equal((await json<MemoryItem>(`${m}/memories/${confirmed.memory.id}`)).status, 'review');
     const reviewed = await json<MemoryItem[]>(`${m}/memories?status=review`);
     assert.ok(reviewed.some((x) => x.content === '本项目使用中文说明'));
@@ -472,11 +473,7 @@ test(
       `/context-manager/conversations/${conversationId}/turns/${firstTurnId}`,
     );
     assert.ok(!JSON.stringify(redacted).includes(items.get('user')!.content));
-    assert.ok(
-      redacted.sections
-        .flatMap((x) => x.entries)
-        .some((x) => x.memoryId === items.get('user')!.id && x.content === '[记忆已删除]'),
-    );
+    assert.ok(!JSON.stringify(redacted).includes(items.get('user')!.id));
     assert.equal(
       (
         await request(`${m}/memories`, 'POST', {
@@ -728,7 +725,7 @@ test(
     const snapshot = await json<ContextSnapshot>(
       `/context-manager/conversations/${id}/turns/${rememberedTurn.assistant.id}`,
     );
-    assert.ok(JSON.stringify(snapshot).includes(memory.content));
+    assert.ok(!JSON.stringify(snapshot).includes(memory.content));
     memory = await json(`${m}/memories/${memory.id}/admission`, 'POST', {
       version: memory.version,
       decision: 'withdraw',
@@ -749,11 +746,12 @@ test(
       decision: 'include',
     });
     await waitIndexes();
-    const afterReadmission = await completedTurnIn(id, '重新纳入后应在新快照中出现');
+    assert.ok((await find()).some((x) => x.id === memory.id));
+    const afterReadmission = await completedTurnIn(id, '重新纳入后的工作区隔离检查');
     const freshSnapshot = await json<ContextSnapshot>(
       `/context-manager/conversations/${id}/turns/${afterReadmission.assistant.id}`,
     );
-    assert.ok(JSON.stringify(freshSnapshot).includes(memory.content));
+    assert.ok(!JSON.stringify(freshSnapshot).includes(memory.content));
     assert.ok(
       !freshSnapshot.sections
         .flatMap((part) => part.entries)
@@ -807,6 +805,9 @@ test(
       writeModes: { user: 'auto', group: 'auto', session: 'off' },
     });
     const extracted = await completedTurnIn(grouped, '我喜欢中文回答，项目使用中文说明。');
+    assert.deepEqual(await json(`${m}/operations?messageId=${extracted.assistant.id}`), []);
+    const manager = app.kernel.ctx.memory;
+    await manager.complete(manager.turnFromDatabase(memberUser, grouped, extracted.assistant.id));
     const ops = await waitFor(
       () => json<MemoryOperation[]>(`${m}/operations?messageId=${extracted.assistant.id}`),
       (rows) => rows.some((x) => x.type === 'extract' && x.state === 'complete'),

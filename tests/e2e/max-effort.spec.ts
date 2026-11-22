@@ -9,30 +9,44 @@ test('Max persists, reports unsupported models and retries at a lower effort', a
 }, info) => {
   const requests: Record<string, any>[] = [];
   const upstream = createServer(async (req, res) => {
-    if (req.method === 'GET') {
+    if (req.method === 'GET' && req.url === '/v1/models') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ data: [{ id: 'max-supported' }, { id: 'max-unsupported' }] }));
+      return;
+    }
+    if (req.method !== 'POST' || req.url !== '/v1/responses') {
+      res.writeHead(404).end();
       return;
     }
     let raw = '';
     for await (const part of req) raw += part;
     const body = JSON.parse(raw);
     requests.push(body);
-    if (body.model === 'max-unsupported' && body.reasoning_effort === 'max') {
+    if (body.model === 'max-unsupported' && body.reasoning?.effort === 'max') {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
           error: {
-            param: 'reasoning_effort',
-            message: "Unsupported value: 'max' for reasoning_effort",
+            param: 'reasoning.effort',
+            message: "Unsupported value: 'max' for reasoning.effort",
           },
         }),
       );
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write(
+      'data: ' +
+        JSON.stringify({ type: 'response.output_text.delta', delta: 'Max test reply' }) +
+        '\n\n',
+    );
     res.end(
-      `data: ${JSON.stringify({ choices: [{ delta: { content: 'Max test reply' }, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } })}\n\ndata: [DONE]\n\n`,
+      'data: ' +
+        JSON.stringify({
+          type: 'response.completed',
+          response: { usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 } },
+        }) +
+        '\n\n',
     );
   });
   upstream.listen(0, '127.0.0.1');
@@ -49,7 +63,7 @@ test('Max persists, reports unsupported models and retries at a lower effort', a
           name: `Max ${info.project.name}`,
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
           apiKey: '',
-          apiMode: 'chat-completions',
+          apiMode: 'responses',
         },
       })
     ).json();
@@ -95,7 +109,7 @@ test('Max persists, reports unsupported models and retries at a lower effort', a
     const assistant = page.locator('.message.assistant');
     await expect(assistant).toContainText('当前模型不支持 Max 思考强度，请切换其他思考程度后重试');
     expect(requests).toHaveLength(1);
-    expect(requests[0].reasoning_effort).toBe('max');
+    expect(requests[0].reasoning.effort).toBe('max');
     await page.reload();
     await expect(assistant).toContainText('当前模型不支持 Max 思考强度');
     await chooseEffort(page, 'High');
@@ -104,7 +118,7 @@ test('Max persists, reports unsupported models and retries at a lower effort', a
     await expect(assistant).toContainText('Max test reply');
     await expect(page.locator('.message.user')).toHaveCount(1);
     expect(requests).toHaveLength(2);
-    expect(requests[1].reasoning_effort).toBe('high');
+    expect(requests[1].reasoning.effort).toBe('high');
 
     await page.getByRole('button', { name: '再次生成', exact: true }).click();
     const regenerate = page.getByRole('dialog', { name: '再次生成回复', exact: true });
@@ -120,7 +134,7 @@ test('Max persists, reports unsupported models and retries at a lower effort', a
     await expect(page.getByRole('button', { name: '复制回复' })).toBeVisible();
     expect(requests).toHaveLength(3);
     expect(requests[2].model).toBe('max-supported');
-    expect(requests[2].reasoning_effort).toBe('max');
+    expect(requests[2].reasoning.effort).toBe('max');
     await expect(page.locator('.message.user')).toHaveCount(1);
     await expect(assistant).toHaveCount(1);
 
@@ -131,7 +145,7 @@ test('Max persists, reports unsupported models and retries at a lower effort', a
     const result = await diagnostic.json();
     expect(result.ok).toBe(false);
     expect(result.error).toContain('当前模型不支持 Max 思考强度');
-    expect(JSON.parse(result.diagnostics.request.body).reasoning_effort).toBe('max');
+    expect(JSON.parse(result.diagnostics.request.body).reasoning.effort).toBe('max');
   } finally {
     if (providerId) await page.request.delete(`/api/admin/providers/${providerId}`, { data: {} });
     upstream.closeAllConnections();

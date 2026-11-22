@@ -10,6 +10,10 @@ export interface ConversationToolScope {
   signal: AbortSignal;
   /** Trusted delivery policy of the current submission. */
   requireDelivery?: boolean;
+  /** Set by the chat host for a live conversation workspace. */
+  useWorkspace?: boolean;
+  /** Verbatim preference the user explicitly asked to propose during this turn. */
+  requestedPreference?: string;
 }
 
 export interface ConversationToolProvider {

@@ -56,7 +56,7 @@ before(async () => {
   const user = await register('skill-user@example.test');
   member = user.cookie;
   memberId = user.user.id;
-  for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages'] as ApiMode[]) {
+  for (const apiMode of ['responses', 'anthropic-messages'] as ApiMode[]) {
     const provider = await json(
       '/admin/providers',
       'POST',
@@ -80,6 +80,7 @@ before(async () => {
           name,
           label: `${apiMode}/${name}`,
           toolCalling: name !== 'test-text',
+          ...(name === 'skill-two' && { contextWindowTokens: 131072, maxOutputTokens: 6789 }),
         },
         admin,
       );
@@ -119,7 +120,7 @@ async function skill(): Promise<Skill> {
 async function send(
   skill: Skill,
   name = 'skill-tool',
-  mode = 'chat-completions',
+  mode = 'responses',
   scope = 'conversation',
   content = '润色文章',
 ) {
@@ -190,7 +191,7 @@ test('Skill catalog is metadata-only; files and revisions remain private and imm
   );
 });
 
-for (const mode of ['chat-completions', 'responses', 'anthropic-messages'])
+for (const mode of ['responses', 'anthropic-messages'])
   test(`${mode}: progressive reads, opaque continuation, snapshots and exact per-call usage`, async () => {
     const created = await skill();
     const start = mock.requests.length;
@@ -206,6 +207,8 @@ for (const mode of ['chat-completions', 'responses', 'anthropic-messages'])
     assert.equal((await json('/usage')).totals.total - beforeUsage, 195);
     const requests = mock.requests.slice(start) as any[];
     assert.equal(requests.length, 3);
+    const outputField = mode === 'responses' ? 'max_output_tokens' : 'max_tokens';
+    assert.ok(requests.every((body) => body[outputField] === 6789));
     assert.ok(!JSON.stringify(requests[0]).includes('RESOURCE_ONLY_SECRET'));
     assert.ok(JSON.stringify(requests[1]).includes('RESOURCE_ONLY_SECRET'));
     if (mode === 'responses') {
@@ -216,12 +219,12 @@ for (const mode of ['chat-completions', 'responses', 'anthropic-messages'])
           (i: any) => i.type === 'function_call_output' && i.call_id === 'call-0',
         ),
       );
-    } else if (mode === 'anthropic-messages') {
+    } else {
       const previous = requests[1].messages.at(-2).content;
       assert.equal(previous[0].signature, 'signed-thought');
       assert.equal(requests[1].messages.at(-1).content[0].tool_use_id, 'call-0');
       assert.ok(!message.content.includes('private thought'));
-    } else assert.equal(requests[1].messages.at(-1).tool_call_id, 'call-0');
+    }
     const snapshot = await (await request(`/conversations/${chat.id}/events`)).text();
     assert.ok(snapshot.includes('references/style.md'));
     const retry = await json(`/conversations/${chat.id}/messages`, 'POST', {
@@ -255,7 +258,7 @@ test('conversation bindings pin versions, turn bindings expire and explicit remo
   await done(chat.id);
   assert.deepEqual(await json(`/conversations/${chat.id}/skills`), []);
   assert.ok(!JSON.stringify(mock.requests.at(-1)).includes('Selected skills (JSON)'));
-  const temporary = await send(created, 'skill-tool', 'chat-completions', 'turn');
+  const temporary = await send(created, 'skill-tool', 'responses', 'turn');
   await done(temporary.chat.id);
   assert.deepEqual(await json(`/conversations/${temporary.chat.id}/skills`), []);
 });

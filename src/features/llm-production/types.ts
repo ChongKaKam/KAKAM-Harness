@@ -36,6 +36,7 @@ export interface ProductionArtifact {
   conversationId: string | null;
   messageId: string | null;
   groupId: string | null;
+  publishedGroupIds?: string[];
   spaceName: string;
   deliveryItemId?: string | null;
 }

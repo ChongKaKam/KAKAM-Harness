@@ -1,22 +1,36 @@
 import { Service, type Context } from 'cordis';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { HttpError, requireUser, requireAdmin } from '../../kernel/http';
 import { SecretVault } from '../../kernel/crypto';
-import { testModelConnection, testEmbeddingConnection } from './connection-test';
+import {
+  testModelConnection,
+  testEmbeddingConnection,
+  testToolConnection,
+} from './connection-test';
 import { EmbeddingError, validateEmbeddingResponse } from '../../adapters/embeddings';
 import { ImageGenerationError, imageMimeType } from '../../adapters/images';
 import type { ImageGenerationResult } from '../../adapters/registry';
 import { nextSourceProbeDelay } from './probe-schedule';
 import type { Model, User, ApiMode, EmbeddingResult, EmbeddingUsage } from '../../shared/types';
 export { manifest } from './manifest';
-const columns = `m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,m.vision,m.tool_calling AS toolCalling,m.enabled,m.kind,m.embedding_dimensions AS embeddingDimensions,m.validated_dimensions AS validatedDimensions`;
+const selectModels = `SELECT m.id,m.provider_id AS providerId,p.name AS providerName,m.name,m.label,
+  m.vision,m.tool_calling AS toolCalling,m.enabled,m.needs_protocol_review AS needsProtocolReview,m.kind,m.context_window_tokens AS contextWindowTokens,
+  m.max_output_tokens AS maxOutputTokens,m.embedding_dimensions AS embeddingDimensions,
+  m.validated_dimensions AS validatedDimensions FROM models m JOIN providers p ON p.id=m.provider_id`;
+// A running conversation may outlive an account or role change.
+const selectVisibleModels = `${selectModels} JOIN users u ON u.id=? AND u.active=1
+  WHERE m.enabled=1 AND (u.role='admin' OR EXISTS(
+    SELECT 1 FROM model_grants g WHERE g.model_id=m.id AND g.user_id=u.id
+  ))`;
 const normalize = (m: Model) => ({
   ...m,
   vision: m.kind === 'llm' && Boolean(m.vision),
   toolCalling: m.kind === 'llm' && Boolean(m.toolCalling),
   enabled: Boolean(m.enabled),
+  needsProtocolReview: Boolean(m.needsProtocolReview),
 });
 export const baseUrl = z.url().refine((v) => {
   let u: URL;
@@ -48,16 +62,20 @@ const platformUrl = z
   .nullable()
   .transform((value) => value || null)
   .optional();
+const sourceProtocol = z.enum(['responses', 'anthropic-messages', 'jev']);
 const providerSchema = z.object({
   name: z.string().trim().min(1).max(60),
   baseUrl,
   platformUrl,
-  apiMode: z
-    .enum(['chat-completions', 'responses', 'anthropic-messages', 'jev'])
-    .default('chat-completions'),
+  apiMode: sourceProtocol.default('responses'),
   apiKey: z.string().max(4096).default(''),
 });
+const tokenLimitsSchema = z.object({
+  contextWindowTokens: z.int().min(2).nullable().optional(),
+  maxOutputTokens: z.int().positive().nullable().optional(),
+});
 const modelSchema = z.object({
+  ...tokenLimitsSchema.shape,
   providerId: z.string().uuid(),
   name: z.string().trim().min(1).max(200),
   label: z.string().trim().min(1).max(100),
@@ -66,6 +84,28 @@ const modelSchema = z.object({
   kind: z.enum(['llm', 'jev', 'embedding', 'image']).optional(),
   embeddingDimensions: z.number().int().min(1).max(16000).nullable().default(null),
 });
+function modelTokenLimits(
+  kind: Model['kind'],
+  input: z.infer<typeof tokenLimitsSchema>,
+  saved: z.infer<typeof tokenLimitsSchema> = {},
+) {
+  if (kind !== 'llm') {
+    if (input.contextWindowTokens != null || input.maxOutputTokens != null)
+      throw new HttpError(400, '仅对话模型可以设置上下文窗口和最大输出');
+    return { contextWindowTokens: null, maxOutputTokens: null };
+  }
+  const {
+    contextWindowTokens = saved.contextWindowTokens ?? null,
+    maxOutputTokens = saved.maxOutputTokens ?? null,
+  } = input;
+  if (
+    contextWindowTokens !== null &&
+    maxOutputTokens !== null &&
+    maxOutputTokens >= contextWindowTokens
+  )
+    throw new HttpError(400, '最大输出 Token 数必须小于上下文窗口');
+  return { contextWindowTokens, maxOutputTokens };
+}
 const embeddingInputs = z
   .array(z.string().min(1).max(100_000))
   .min(1)
@@ -76,9 +116,9 @@ const embeddingInputs = z
     'Embedding 输入总长度超过限制',
   );
 function validateKind(mode: ApiMode, kind: Model['kind']) {
-  if (kind === 'embedding' && !['chat-completions', 'responses'].includes(mode))
+  if (kind === 'embedding' && mode !== 'responses')
     throw new HttpError(400, 'Embedding 仅支持 OpenAI-compatible 来源，Anthropic / Jev 不支持');
-  if (kind === 'image' && !['chat-completions', 'responses'].includes(mode))
+  if (kind === 'image' && mode !== 'responses')
     throw new HttpError(400, '图片生成仅支持 OpenAI-compatible 来源，Anthropic / Jev 不支持');
   if ((kind === 'jev') !== (mode === 'jev'))
     throw new HttpError(400, 'Jev 模型必须使用 Jev 来源协议');
@@ -92,14 +132,11 @@ export class ModelsService extends Service {
   }
   list(user: User): Model[] {
     return this.ctx.db
-      .all<Model>(
-        `SELECT ${columns} FROM models m JOIN providers p ON p.id=m.provider_id WHERE m.enabled=1 ${user.role === 'admin' ? '' : 'AND EXISTS(SELECT 1 FROM model_grants g WHERE g.model_id=m.id AND g.user_id=?)'} ORDER BY m.sort_order,m.id`,
-        ...(user.role === 'admin' ? [] : [user.id]),
-      )
+      .all<Model>(`${selectVisibleModels} ORDER BY m.sort_order,m.id`, user.id)
       .map(normalize);
   }
   authorize(user: User, id: string, kind?: Model['kind']) {
-    const model = this.list(user).find((m) => m.id === id);
+    const model = this.ctx.db.get<Model>(`${selectVisibleModels} AND m.id=?`, user.id, id);
     if (!model) throw new HttpError(403, '模型未启用或未向你授权');
     if (kind && model.kind !== kind)
       throw new HttpError(
@@ -112,15 +149,36 @@ export class ModelsService extends Service {
               ? '请选择图片生成模型'
               : '请选择 Jev 决策模型',
       );
-    return model;
+    return normalize(model);
   }
-  connection(id: string) {
+  connection(
+    source: string | Pick<Model, 'providerId' | 'contextWindowTokens' | 'maxOutputTokens'>,
+  ) {
     const p = this.ctx.db.get<{ baseUrl: string; key: string; apiMode: ApiMode }>(
       'SELECT base_url AS baseUrl,encrypted_key AS key,api_mode AS apiMode FROM providers WHERE id=?',
-      id,
+      typeof source === 'string' ? source : source.providerId,
     );
     if (!p) throw new HttpError(404, '模型来源不存在');
-    return { baseUrl: p.baseUrl, apiKey: this.vault.decrypt(p.key), apiMode: p.apiMode };
+    return {
+      baseUrl: p.baseUrl,
+      apiKey: this.vault.decrypt(p.key),
+      apiMode: p.apiMode,
+      ...(typeof source === 'object' && {
+        contextWindowTokens: source.contextWindowTokens,
+        maxOutputTokens: source.maxOutputTokens,
+      }),
+    };
+  }
+  /** Source identity for persisted vector-space hashes. The embedding endpoint was unchanged by the LLM protocol migration. */
+  embeddingSpaceSource(modelId: string) {
+    const source = this.ctx.db.get<{ baseUrl: string; apiMode: string }>(
+      `SELECT p.base_url AS baseUrl,
+        CASE WHEN m.legacy_embedding_fingerprint=1 THEN 'chat-completions' ELSE p.api_mode END AS apiMode
+        FROM models m JOIN providers p ON p.id=m.provider_id WHERE m.id=? AND m.kind='embedding'`,
+      modelId,
+    );
+    if (!source) throw new HttpError(404, 'Embedding 模型不存在');
+    return source;
   }
   decrypt(value: string) {
     return this.vault.decrypt(value);
@@ -128,14 +186,10 @@ export class ModelsService extends Service {
   encrypt(value: string) {
     return this.vault.encrypt(value);
   }
-  adapter(mode: ApiMode = 'chat-completions') {
-    return this.ctx.adapters.get(
-      mode === 'jev'
-        ? 'jev'
-        : mode === 'anthropic-messages'
-          ? 'anthropic-messages'
-          : 'openai-compatible',
-    );
+  adapter(mode: ApiMode = 'responses') {
+    if (mode === 'responses') return this.ctx.adapters.get('openai-compatible');
+    if (mode === 'anthropic-messages' || mode === 'jev') return this.ctx.adapters.get(mode);
+    throw new HttpError(400, '模型来源协议不受支持，请在模型设置中更新来源');
   }
   async generateImage(
     user: User,
@@ -145,7 +199,7 @@ export class ModelsService extends Service {
   ): Promise<ImageGenerationResult> {
     const model = this.authorize(user, modelId, 'image');
     prompt = z.string().trim().min(1).max(32_000).parse(prompt);
-    const connection = this.connection(model.providerId);
+    const connection = this.connection(model);
     validateKind(connection.apiMode, 'image');
     const adapter = this.adapter(connection.apiMode);
     if (!adapter.generateImage) throw new HttpError(400, '此来源协议不支持图片生成');
@@ -189,7 +243,7 @@ export class ModelsService extends Service {
     for (const value of [options.dimensions, options.expectedDimensions])
       if (value !== undefined && (!Number.isSafeInteger(value) || value < 1 || value > 16000))
         throw new HttpError(400, 'Embedding 维度必须为 1 至 16000 的整数');
-    const connection = this.connection(model.providerId);
+    const connection = this.connection(model);
     validateKind(connection.apiMode, 'embedding');
     const adapter = this.adapter(connection.apiMode);
     if (!adapter.embed) throw new HttpError(400, '此来源协议不支持 Embedding');
@@ -333,19 +387,24 @@ export function modelsFeature(secret: string) {
         router.post('/admin/providers/discover', async (req, res) => {
           const input = providerSchema
             .omit({ name: true, apiKey: true, platformUrl: true })
-            .extend({ id: z.string().uuid().optional(), apiKey: z.string().max(4096).optional() })
+            .extend({
+              id: z.string().uuid().optional(),
+              apiKey: z.string().max(4096).optional(),
+              apiMode: sourceProtocol.optional(),
+            })
             .parse(req.body);
           const saved = input.id ? ctx.models.connection(input.id) : undefined;
           const connection = {
             baseUrl: input.baseUrl,
-            apiMode: input.apiMode,
+            apiMode: input.apiMode ?? saved?.apiMode ?? 'responses',
             apiKey: input.apiKey ?? saved?.apiKey ?? '',
           };
           res.json({ models: await ctx.models.adapter(connection.apiMode).discover(connection) });
         });
         router.post('/admin/models/:id/test', async (req, res) => {
-          const { reasoningEffort } = z
+          const { reasoningEffort, mode } = z
             .object({
+              mode: z.enum(['text', 'tools']).default('text'),
               reasoningEffort: z
                 .enum(['none', 'low', 'medium', 'high', 'xhigh', 'max'])
                 .default('none'),
@@ -353,31 +412,61 @@ export function modelsFeature(secret: string) {
             .strict()
             .parse(req.body ?? {});
           // Administrators may test a disabled model before making it available to users.
-          const model = ctx.db.get<Model>(
-            `SELECT ${columns} FROM models m JOIN providers p ON p.id=m.provider_id WHERE m.id=?`,
-            String(req.params.id),
-          );
+          const model = ctx.db.get<Model>(`${selectModels} WHERE m.id=?`, String(req.params.id));
           if (!model) throw new HttpError(404, '模型不存在');
+          if (mode === 'tools' && (model.kind !== 'llm' || !model.toolCalling))
+            throw new HttpError(400, '请先为已保存的 LLM 模型启用工具调用');
           if (model.kind === 'image')
             throw new HttpError(
               400,
               '图片模型通过产物工具生成时验证连接；连接测试不发送付费图片请求',
             );
-          const connection = ctx.models.connection(model.providerId);
+          const connection = ctx.models.connection(model);
+          const adapter = ctx.models.adapter(connection.apiMode);
+          const record = (label: string, ok: boolean, usage: EmbeddingUsage | null) =>
+            ctx.db.run(
+              'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
+              randomUUID(),
+              req.user!.id,
+              label,
+              usage?.input ?? null,
+              usage?.output ?? null,
+              usage?.total ?? null,
+              ok ? 'complete' : 'error',
+              new Date().toISOString(),
+            );
+          if (mode === 'tools') {
+            const test = await testToolConnection(
+              adapter,
+              connection,
+              model.name,
+              reasoningEffort,
+              (round, index) =>
+                record(`[工具测试 · 第 ${index + 1} 轮] ${model.name}`, round.ok, round.usage),
+              () => {
+                const saved = ctx.db.get<Model>(
+                  `${selectModels} WHERE m.id=? AND m.kind='llm' AND m.tool_calling=1 AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1 AND role='admin')`,
+                  model.id,
+                  req.user!.id,
+                );
+                if (!saved || saved.name !== model.name || saved.providerId !== model.providerId)
+                  throw new HttpError(409, '工具测试期间模型配置或管理员权限已变更');
+                if (!isDeepStrictEqual(ctx.models.connection(saved), connection))
+                  throw new HttpError(409, '工具测试期间来源或上下文配置已变更');
+              },
+            );
+            res.json(test);
+            return;
+          }
           const result =
             model.kind === 'embedding'
               ? await testEmbeddingConnection(
-                  ctx.models.adapter(connection.apiMode),
+                  adapter,
                   connection,
                   model.name,
                   model.embeddingDimensions ?? null,
                 )
-              : await testModelConnection(
-                  ctx.models.adapter(connection.apiMode),
-                  connection,
-                  model.name,
-                  reasoningEffort,
-                );
+              : await testModelConnection(adapter, connection, model.name, reasoningEffort);
           if (model.kind === 'embedding' && result.ok)
             ctx.db.run(
               "UPDATE models SET validated_dimensions=? WHERE id=? AND kind='embedding' AND embedding_dimensions IS ? AND EXISTS(SELECT 1 FROM providers WHERE id=models.provider_id AND base_url=? AND api_mode=?)",
@@ -387,28 +476,19 @@ export function modelsFeature(secret: string) {
               connection.baseUrl,
               connection.apiMode,
             );
-          ctx.db.run(
-            'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
-            randomUUID(),
-            req.user!.id,
-            `[连接测试] ${model.name}`,
-            result.usage?.input ?? null,
-            result.usage?.output ?? null,
-            result.usage?.total ?? null,
-            result.ok ? 'complete' : 'error',
-            new Date().toISOString(),
-          );
+          record(`[连接测试] ${model.name}`, result.ok, result.usage);
           res.json(result);
         });
         router.patch('/admin/providers/:id', (req, res) => {
           const input = providerSchema
             .omit({ apiKey: true })
-            .extend({ apiKey: z.string().max(4096).optional() })
+            .extend({ apiKey: z.string().max(4096).optional(), apiMode: sourceProtocol.optional() })
             .parse(req.body);
           const id = String(req.params.id);
-          ctx.models.connection(id);
+          const saved = ctx.models.connection(id);
+          const mode = input.apiMode ?? saved.apiMode;
           if (
-            !['chat-completions', 'responses'].includes(input.apiMode) &&
+            mode !== 'responses' &&
             ctx.db.get(
               "SELECT id FROM models WHERE provider_id=? AND kind IN ('embedding','image')",
               id,
@@ -418,27 +498,32 @@ export function modelsFeature(secret: string) {
               400,
               '此来源已配置 Embedding 或图片模型，不能改为不支持该类型的协议',
             );
-          ctx.db.run(
-            'UPDATE providers SET name=?,base_url=?,api_mode=? WHERE id=?',
-            input.name,
-            input.baseUrl.replace(/\/+$/, ''),
-            input.apiMode,
-            id,
-          );
-          if (input.platformUrl !== undefined)
-            ctx.db.run('UPDATE providers SET platform_url=? WHERE id=?', input.platformUrl, id);
-          if (input.apiKey !== undefined)
+          ctx.db.transaction(() => {
             ctx.db.run(
-              'UPDATE providers SET encrypted_key=? WHERE id=?',
-              ctx.models.encrypt(input.apiKey),
+              'UPDATE providers SET name=?,base_url=?,api_mode=? WHERE id=?',
+              input.name,
+              input.baseUrl.replace(/\/+$/, ''),
+              mode,
               id,
             );
-          ctx.db.run(
-            "UPDATE models SET kind=CASE WHEN ?='jev' THEN 'jev' ELSE 'llm' END WHERE provider_id=? AND kind NOT IN ('embedding','image')",
-            input.apiMode,
-            id,
-          );
-          ctx.db.run('UPDATE models SET validated_dimensions=NULL WHERE provider_id=?', id);
+            if (input.platformUrl !== undefined)
+              ctx.db.run('UPDATE providers SET platform_url=? WHERE id=?', input.platformUrl, id);
+            if (input.apiKey !== undefined)
+              ctx.db.run(
+                'UPDATE providers SET encrypted_key=? WHERE id=?',
+                ctx.models.encrypt(input.apiKey),
+                id,
+              );
+            if (mode === 'jev') {
+              ctx.db.run(
+                "UPDATE models SET kind='jev',needs_protocol_review=0,context_window_tokens=NULL,max_output_tokens=NULL WHERE provider_id=?",
+                id,
+              );
+            } else {
+              ctx.db.run("UPDATE models SET kind='llm' WHERE provider_id=? AND kind='jev'", id);
+            }
+            ctx.db.run('UPDATE models SET validated_dimensions=NULL WHERE provider_id=?', id);
+          });
           void probe(id);
           res.json({ ok: true });
         });
@@ -455,19 +540,15 @@ export function modelsFeature(secret: string) {
         });
         router.get('/admin/models', (_req, res) =>
           res.json(
-            ctx.db
-              .all<Model>(
-                `SELECT ${columns} FROM models m JOIN providers p ON p.id=m.provider_id ORDER BY m.sort_order,m.id`,
-              )
-              .map((m) => ({
-                ...normalize(m),
-                userIds: ctx.db
-                  .all<{ id: string }>(
-                    'SELECT user_id AS id FROM model_grants WHERE model_id=?',
-                    m.id,
-                  )
-                  .map((g) => g.id),
-              })),
+            ctx.db.all<Model>(`${selectModels} ORDER BY m.sort_order,m.id`).map((m) => ({
+              ...normalize(m),
+              userIds: ctx.db
+                .all<{ id: string }>(
+                  'SELECT user_id AS id FROM model_grants WHERE model_id=?',
+                  m.id,
+                )
+                .map((g) => g.id),
+            })),
           ),
         );
         router.post('/admin/models', (req, res) => {
@@ -475,6 +556,7 @@ export function modelsFeature(secret: string) {
           const mode = ctx.models.connection(input.providerId).apiMode;
           const kind = input.kind ?? (mode === 'jev' ? 'jev' : 'llm');
           validateKind(mode, kind);
+          const limits = modelTokenLimits(kind, input);
           if (
             ctx.db.get(
               'SELECT id FROM models WHERE provider_id=? AND name=?',
@@ -485,7 +567,7 @@ export function modelsFeature(secret: string) {
             throw new HttpError(409, '此模型已在白名单中');
           const id = randomUUID();
           ctx.db.run(
-            'INSERT INTO models(id,provider_id,name,label,vision,tool_calling,kind,embedding_dimensions,sort_order) VALUES(?,?,?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM models))',
+            'INSERT INTO models(id,provider_id,name,label,vision,tool_calling,kind,embedding_dimensions,context_window_tokens,max_output_tokens,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM models))',
             id,
             input.providerId,
             input.name,
@@ -494,6 +576,8 @@ export function modelsFeature(secret: string) {
             Number(input.toolCalling && kind === 'llm'),
             kind,
             kind === 'embedding' ? input.embeddingDimensions : null,
+            limits.contextWindowTokens,
+            limits.maxOutputTokens,
           );
           res.status(201).json({ id });
         });
@@ -516,6 +600,7 @@ export function modelsFeature(secret: string) {
         router.patch('/admin/models/:id', (req, res) => {
           const input = z
             .object({
+              ...tokenLimitsSchema.shape,
               enabled: z.boolean(),
               vision: z.boolean(),
               toolCalling: z.boolean().optional(),
@@ -526,22 +611,15 @@ export function modelsFeature(secret: string) {
             })
             .parse(req.body);
           const id = String(req.params.id);
-          const savedModel = ctx.db.get<{
-            providerId: string;
-            toolCalling: number;
-            kind: Model['kind'];
-            embeddingDimensions: number | null;
-          }>(
-            'SELECT tool_calling AS toolCalling,provider_id AS providerId,kind,embedding_dimensions AS embeddingDimensions FROM models WHERE id=?',
-            id,
-          );
+          const savedModel = ctx.db.get<Model>(`${selectModels} WHERE m.id=?`, id);
           if (!savedModel) throw new HttpError(404, '模型不存在');
           const kind = input.kind ?? savedModel.kind;
           validateKind(ctx.models.connection(savedModel.providerId).apiMode, kind);
+          const limits = modelTokenLimits(kind, input, savedModel);
           const dimensions =
             kind === 'embedding'
               ? input.embeddingDimensions === undefined
-                ? savedModel.embeddingDimensions
+                ? (savedModel.embeddingDimensions ?? null)
                 : input.embeddingDimensions
               : null;
           ctx.db.transaction(() => {
@@ -549,13 +627,17 @@ export function modelsFeature(secret: string) {
               if (!ctx.db.get('SELECT id FROM users WHERE id=?', userId))
                 throw new HttpError(400, '授权用户不存在');
             ctx.db.run(
-              'UPDATE models SET enabled=?,vision=?,tool_calling=?,label=?,kind=?,embedding_dimensions=?,validated_dimensions=CASE WHEN kind=? AND embedding_dimensions IS ? THEN validated_dimensions ELSE NULL END WHERE id=?',
+              "UPDATE models SET enabled=?,needs_protocol_review=?,vision=?,tool_calling=?,label=?,kind=?,context_window_tokens=?,max_output_tokens=?,embedding_dimensions=?,legacy_embedding_fingerprint=CASE WHEN ?='embedding' THEN legacy_embedding_fingerprint ELSE 0 END,validated_dimensions=CASE WHEN kind=? AND embedding_dimensions IS ? THEN validated_dimensions ELSE NULL END WHERE id=?",
               Number(input.enabled),
+              Number(Boolean(savedModel.needsProtocolReview) && !input.enabled && kind === 'llm'),
               Number(input.vision && kind === 'llm'),
               Number((input.toolCalling ?? savedModel.toolCalling) && kind === 'llm'),
               input.label,
               kind,
+              limits.contextWindowTokens,
+              limits.maxOutputTokens,
               dimensions,
+              kind,
               kind,
               dimensions,
               id,

@@ -12,6 +12,8 @@ const statuses = {
 };
 
 function activity(run: ExtensionRun): string {
+  if (run.warning) return '部分检索未完成';
+  if (run.fallback === 'skip') return '未生效，已跳过并继续聊天';
   if (run.status !== 'deciding' && run.status !== 'running')
     return run.status === 'complete' && run.id === 'search' ? '搜索完成' : statuses[run.status];
   const current = run.calls.findLast((call) => call.status === 'streaming');
@@ -70,6 +72,10 @@ export function ExtensionDetails({ runs }: { runs?: ExtensionRun[] }) {
             aria-label={`${run.name} 执行详情`}
             tabIndex={0}
           >
+            {run.fallback === 'skip' && (
+              <p className="small muted">本轮未使用该能力的结果，已继续正常聊天。</p>
+            )}
+            {run.warning && <p className="small muted">{run.warning}</p>}
             {run.error && <p className="error-note">{run.error}</p>}
             {run.decision && (
               <p className="small muted">自动判断：{run.decision.enabled ? '开启' : '关闭'}</p>

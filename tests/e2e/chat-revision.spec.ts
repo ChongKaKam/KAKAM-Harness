@@ -14,7 +14,7 @@ test('edit the latest question and retry a failed reply on desktop and mobile', 
         name: sourceName,
         baseUrl: 'http://127.0.0.1:3211/v1',
         apiKey: 'fixture',
-        apiMode: 'chat-completions',
+        apiMode: 'responses',
       },
     })
   ).json();

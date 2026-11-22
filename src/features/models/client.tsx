@@ -110,24 +110,24 @@ export function ModelsPage() {
     setBusy(true);
     setFormError('');
     try {
+      const config = {
+        label: values.label,
+        kind: values.kind,
+        embeddingDimensions: values.embeddingDimensions ? Number(values.embeddingDimensions) : null,
+        contextWindowTokens: values.contextWindowTokens ? Number(values.contextWindowTokens) : null,
+        maxOutputTokens: values.maxOutputTokens ? Number(values.maxOutputTokens) : null,
+        vision: form.has('vision'),
+        toolCalling: form.has('toolCalling'),
+      };
       if (modelModal === 'new')
         await post('/admin/models', {
-          ...values,
-          embeddingDimensions: values.embeddingDimensions
-            ? Number(values.embeddingDimensions)
-            : null,
-          vision: form.has('vision'),
-          toolCalling: form.has('toolCalling'),
+          ...config,
+          name: values.name,
+          providerId: values.providerId,
         });
       else
         await patch(`/admin/models/${modelModal!.id}`, {
-          label: values.label,
-          kind: values.kind,
-          embeddingDimensions: values.embeddingDimensions
-            ? Number(values.embeddingDimensions)
-            : null,
-          vision: form.has('vision'),
-          toolCalling: form.has('toolCalling'),
+          ...config,
           enabled: form.has('enabled'),
           userIds: form.getAll('userIds'),
         });
@@ -156,21 +156,14 @@ export function ModelsPage() {
   async function addDiscovered(name: string) {
     setBusy(true);
     setFormError('');
+    const mode = data?.providers.find((p) => p.id === discovery!.provider.id)?.apiMode;
     try {
       await post('/admin/models', {
         providerId: discovery!.provider.id,
         name,
         label: name,
         vision: false,
-        ...(data?.providers.find((p) => p.id === discovery!.provider.id)?.apiMode !== 'jev'
-          ? {
-              kind: ['chat-completions', 'responses'].includes(
-                data!.providers.find((p) => p.id === discovery!.provider.id)!.apiMode,
-              )
-                ? discoveryKind
-                : 'llm',
-            }
-          : {}),
+        kind: mode === 'responses' ? discoveryKind : undefined,
       });
       await updated();
       notify('已加入白名单，可在模型管理中配置能力、维度和用户授权');
@@ -282,6 +275,12 @@ export function ModelsPage() {
                     </span>
                   </div>
                   <p className="models-provider-url">{p.baseUrl}</p>
+                  {data.models.some((m) => m.providerId === p.id && m.needsProtocolReview) && (
+                    <p className="small">
+                      此来源原用 Chat
+                      Completions。请核对来源协议，并在「模型管理与授权」中测试、重新启用所需的对话模型。
+                    </p>
+                  )}
                   <div className="models-provider-meta small muted">
                     <span>
                       {data.models.filter((m) => m.providerId === p.id).length} 个白名单模型
@@ -433,14 +432,15 @@ export function ModelsPage() {
                 响应模式
                 <select
                   name="apiMode"
-                  defaultValue={
-                    providerModal === 'new' ? 'chat-completions' : providerModal.apiMode
-                  }
+                  defaultValue={providerModal === 'new' ? 'responses' : providerModal.apiMode}
                 >
-                  <option value="chat-completions">Chat Completions · /chat/completions</option>
-                  <option value="jev">Jev 决策 · /systemone</option>
-                  <option value="responses">Responses · /responses</option>
-                  <option value="anthropic-messages">Anthropic Messages · /messages</option>
+                  <optgroup label="Harness 对话">
+                    <option value="responses">Responses · /responses</option>
+                    <option value="anthropic-messages">Anthropic Messages · /messages</option>
+                  </optgroup>
+                  <optgroup label="辅助决策">
+                    <option value="jev">Jev 决策 · /systemone</option>
+                  </optgroup>
                 </select>
               </label>
               <p className="small muted">
@@ -521,6 +521,12 @@ export function ModelsPage() {
               </label>
               {modelModal !== 'new' && (
                 <>
+                  {modelModal.needsProtocolReview && (
+                    <p className="small">
+                      原 Chat Completions
+                      线路迁移后，此模型已停用。可先测试当前协议，再勾选启用并保存。
+                    </p>
+                  )}
                   <label className="check-row">
                     <input type="checkbox" name="enabled" defaultChecked={modelModal.enabled} />
                     启用此模型
@@ -537,6 +543,7 @@ export function ModelsPage() {
                       modelName={modelModal.name}
                       apiMode={data.providers.find((p) => p.id === modelModal.providerId)!.apiMode}
                       kind={modelModal.kind}
+                      toolCalling={modelModal.toolCalling}
                       busy={busy}
                       onTesting={setTesting}
                       onResult={(result) => {
@@ -599,10 +606,7 @@ export function ModelsPage() {
             发现 {discovery.names.length}{' '}
             个模型。选择模型类型后添加到白名单，可继续管理能力和用户授权。
           </p>
-          {['chat-completions', 'responses'].includes(
-            data?.providers.find((p) => p.id === discovery.provider.id)?.apiMode ??
-              'anthropic-messages',
-          ) && (
+          {data?.providers.find((p) => p.id === discovery.provider.id)?.apiMode === 'responses' && (
             <label>
               添加模型类型
               <select
@@ -670,8 +674,7 @@ function ModelConfigurationFields({
   const [kind, setKind] = useState<Model['kind']>(
     model === 'new' ? (provider?.apiMode === 'jev' ? 'jev' : 'llm') : model.kind,
   );
-  const supportsEmbedding =
-    provider && ['chat-completions', 'responses'].includes(provider.apiMode);
+  const supportsEmbedding = provider?.apiMode === 'responses';
   return (
     <>
       {model === 'new' && (
@@ -688,8 +691,7 @@ function ModelConfigurationFields({
                 setKind(
                   next.apiMode === 'jev'
                     ? 'jev'
-                    : (kind === 'embedding' || kind === 'image') &&
-                        ['chat-completions', 'responses'].includes(next.apiMode)
+                    : (kind === 'embedding' || kind === 'image') && next.apiMode === 'responses'
                       ? kind
                       : 'llm',
                 );
@@ -754,6 +756,28 @@ function ModelConfigurationFields({
       )}
       {kind === 'llm' && (
         <>
+          <label>
+            上下文窗口（Token）
+            <input
+              name="contextWindowTokens"
+              type="number"
+              min={2}
+              step={1}
+              placeholder="可选，例如 1000000"
+              defaultValue={model === 'new' ? '' : (model.contextWindowTokens ?? '')}
+            />
+          </label>
+          <label>
+            最大输出（Token）
+            <input
+              name="maxOutputTokens"
+              type="number"
+              min={1}
+              step={1}
+              placeholder="可选，留空沿用协议默认值"
+              defaultValue={model === 'new' ? '' : (model.maxOutputTokens ?? '')}
+            />
+          </label>
           <label className="check-row">
             <input type="checkbox" name="vision" defaultChecked={model !== 'new' && model.vision} />
             支持图片输入

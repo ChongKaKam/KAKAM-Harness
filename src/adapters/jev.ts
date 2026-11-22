@@ -30,7 +30,7 @@ async function check(response: Response, connection: ProviderConnection) {
     );
   }
 }
-/** TypeSafe System One is a decision protocol, never a chat-completions wrapper. */
+/** TypeSafe System One returns a structured decision. */
 export class JevAdapter implements ModelAdapter {
   async discover(c: ProviderConnection) {
     const response = await providerFetch(c, endpoint(c, 'models'), {

@@ -1,5 +1,7 @@
 # Memory API 参考
 
+以下接口管理已有 PostgreSQL Memory 数据及其作用域、策略和操作证据。升级后的新会话使用独立的 SQLite 工作区，不自动读取本库的历史记忆或已纳入偏好。用户可在新会话「对话工作区 → 个人偏好」明确纳入新的内容。接口及更正、撤出后的生效范围见[对话 Harness](HARNESS.md)。
+
 Memory 插件使用独立 PostgreSQL/pgvector，提供长期、分组和 Session 记忆的管理、检索、准备、抽取、Remember it 摘要预览、候选确认、长期纳入、来源回溯、策略配置和索引 API。工作区「记忆」集中管理内容，个人「设置 → 记忆管理」配置模型和策略；两处使用同一插件和用户设置。实际路由位于 [`memory/server.ts`](../src/features/memory/server.ts)，业务校验位于 [`manager.ts`](../src/features/memory/manager.ts)，纯 DTO 位于 [`shared/memory.ts`](../src/shared/memory.ts)。策略扩展见 [开发指南](MEMORY_AGENTS.md)，运行配置见 [README](../README.md#记忆模块与-postgresql)。
 
 共享数据库的账号、schema、扩展、迁移 CLI 与恢复流程见 [数据库接入](MEMORY_DATABASE.md)。平台另提供无需登录的 `GET /api/health/memory`：就绪为 200 / `ok`，配置但不可用为 503 / `unavailable`，未配置或停用为 200 / `unconfigured` 或 `disabled`。仅返回配置 / 就绪状态和安全说明；私人 Memory API 仍须登录。`GET /api/health` 继续表示平台存活，不能作为记忆数据库连通的证据。
@@ -238,7 +240,7 @@ MemoryScopeState 为 `{ summary, revision, selections, updatedAt }`，新范围 
 
 ## 向量索引
 
-`GET /status` 的 spaces 项为 `{ id, modelId, dimensions, fingerprint, state, createdAt, indexed, total }`。state 为 building / active / retired；fingerprint 来自模型、来源、协议、配置维度和向量版本，不含 API Key。相同维度但不同模型 / 来源也属于不同空间。
+`GET /status` 的 spaces 项为 `{ id, modelId, dimensions, fingerprint, state, createdAt, indexed, total }`。state 为 building / active / retired；fingerprint 来自模型、来源、协议、配置维度和向量版本，不含 API Key。相同维度但不同模型 / 来源也属于不同空间。旧 Chat Completions 来源迁至 Responses 时，已有 Embedding 模型仍使用同一个 `/embeddings` 端点。迁移会为这些模型保留原指纹，沿用已经建立的索引。新建模型使用当前来源身份，变更来源地址、模型或配置维度仍会产生独立指纹。
 
 `POST /indexes/rebuild` body 为 `{ idempotencyKey? }`，202 返回 MemoryOperation。使用当前 embedding 模型验证维度、逐条生成缺失 / 过期正文版本的向量、记录进度，完成且配置未改变后切换 active。修改模型或维度需显式重建，失败继续保留正文和旧空间；查询时按当前配置隔离空间，不把旧空间向量混入新模型查询。每用户同时一个索引任务，重建最长 30 分钟；过程中同用户索引活动冲突可返回 409。
 

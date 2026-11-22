@@ -4,7 +4,7 @@ import { AnthropicMessagesAdapter } from '../src/adapters/anthropic-messages';
 import type { ProviderEvent } from '../src/adapters/registry';
 import { HttpError } from '../src/kernel/http';
 import type { ReasoningEffort } from '../src/shared/types';
-import { imageData, mockProvider } from './mock-provider';
+import { imageData, markdownFixture, mockProvider } from './mock-provider';
 let mock: Awaited<ReturnType<typeof mockProvider>>;
 const adapter = new AnthropicMessagesAdapter();
 before(async () => {
@@ -22,6 +22,17 @@ test('Anthropic discovery follows pagination and uses native authentication', as
     assert.equal(headers['x-api-key'], 'fixture-anthropic');
     assert.equal(headers.authorization, undefined);
   }
+});
+test('Anthropic preserves initial text in content_block_start before subsequent deltas', async () => {
+  let text = '';
+  for await (const event of adapter.generate(
+    connection(),
+    'initial-text',
+    [{ role: 'user', content: 'hi' }],
+    AbortSignal.timeout(3000),
+  ))
+    if (event.type === 'text') text += event.text;
+  assert.equal(text, markdownFixture);
 });
 for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as ReasoningEffort[]) {
   test(`Anthropic ${effort}: text, images, history and cumulative cached token accounting`, async () => {
@@ -49,6 +60,7 @@ for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as Reason
     assert.deepEqual(events.at(-1), { type: 'usage', usage: { input: 23, output: 42, total: 65 } });
     const body = mock.requests.at(-1) as Record<string, any>;
     assert.equal(body.stream, true);
+    assert.equal(body.max_tokens, effort === 'none' ? 4096 : 16384);
     assert.deepEqual(body.messages[1], {
       role: 'assistant',
       content: [{ type: 'text', text: 'hi' }],

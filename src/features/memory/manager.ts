@@ -338,14 +338,14 @@ export class MemoryManager extends Service implements MemoryProvider {
   }
   private modelFingerprint(user: User, modelId: string) {
     const model = this.ctx.models.authorize(user, modelId, 'embedding'),
-      connection = this.ctx.models.connection(model.providerId);
+      source = this.ctx.models.embeddingSpaceSource(model.id);
     return digest(
       JSON.stringify({
         id: model.id,
         provider: model.providerId,
         name: model.name,
-        baseUrl: connection.baseUrl,
-        apiMode: connection.apiMode,
+        baseUrl: source.baseUrl,
+        apiMode: source.apiMode,
         dimensions: model.embeddingDimensions ?? null,
         version: 1,
       }),

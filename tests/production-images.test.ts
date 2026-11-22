@@ -69,29 +69,28 @@ after(async () => {
 });
 
 test('native Images honors GPT Image / DALL-E request formats and partial real usage', async () => {
-  for (const apiMode of ['chat-completions', 'responses'] as const) {
-    const adapter = new OpenAICompatibleAdapter();
-    const image = await adapter.generateImage(
-      { baseUrl, apiKey: 'fixture', apiMode },
-      'gpt-image-1',
-      'A small white square',
-      AbortSignal.timeout(2000),
-    );
-    assert.deepEqual(image.data, png);
-    assert.equal(image.mimeType, 'image/png');
-    assert.deepEqual(image.usage, { input: 11, output: null, total: 11 });
-    const sent = requests.at(-1)!;
-    assert.equal(sent.n, 1);
-    assert.equal(sent.output_format, 'png');
-    assert.ok(!('response_format' in sent));
-    await adapter.generateImage(
-      { baseUrl, apiKey: '', apiMode },
-      'dall-e-3',
-      'A small square',
-      AbortSignal.timeout(2000),
-    );
-    assert.equal(requests.at(-1)!.response_format, 'b64_json');
-  }
+  const apiMode = 'responses';
+  const adapter = new OpenAICompatibleAdapter();
+  const image = await adapter.generateImage(
+    { baseUrl, apiKey: 'fixture', apiMode },
+    'gpt-image-1',
+    'A small white square',
+    AbortSignal.timeout(2000),
+  );
+  assert.deepEqual(image.data, png);
+  assert.equal(image.mimeType, 'image/png');
+  assert.deepEqual(image.usage, { input: 11, output: null, total: 11 });
+  const sent = requests.at(-1)!;
+  assert.equal(sent.n, 1);
+  assert.equal(sent.output_format, 'png');
+  assert.ok(!('response_format' in sent));
+  await adapter.generateImage(
+    { baseUrl, apiKey: '', apiMode },
+    'dall-e-3',
+    'A small square',
+    AbortSignal.timeout(2000),
+  );
+  assert.equal(requests.at(-1)!.response_format, 'b64_json');
 });
 
 test('image failures preserve reported usage, forbid URL fetching and bound response memory', async () => {

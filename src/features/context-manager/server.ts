@@ -56,7 +56,11 @@ export const server = {
         if (modelId) ctx.models.authorize(req.user!, modelId, 'llm');
       if (input.compressionEnabled && !input.compressionModelId)
         throw new HttpError(400, '启用自动压缩前请选择压缩模型');
-      if (input.compressionEnabled && input.compressionMaxCharacters >= input.compressionThreshold)
+      if (
+        input.compressionEnabled &&
+        input.compressionThreshold !== null &&
+        input.compressionMaxCharacters >= input.compressionThreshold
+      )
         throw new HttpError(400, '摘要预算必须小于压缩触发阈值');
       if (input.trajectoryEnabled && !input.trajectoryModelId)
         throw new HttpError(400, '启用轨迹摘要前请选择摘要模型');

@@ -33,11 +33,7 @@ async function json(path: string, method = 'GET', body?: unknown): Promise<any> 
   assert.ok(response.ok, `${path}: ${response.status} ${JSON.stringify(data)}`);
   return data;
 }
-async function send(
-  content: string,
-  modelId = models.get('chat-completions')!,
-  reasoningEffort = 'none',
-) {
+async function send(content: string, modelId = models.get('responses')!, reasoningEffort = 'none') {
   const conversation = await json('/conversations', 'POST');
   const requestId = randomUUID();
   const response = await request(`/conversations/${conversation.id}/messages`, 'POST', {
@@ -74,7 +70,7 @@ before(async () => {
   });
   assert.equal(registration.status, 201);
   cookie = registration.headers.get('set-cookie')!.split(';')[0];
-  for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages'] as const) {
+  for (const apiMode of ['responses', 'anthropic-messages'] as const) {
     const source = await json('/admin/providers', 'POST', {
       name: apiMode,
       baseUrl: provider.url,
@@ -92,7 +88,7 @@ before(async () => {
         })
       ).id,
     );
-    if (apiMode === 'chat-completions') {
+    if (apiMode === 'responses') {
       imageId = (
         await json('/admin/models', 'POST', {
           providerId: source.id,
@@ -140,7 +136,7 @@ after(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-for (const mode of ['chat-completions', 'responses', 'anthropic-messages'] as const) {
+for (const mode of ['responses', 'anthropic-messages'] as const) {
   test(`${mode}: explicit image request calls configured native image model and returns real downloadable bytes`, async () => {
     const start = provider.requests.length;
     const { answer } = await send('帮我生成一个图片，内容是一只夜晚的猫', models.get(mode));
@@ -173,9 +169,9 @@ test('the model chooses an artifact format for a webpage request without a hardc
   const { answer } = await send('帮我写一个网页计算器');
   assert.equal(answer?.status, 'complete', answer?.error ?? 'generation should complete');
   assert.equal(answer?.artifacts?.[0]?.mimeType, 'text/html');
-  const firstCall = provider.requests[start] as { messages: Array<{ content: string }> };
-  assert.match(firstCall.messages.at(-1)!.content, /Required artifact: 文件/);
-  assert.doesNotMatch(firstCall.messages.at(-1)!.content, /format=html|web calculator/);
+  const firstCall = provider.requests[start] as { input: Array<{ content: string }> };
+  assert.match(firstCall.input.at(-1)!.content, /Required artifact: 文件/);
+  assert.doesNotMatch(firstCall.input.at(-1)!.content, /format=html|web calculator/);
   assert.equal(
     await (await request(`/llm-production/artifacts/${answer!.artifacts![0].id}/download`)).text(),
     productionHtmlContent,
@@ -211,11 +207,11 @@ test('missing, disabled and unauthorized generation prerequisites fail before pa
   });
   assert.equal(registration.status, 201);
   const member = (await registration.json()).user;
-  for (const modelId of [models.get('chat-completions')!, imageId])
+  for (const modelId of [models.get('responses')!, imageId])
     await json(`/admin/models/${modelId}`, 'PATCH', {
       enabled: true,
       vision: false,
-      label: modelId === imageId ? 'Image' : 'chat-completions',
+      label: modelId === imageId ? 'Image' : 'responses',
       userIds: [member.id],
     });
   const adminCookie = cookie;

@@ -1,15 +1,22 @@
 import type { MemoryContextRange } from '../../shared/memory';
 import type { ContextEntry } from './types';
+import { renderMemoryBlock } from '../extensions/memory-context';
 
 /** Split only validated offsets; malformed metadata leaves the original text visible. */
 export function splitMemoryContext(
   content: string,
   original: string,
   ranges: MemoryContextRange[] = [],
+  currentOffset = 0,
 ) {
-  const prefix = content.startsWith(original) ? original.length : 0;
+  const hasOriginal =
+    Number.isSafeInteger(currentOffset) &&
+    currentOffset >= 0 &&
+    currentOffset <= content.length &&
+    content.startsWith(original, currentOffset);
+  const prefix = hasOriginal ? currentOffset + original.length : 0;
   let cursor = prefix;
-  const remaining: string[] = [];
+  const remaining: string[] = hasOriginal ? [content.slice(0, currentOffset)] : [];
   const entries: ContextEntry[] = [];
   for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
     if (
@@ -17,7 +24,8 @@ export function splitMemoryContext(
       !Number.isSafeInteger(range.end) ||
       range.start < cursor ||
       range.end <= range.start ||
-      range.end > content.length
+      range.end > content.length ||
+      content.slice(range.start, range.end) !== renderMemoryBlock(range.block)
     )
       continue;
     remaining.push(content.slice(cursor, range.start));

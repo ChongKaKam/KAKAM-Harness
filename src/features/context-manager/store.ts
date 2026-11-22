@@ -217,7 +217,12 @@ export class ContextStore implements ContextObserver {
           .map((message, index) => entry(`历史消息 ${index + 1}`, message));
         const memories: ContextEntry[] = [];
         if (last) {
-          const split = splitMemoryContext(last.content, current.content, request.memoryRanges);
+          const split = splitMemoryContext(
+            last.content,
+            current.content,
+            request.memoryRanges,
+            request.currentOffset,
+          );
           memories.push(...split.entries);
           const appended = split.appended;
           if (appended)
@@ -260,6 +265,8 @@ export class ContextStore implements ContextObserver {
               content: result.output,
               images: [],
             });
+          for (const content of step.steering ?? [])
+            session.push({ label: '运行中追加的用户指令', role: 'user', content, images: [] });
         }
         snapshot.sections = sections(session, current, memories, !!request.memory);
         snapshot.memory = request.memory ? structuredClone(request.memory) : undefined;

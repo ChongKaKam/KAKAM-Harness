@@ -251,8 +251,8 @@ test('stream text/images, retain history, record actual tokens and isolate conve
   assert.equal(done.message.durationMs, history.messages[1].durationMs);
   assert.deepEqual(history.messages[1].usage, { input: 23, output: 42, total: 65 });
   assert.ok(text.includes('"usage":{"input":23,"output":42,"total":65}'));
-  const upstream = mock.requests.at(-1) as { messages: { content: { type: string }[] }[] };
-  assert.equal(upstream.messages[0].content[1].type, 'image_url');
+  const upstream = mock.requests.at(-1) as { input: { content: { type: string }[] }[] };
+  assert.equal(upstream.input.at(-1)!.content[1].type, 'input_image');
   for (const cookie of [bob, admin]) {
     assert.equal((await request(`/conversations/${conversationId}`, cookie)).status, 404);
     assert.equal((await request(`/conversations/${conversationId}`, cookie, 'DELETE')).status, 404);
@@ -560,7 +560,7 @@ test('draft discovery does not save configuration; model testing measures stream
   const discovery = await json('/admin/providers/discover', admin, 'POST', draft);
   assert.deepEqual(discovery.models, ['test-vision', 'test-text']);
   assert.equal((await json('/usage', admin)).totals.requests, beforeDiscovery);
-  assert.equal((await json('/admin/providers', admin))[0].apiMode, 'chat-completions');
+  assert.equal((await json('/admin/providers', admin))[0].apiMode, 'responses');
   await json(`/admin/providers/${providerId}`, admin, 'PATCH', {
     name: 'Local test',
     baseUrl: mock.url,
@@ -639,7 +639,7 @@ test('all protocols continue after all viewers disconnect, resume snapshots, ded
   const slow = (await json('/admin/models', admin)).find(
     (model: { name: string }) => model.name === 'slow',
   ).id;
-  for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages']) {
+  for (const apiMode of ['responses', 'anthropic-messages']) {
     await json(`/admin/providers/${providerId}`, admin, 'PATCH', {
       name: 'Local test',
       baseUrl: mock.url,
@@ -793,7 +793,7 @@ test('latest question can be edited and failed reply regenerated without duplica
   await json(`/admin/providers/${providerId}`, admin, 'PATCH', {
     name: 'Local test',
     baseUrl: mock.url,
-    apiMode: 'chat-completions',
+    apiMode: 'responses',
   });
   const broken = app.kernel.ctx.db.get<{ id: string }>(
     "SELECT id FROM models WHERE provider_id=? AND name='broken'",
@@ -835,6 +835,17 @@ test('latest question can be edited and failed reply regenerated without duplica
     requestId: editRequestId,
   });
   assert.equal(duplicate.status, 202);
+  const collision = await request(`/conversations/${convo}/messages`, admin, 'POST', {
+    modelId,
+    content: 'different question',
+    replaceLastMessageId: originalUser,
+    requestId: editRequestId,
+  });
+  assert.equal(collision.status, 202);
+  assert.deepEqual(await collision.json(), {
+    messageId: editRequestId,
+    replayedWithDifferentContent: true,
+  });
   saved = await json(`/conversations/${convo}`, admin);
   assert.equal(saved.messages.length, 2);
   assert.equal(saved.messages[0].content, 'revised question');
@@ -867,7 +878,7 @@ test('kernel shutdown settles detached jobs before closing storage', async () =>
     db
       .prepare("SELECT status FROM messages WHERE conversation_id=? AND role='assistant'")
       .get(convo)!.status,
-    'cancelled',
+    'error',
   );
   db.close();
 });

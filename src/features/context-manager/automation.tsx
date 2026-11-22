@@ -62,6 +62,12 @@ export function ContextAutomation({
             {compression.compressedMessages} 条历史，保留 {compression.retainedMessages} 条原文
             {compression.modelName ? ` · ${compression.modelName}` : ''}
           </p>
+          {compression.threshold > 0 && (
+            <p className="context-manager-caption">
+              本轮阈值 {compression.threshold.toLocaleString('zh-CN')}{' '}
+              {compression.thresholdUnit === 'estimatedTokens' ? 'tokens（估算）' : '字符'}
+            </p>
+          )}
           {compression.error && <p className="context-manager-caption">{compression.error}</p>}
           {compression.usage && (
             <p className="context-manager-caption">

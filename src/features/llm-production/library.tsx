@@ -105,7 +105,9 @@ function ProductionLibraryContent({
     (artifact) =>
       sourceConversationId === undefined ||
       (artifact.conversationId === sourceConversationId &&
-        (sourceConversationId !== null || artifact.groupId === (groupId ?? null))),
+        (sourceConversationId !== null ||
+          artifact.groupId === (groupId ?? null) ||
+          (!!groupId && artifact.publishedGroupIds?.includes(groupId)))),
   );
   const artifacts = scopedArtifacts?.filter((artifact) =>
     `${artifact.name} ${artifact.spaceName}`
@@ -159,7 +161,7 @@ function ProductionLibraryContent({
           <span>
             {data.space.kind === 'group'
               ? `分组共享 · 默认不过期${sourceConversationId !== undefined ? ' · 当前对话产物' : ''}`
-              : '对话独享 · 到期自动清理'}
+              : '当前对话产物 · 保留期限见文件详情'}
           </span>
           <span>
             {scopedArtifacts?.length ?? 0} 个文件 ·{' '}

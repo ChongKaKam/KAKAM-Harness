@@ -1,7 +1,8 @@
+import { generationRequest } from './generation-request';
 import { HttpError } from '../kernel/http';
 import { providerFetch, captureErrorBody } from './diagnostics';
 import { unsupportedMaxEffortMessage } from './reasoning-error';
-import type { ApiMode, ReasoningEffort } from '../shared/types';
+import type { LlmApiMode, ReasoningEffort } from '../shared/types';
 import type {
   ProviderConnection,
   ProviderMessage,
@@ -23,7 +24,7 @@ function argumentsOf(value: string): unknown {
     throw new HttpError(502, '模型返回的工具参数不是完整 JSON');
   }
 }
-async function* frames(response: Response): AsyncIterable<Wire | '[DONE]'> {
+async function* frames(response: Response): AsyncIterable<Wire> {
   if (!response.body) throw new HttpError(502, '模型服务返回空响应');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -47,10 +48,6 @@ async function* frames(response: Response): AsyncIterable<Wire | '[DONE]'> {
           .map((l) => l.slice(5).trimStart())
           .join('\n');
         if (!data) continue;
-        if (data === '[DONE]') {
-          yield '[DONE]';
-          continue;
-        }
         try {
           yield JSON.parse(data);
         } catch (error) {
@@ -66,36 +63,8 @@ async function* frames(response: Response): AsyncIterable<Wire | '[DONE]'> {
     reader.releaseLock();
   }
 }
-function baseMessages(messages: ProviderMessage[], mode: ApiMode): Wire[] {
-  return messages.map((m) => ({
-    role: m.role,
-    content:
-      mode === 'anthropic-messages'
-        ? [
-            ...(m.images ?? []).map((image) => {
-              const parts = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(image.data);
-              if (!parts) throw new HttpError(400, '图片格式无效');
-              return {
-                type: 'image',
-                source: { type: 'base64', media_type: parts[1], data: parts[2] },
-              };
-            }),
-            ...(m.content ? [{ type: 'text', text: m.content }] : []),
-          ]
-        : m.images?.length
-          ? [
-              { type: mode === 'responses' ? 'input_text' : 'text', text: m.content },
-              ...m.images.map((image) =>
-                mode === 'responses'
-                  ? { type: 'input_image', image_url: image.data, detail: 'auto' }
-                  : { type: 'image_url', image_url: { url: image.data } },
-              ),
-            ]
-          : m.content,
-  }));
-}
 export async function* generateToolTurn(
-  mode: ApiMode,
+  mode: LlmApiMode,
   connection: ProviderConnection,
   model: string,
   messages: ProviderMessage[],
@@ -106,75 +75,21 @@ export async function* generateToolTurn(
   options: ToolTurnOptions = {},
 ): AsyncIterable<ToolEvent> {
   const responses = mode === 'responses';
-  const anthropic = mode === 'anthropic-messages';
-  const history = baseMessages(messages, mode);
-  for (const step of steps) {
-    history.push(...(step.turn.continuation as Wire[]));
-    history.push(
-      ...(responses
-        ? step.results.map((r) => ({
-            type: 'function_call_output',
-            call_id: r.id,
-            output: r.output,
-          }))
-        : anthropic
-          ? [
-              {
-                role: 'user',
-                content: step.results.map((r) => ({
-                  type: 'tool_result',
-                  tool_use_id: r.id,
-                  content: r.output,
-                })),
-              },
-            ]
-          : step.results.map((r) => ({ role: 'tool', tool_call_id: r.id, content: r.output }))),
-    );
-  }
-  const body: Wire = {
-    model,
-    stream: true,
-    // Some Anthropic models reject forced tool_choice even without thinking.
-    // Keep their automatic selection and enforce actual completion in the caller.
-    ...(!anthropic && options.requireTool ? { tool_choice: 'required' } : {}),
-    ...(responses
-      ? {
-          store: false,
-          include: ['reasoning.encrypted_content'],
-          input: history,
-          tools: tools.map((t) => ({ type: 'function', ...t, strict: true })),
-          ...(effort !== 'none' ? { reasoning: { effort } } : {}),
-        }
-      : anthropic
-        ? {
-            messages: history,
-            max_tokens: effort === 'none' ? 4096 : 16384,
-            tools: tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.parameters,
-            })),
-            ...(effort !== 'none'
-              ? { thinking: { type: 'adaptive' }, output_config: { effort } }
-              : {}),
-          }
-        : {
-            messages: history,
-            stream_options: { include_usage: true },
-            tools: tools.map((t) => ({ type: 'function', function: { ...t, strict: true } })),
-            ...(effort !== 'none' ? { reasoning_effort: effort } : {}),
-          }),
-  };
+  const body = generationRequest(mode, connection, model, messages, effort, {
+    tools,
+    steps,
+    requireTool: options.requireTool,
+  });
   const response = await providerFetch(
     connection,
-    `${connection.baseUrl.replace(/\/+$/, '')}/${responses ? 'responses' : anthropic ? 'messages' : 'chat/completions'}`,
+    `${connection.baseUrl.replace(/\/+$/, '')}/${responses ? 'responses' : 'messages'}`,
     {
       method: 'POST',
       signal,
       redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
-        ...(anthropic
+        ...(!responses
           ? {
               'anthropic-version': '2023-06-01',
               ...(connection.apiKey ? { 'x-api-key': connection.apiKey } : {}),
@@ -200,9 +115,6 @@ export async function* generateToolTurn(
   }
   const blocks = new Map<number, Wire>();
   const partialJson = new Map<number, string>();
-  const completionCalls = new Map<number, Wire>();
-  let text = '';
-  let reasoning = '';
   let finish: string | undefined;
   let started = false;
   let usage: Wire = {};
@@ -214,7 +126,7 @@ export async function* generateToolTurn(
       calls = continuation
         .filter((b) => b.type === 'function_call')
         .map((b) => ({ id: b.call_id, name: b.name, arguments: argumentsOf(b.arguments) }));
-    } else if (anthropic) {
+    } else {
       const content = [...blocks.entries()]
         .sort(([a], [b]) => a - b)
         .map(([i, b]) =>
@@ -226,23 +138,6 @@ export async function* generateToolTurn(
       calls = content
         .filter((b) => b.type === 'tool_use')
         .map((b) => ({ id: b.id, name: b.name, arguments: b.input }));
-    } else {
-      const tool_calls = [...completionCalls.entries()]
-        .sort(([a], [b]) => a - b)
-        .map(([, call]) => call);
-      continuation = [
-        {
-          role: 'assistant',
-          content: text || null,
-          ...(tool_calls.length ? { tool_calls } : {}),
-          ...(reasoning ? { reasoning_content: reasoning } : {}),
-        },
-      ];
-      calls = tool_calls.map((c) => ({
-        id: c.id,
-        name: c.function.name,
-        arguments: argumentsOf(c.function.arguments),
-      }));
     }
     if (
       calls.length > 16 ||
@@ -251,32 +146,18 @@ export async function* generateToolTurn(
     )
       throw new HttpError(502, '模型返回的工具调用无效');
     if (
-      anthropic &&
+      !responses &&
       (!started ||
         !['tool_use', 'end_turn', 'stop_sequence', 'refusal'].includes(finish ?? '') ||
         (finish === 'tool_use') !== !!calls.length)
     )
       throw new HttpError(502, '模型回复未正常完成，已保留生成内容');
-    if (
-      !anthropic &&
-      !responses &&
-      (finish === 'length' ||
-        finish === 'content_filter' ||
-        (finish === 'tool_calls') !== !!calls.length)
-    )
-      throw new HttpError(502, '模型工具回复未完整结束');
     return { type: 'turn', turn: { calls, continuation } };
   };
-  for await (const packet of frames(response)) {
+  for await (const p of frames(response)) {
     signal.throwIfAborted();
-    if (packet === '[DONE]') {
-      if (anthropic || responses) throw new HttpError(502, '模型协议结束标记无效');
-      yield complete();
-      return;
-    }
-    if (!packet || typeof packet !== 'object') throw new HttpError(502, '模型流事件无效');
-    const p = packet;
-    if (anthropic) {
+    if (!p || (typeof p.type !== 'string' && !p.error)) throw new HttpError(502, '模型流事件无效');
+    if (!responses) {
       if (p.type === 'message_start') {
         started = true;
         usage = { ...p.message?.usage };
@@ -298,9 +179,9 @@ export async function* generateToolTurn(
           usage: { input: input + created + read, output, total: input + created + read + output },
         };
     } else {
-      const u = responses ? p.response?.usage : p.usage;
-      const input = responses ? u?.input_tokens : u?.prompt_tokens;
-      const output = responses ? u?.output_tokens : u?.completion_tokens;
+      const u = p.response?.usage;
+      const input = u?.input_tokens;
+      const output = u?.output_tokens;
       if ([input, output, u?.total_tokens].every(count))
         yield { type: 'usage', usage: { input, output, total: u.total_tokens } };
     }
@@ -324,7 +205,7 @@ export async function* generateToolTurn(
         yield complete();
         return;
       }
-    } else if (anthropic) {
+    } else {
       if (p.type === 'content_block_start') {
         if (blocks.size >= 64) throw new HttpError(502, '模型返回的内容块过多');
         blocks.set(p.index, { ...p.content_block });
@@ -348,28 +229,6 @@ export async function* generateToolTurn(
       if (p.type === 'message_stop') {
         yield complete();
         return;
-      }
-    } else {
-      const choice = p.choices?.[0];
-      finish = choice?.finish_reason ?? finish;
-      const delta = choice?.delta;
-      if (typeof delta?.content === 'string') {
-        text += delta.content;
-        yield { type: 'text', text: delta.content };
-      }
-      if (typeof delta?.reasoning_content === 'string') reasoning += delta.reasoning_content;
-      for (const part of delta?.tool_calls ?? []) {
-        if (completionCalls.size >= 16 && !completionCalls.has(part.index))
-          throw new HttpError(502, '模型请求的工具过多');
-        const call = completionCalls.get(part.index) ?? {
-          id: '',
-          type: 'function',
-          function: { name: '', arguments: '' },
-        };
-        if (part.id) call.id = part.id;
-        if (part.function?.name) call.function.name += part.function.name;
-        if (part.function?.arguments) call.function.arguments += part.function.arguments;
-        completionCalls.set(part.index, call);
       }
     }
   }

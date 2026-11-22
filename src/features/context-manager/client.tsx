@@ -75,12 +75,21 @@ function PreferencesForm({ initial }: { initial: ContextPreferences }) {
       {label}
       <input
         type="number"
-        value={preferences[key]}
+        value={preferences[key] ?? ''}
+        placeholder={key === 'compressionThreshold' ? '自动' : undefined}
         min={min}
         max={max}
-        required
+        required={key !== 'compressionThreshold'}
         disabled={busy}
-        onChange={(event) => setPreferences({ ...preferences, [key]: Number(event.target.value) })}
+        onChange={(event) =>
+          setPreferences({
+            ...preferences,
+            [key]:
+              key === 'compressionThreshold' && event.target.value === ''
+                ? null
+                : Number(event.target.value),
+          })
+        }
       />
     </label>
   );
@@ -142,8 +151,8 @@ function PreferencesForm({ initial }: { initial: ContextPreferences }) {
             压缩较早历史，保留最近若干轮与图片原文。后续复用摘要，需要时增量压缩；失败继续使用原历史，原聊天记录保留。
           </p>
           <p className="context-manager-caption">
-            阈值按发给回答模型的消息文本计量（UTF-16 字符，含本轮记忆与 Skill / Search
-            内容），不代表 Token 或模型容量。摘要预算须小于触发阈值。
+            阈值留空时，预留回答空间后，估算输入达到可用额度的 80% 即压缩。模型窗口未知时使用 24,000
+            字符。填写字符数可提前触发，摘要预算须小于填写的阈值。
           </p>
         </section>
         <section className="context-manager-settings-panel">

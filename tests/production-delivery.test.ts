@@ -34,7 +34,7 @@ async function json(path: string, method = 'GET', body?: unknown): Promise<any> 
 }
 async function send(
   modelName: string,
-  mode: ApiMode = 'chat-completions',
+  mode: ApiMode = 'responses',
   productionMode = 'required',
   content = '继续完成刚才的任务',
 ) {
@@ -79,7 +79,7 @@ before(async () => {
   });
   assert.equal(registration.status, 201);
   cookie = registration.headers.get('set-cookie')!.split(';')[0];
-  for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages'] as const) {
+  for (const apiMode of ['responses', 'anthropic-messages'] as const) {
     const source = await json('/admin/providers', 'POST', {
       name: apiMode,
       baseUrl: provider.url,
@@ -87,7 +87,7 @@ before(async () => {
       apiMode,
     });
     const names =
-      apiMode === 'chat-completions'
+      apiMode === 'responses'
         ? [
             'delivery-mixed',
             'delivery-noplan',
@@ -112,7 +112,7 @@ before(async () => {
           })
         ).id,
       );
-    if (apiMode === 'chat-completions') {
+    if (apiMode === 'responses') {
       imageId = (
         await json('/admin/models', 'POST', {
           providerId: source.id,
@@ -154,7 +154,7 @@ after(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-for (const mode of ['chat-completions', 'responses', 'anthropic-messages'] as const) {
+for (const mode of ['responses', 'anthropic-messages'] as const) {
   test(`${mode}: required mixed plan delivers four distinct files and reuses completed image without paid repeat`, async () => {
     const start = provider.requests.length;
     const { answer, messages, events, conversation, payload } = await send('delivery-mixed', mode);
@@ -173,10 +173,15 @@ for (const mode of ['chat-completions', 'responses', 'anthropic-messages'] as co
     assert.equal(calls.filter((call) => call.model === 'delivery-mixed').length, 3);
     assert.equal(calls.filter((call) => call.model === 'production-image').length, 2);
     assert.deepEqual(
-      calls[0].tools?.map((tool) => tool.name ?? tool.function?.name),
+      calls[0].tools?.map((tool) => tool.name),
       ['production_plan'],
     );
     assert.equal(calls[0].tool_choice, mode === 'anthropic-messages' ? undefined : 'required');
+    const afterPlan = calls.filter((call) => call.model === 'delivery-mixed')[1];
+    const workspaceTools = afterPlan.tools
+      ?.map((tool) => tool.name)
+      .filter((name) => name.startsWith('workspace_'));
+    assert.deepEqual(workspaceTools?.sort(), ['workspace_list', 'workspace_read']);
     assert.equal(
       calls.filter((call) => call.model === 'delivery-mixed').at(-1)?.tool_choice,
       undefined,
@@ -216,12 +221,7 @@ test('required mode rejects code-only success and keeps provider usage and parti
   assert.deepEqual(answer.usage, { input: 23, output: 42, total: 65 });
 });
 test('required mode retains explicit user-format validation even when the declared plan is fully delivered', async () => {
-  const { answer } = await send(
-    'delivery-mixed',
-    'chat-completions',
-    'required',
-    '生成一个 PDF 文件',
-  );
+  const { answer } = await send('delivery-mixed', 'responses', 'required', '生成一个 PDF 文件');
   assert.equal(answer.status, 'error');
   assert.match(answer.error ?? '', /PDF/);
   assert.ok(answer.productionDelivery?.items.every((item) => item.status === 'complete'));
@@ -246,14 +246,14 @@ test('clarification is a valid completed outcome with a persisted question and n
 });
 test('ordinary Auto messages use one main-model request without an auxiliary planning call', async () => {
   const start = provider.requests.length;
-  const { answer } = await send('delivery-auto', 'chat-completions', 'auto');
+  const { answer } = await send('delivery-auto', 'responses', 'auto');
   assert.equal(answer.status, 'complete');
   assert.equal(answer.productionDelivery, null);
   assert.equal(provider.requests.length - start, 1);
 });
 test('an Auto plan can deliver twelve files sequentially within the shared tool budget', async () => {
   const start = provider.requests.length;
-  const { answer } = await send('delivery-sequential', 'chat-completions', 'auto');
+  const { answer } = await send('delivery-sequential', 'responses', 'auto');
   assert.equal(answer.status, 'complete', answer.error ?? 'must finish all twelve');
   assert.equal(answer.productionDelivery?.items.length, 12);
   assert.ok(answer.productionDelivery?.items.every((item) => item.status === 'complete'));
@@ -266,7 +266,7 @@ test('planned and unplanned image failures preserve files and never automaticall
     const start = provider.requests.length;
     const { answer } = await send(
       model,
-      'chat-completions',
+      'responses',
       model === 'delivery-mixed' ? 'required' : 'auto',
     );
     assert.equal(answer.status, 'error');

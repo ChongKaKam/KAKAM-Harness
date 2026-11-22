@@ -1,7 +1,9 @@
 import { skillProviderFixture } from './skill-provider-fixture';
 import { productionProviderFixture } from './production-provider-fixture';
 import { deliveryProviderFixture } from './delivery-provider-fixture';
-import express from 'express';
+import express, { type Request, type Response } from 'express';
+import type { LlmApiMode } from '../src/shared/types';
+import { toolResults, writeToolTurn } from './provider-tool-fixture';
 import { createServer } from 'node:http';
 export const imageData =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=';
@@ -43,18 +45,30 @@ function extensionText(content: unknown): string | undefined {
     return content.includes('[empty-description]')
       ? '   '
       : '帮你梳理写作思路、润色表达，适合整理初稿和日常写作。';
-  if (content.startsWith('Decide whether to enable'))
-    return content.includes('[bad-json]')
-      ? '{"enabled":"true"}'
-      : JSON.stringify({ enabled: !content.includes('[skip-search]') });
+  if (content.startsWith('Decide whether to enable')) {
+    if (content.includes('[bad-json]')) return '{"enabled":"true"}';
+    if (content.includes('[decision-preface]')) return 'Here is my decision: {"enabled":true}';
+    const result = JSON.stringify({ enabled: !content.includes('[skip-search]') });
+    return content.includes('[decision-fenced]') ? `\`\`\`json\n${result}\n\`\`\`` : result;
+  }
   if (content.startsWith('Summarize the latest user request'))
     return JSON.stringify({
-      state: content.includes('[skip-search]')
-        ? 'The user says hello.'
-        : 'The user requests current news and supporting sources.',
+      state: content.includes('[long-decision-state]')
+        ? 'a'.repeat(8001)
+        : content.includes('[skip-search]')
+          ? 'The user says hello.'
+          : 'The user requests current news and supporting sources.',
+    });
+  if (content.startsWith('Plan one distinct alternative'))
+    return JSON.stringify({
+      query: content.includes('[followup-source]') ? 'Drift alternative' : null,
     });
   if (content.startsWith('Generate 1 to')) {
-    if (content.includes('[bad-json]')) return 'not JSON';
+    if (content.includes('[bad-json]') || content.includes('[query-bad-json]')) return 'not JSON';
+    if (content.includes('[lost-search-receipt]'))
+      return JSON.stringify({ queries: ['lost-receipt'] });
+    if (content.includes('[harness-parallel]'))
+      return JSON.stringify({ queries: ['held-a', 'held-b'] });
     const queries = content.includes('[search-slow]')
       ? ['slow']
       : content.includes('[search-error]')
@@ -66,15 +80,70 @@ function extensionText(content: unknown): string | undefined {
             : ['Drift documentation', 'Drift sources'];
     return JSON.stringify({ queries });
   }
+  if (content.includes('[Search in progress]')) return '先说明已知原理，项目数据仍待核实。';
   if (content.includes('Web search evidence follows'))
     return '根据检索结果，Drift 支持拓展能力。[1](https://example.test/docs)';
   if (content.includes('Web search returned no usable sources'))
     return '未找到可用的支持来源，无法核实。';
 }
+function harnessToolFixture(req: Request, res: Response, mode: LlmApiMode): boolean {
+  const body = req.body;
+  if (body.tools?.[0]?.name === 'read_probe') {
+    if (body.model === 'probe-disconnect') {
+      req.socket.destroy();
+      return true;
+    }
+    const previous = toolResults(body, mode).at(-1);
+    const first = previous === undefined;
+    const name = body.model === 'probe-wrong-tool' ? 'unregistered_tool' : 'read_probe';
+    writeToolTurn(
+      mode,
+      res,
+      first ? [{ id: 'read-1', name, arguments: { name: 'probe.txt' } }] : [],
+      first || body.model === 'probe-wrong-answer' ? 'OK' : JSON.parse(previous).verificationCode,
+      first || body.model !== 'probe-no-usage'
+        ? { input_tokens: first ? 9 : 19, output_tokens: 1 }
+        : null,
+    );
+    return true;
+  }
+  if (body.model !== 'harness-clarification' || !body.tools?.length) return false;
+  const history = body.input ?? body.messages;
+  const prompt = JSON.stringify(
+    history.findLast((item: { role?: string }) => item.role === 'user')?.content ?? '',
+  );
+  const ask = prompt.includes('请先确定受众') || prompt.includes('只提问');
+  const args = {
+    question: '这份报告主要给谁看？',
+    ...(prompt.includes('请先确定受众')
+      ? { suggestion: '先为项目负责人写一页摘要，方便确定范围。' }
+      : {}),
+  };
+  writeToolTurn(
+    mode,
+    res,
+    ask ? [{ id: 'ask_1', name: 'workspace_ask', arguments: args }] : [],
+    '已按确认的受众继续。',
+    null,
+  );
+  return true;
+}
 export async function mockProvider(portNumber = 0) {
   const app = express();
   app.use(express.json({ limit: '30mb' }));
   const requests: unknown[] = [];
+  app.use((req, res, next) => {
+    if (
+      (req.body?.model === 'tool-http-error' && req.body?.tools?.length) ||
+      req.body?.model === 'auxiliary-http-error'
+    ) {
+      requests.push(req.body);
+      res.status(400).json({ error: { message: 'fixture tools are unsupported' } });
+      return;
+    }
+    next();
+  });
+  const heldSearches = new Set<() => void>();
   const searches: { query: string; max_results: number }[] = [];
   const decisions: unknown[] = [];
   app.post('/v1/images/generations', (req, res) => {
@@ -143,6 +212,10 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/search', (req, res) => {
     searches.push(req.body);
+    if (req.body.query === 'lost-receipt') {
+      res.destroy();
+      return;
+    }
     if (req.body.query === 'upstream-error') {
       res.status(429).json({ error: 'private upstream error' });
       return;
@@ -173,7 +246,10 @@ export async function mockProvider(portNumber = 0) {
               ],
         id: 'mock-search',
       });
-    if (req.body.query === 'slow') {
+    if (['held-a', 'held-b'].includes(req.body.query)) {
+      heldSearches.add(respond);
+      res.once('close', () => heldSearches.delete(respond));
+    } else if (req.body.query === 'slow') {
       const timer = setTimeout(respond, 1000);
       res.on('close', () => clearTimeout(timer));
     } else respond();
@@ -200,51 +276,9 @@ export async function mockProvider(portNumber = 0) {
       ],
     });
   });
-  app.post('/v1/chat/completions', (req, res) => {
-    requests.push(req.body);
-    if (deliveryProviderFixture(req.body, 'chat-completions', res)) return;
-    if (productionProviderFixture(req.body, 'chat-completions', res)) return;
-    if (skillProviderFixture(req.body, 'chat-completions', res)) return;
-    if (req.body.model === 'upstream-error') {
-      res.status(401).json({ error: { message: 'sensitive upstream details' } });
-      return;
-    }
-    res.setHeader('Content-Type', 'text/event-stream');
-    const content = req.body.messages.at(-1)?.content;
-    const text = Array.isArray(content)
-      ? '我收到了一张图片。\n\n' + markdownFixture
-      : markdownFixture;
-    const richText = extensionText(content) ?? text + latexFixture;
-    const slow = req.body.model === 'slow';
-    const parts = slow
-      ? Array(50).fill('慢速回复 ')
-      : [richText.slice(0, 5), richText.slice(5, 30), richText.slice(30)];
-    let index = 0;
-    const timer = setInterval(
-      () => {
-        if (index < parts.length) {
-          res.write(
-            `data: ${JSON.stringify({ choices: [{ delta: { content: parts[index++] } }] })}\r\n\r\n`,
-          );
-          return;
-        }
-        clearInterval(timer);
-        if (req.body.model === 'broken') {
-          res.end();
-          return;
-        }
-        if (req.body.model !== 'no-usage')
-          res.write(
-            `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 23, completion_tokens: 42, total_tokens: 65 } })}\n\n`,
-          );
-        res.end('data: [DONE]\n\n');
-      },
-      slow ? 80 : 8,
-    );
-    res.on('close', () => clearInterval(timer));
-  });
   app.post('/v1/responses', (req, res) => {
     requests.push(req.body);
+    if (harnessToolFixture(req, res, 'responses')) return;
     if (deliveryProviderFixture(req.body, 'responses', res)) return;
     if (productionProviderFixture(req.body, 'responses', res)) return;
     if (skillProviderFixture(req.body, 'responses', res)) return;
@@ -285,6 +319,14 @@ export async function mockProvider(portNumber = 0) {
         emit({
           type,
           response: {
+            output: [
+              {
+                type: 'message',
+                id: 'answer',
+                role: 'assistant',
+                content: [{ type: 'output_text', text: parts.join(''), annotations: [] }],
+              },
+            ],
             usage:
               req.body.model === 'no-usage'
                 ? undefined
@@ -299,6 +341,7 @@ export async function mockProvider(portNumber = 0) {
   });
   app.post('/v1/messages', (req, res) => {
     requests.push(req.body);
+    if (harnessToolFixture(req, res, 'anthropic-messages')) return;
     if (deliveryProviderFixture(req.body, 'anthropic-messages', res)) return;
     if (productionProviderFixture(req.body, 'anthropic-messages', res)) return;
     if (skillProviderFixture(req.body, 'anthropic-messages', res)) return;
@@ -332,7 +375,6 @@ export async function mockProvider(portNumber = 0) {
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'not answer text' },
     });
-    emit({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } });
     const slow = req.body.model === 'slow';
     const hasImage = req.body.messages
       .at(-1)
@@ -344,7 +386,19 @@ export async function mockProvider(portNumber = 0) {
       .join('');
     const text =
       extensionText(promptText) ?? (hasImage ? '我收到了一张图片。\n\n' : '') + markdownFixture;
-    const parts = slow ? Array(50).fill('慢速回复 ') : [text.slice(0, 6), text.slice(6)];
+    const startText =
+      req.body.model === 'initial-text' ||
+      (promptText.startsWith('Decide whether to enable') &&
+        promptText.includes('[decision-start-text]'))
+        ? text.slice(0, 6)
+        : '';
+    emit({
+      type: 'content_block_start',
+      index: 1,
+      content_block: { type: 'text', text: startText },
+    });
+    const remaining = text.slice(startText.length);
+    const parts = slow ? Array(50).fill('慢速回复 ') : [remaining.slice(0, 6), remaining.slice(6)];
     let index = 0;
     const timer = setInterval(
       () => {
@@ -375,7 +429,14 @@ export async function mockProvider(portNumber = 0) {
         emit({
           type: 'message_delta',
           usage: missing ? undefined : { output_tokens: zero ? 0 : 42 },
-          delta: { stop_reason: req.body.model === 'incomplete' ? 'max_tokens' : 'end_turn' },
+          delta: {
+            stop_reason:
+              req.body.model === 'incomplete' ||
+              (promptText.startsWith('Decide whether to enable') &&
+                promptText.includes('[decision-output-limit]'))
+                ? 'max_tokens'
+                : 'end_turn',
+          },
         });
         emit({ type: 'message_stop' });
         res.end();
@@ -391,6 +452,10 @@ export async function mockProvider(portNumber = 0) {
     url: `http://127.0.0.1:${port}/v1`,
     requests,
     searches,
+    releaseSearches: () => {
+      for (const respond of heldSearches) respond();
+      heldSearches.clear();
+    },
     decisions,
     anthropicHeaders,
     close: () =>

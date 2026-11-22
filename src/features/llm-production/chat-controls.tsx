@@ -35,7 +35,7 @@ export function ProductionChatControl({ conversationId }: { conversationId?: str
       {open && conversationId && (
         <Modal title="聊天产物空间" className="llm-production-drawer" close={() => setOpen(false)}>
           <p className="llm-production-drawer-description">
-            分组内共享产物空间；未分组聊天的产物到期后自动清理。
+            新对话的产物默认私有。可在工作区发布指定版本到项目，或授权给指定对话。
           </p>
           <div className="llm-production-drawer-links">
             <button type="button" className="button" onClick={() => navigate('llm-production')}>

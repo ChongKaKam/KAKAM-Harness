@@ -5,6 +5,8 @@ import type { ContextTurn } from './context-observer';
 
 export interface ContextProcessingInput extends ContextTurn {
   messages: ProviderMessage[];
+  /** Main-model input allowance after reserving output, plus first-round costs added after compression (workspace, instructions and native tools). */
+  contextBudget?: { availableTokens: number; supplementalTokens: number };
   signal: AbortSignal;
 }
 export interface ContextProcessingResult {

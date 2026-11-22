@@ -33,7 +33,8 @@ interface ConversationSpace {
 }
 
 type OpenSpace =
-  { kind: 'conversation'; space: ConversationSpace } | { kind: 'group'; group: ConversationGroup };
+  | { kind: 'conversation'; space: ConversationSpace; groupFilter?: string }
+  | { kind: 'group'; group: ConversationGroup };
 
 const typeOptions = [
   { value: 'all', label: '全部' },
@@ -42,18 +43,33 @@ const typeOptions = [
   { value: 'web', label: '网页' },
 ] as const;
 
-function conversationSpaces(artifacts: ProductionArtifact[], conversations: Conversation[]) {
+function belongsToGroup(artifact: ProductionArtifact, groupId: string) {
+  return artifact.groupId === groupId || !!artifact.publishedGroupIds?.includes(groupId);
+}
+
+function conversationSpaces(
+  artifacts: ProductionArtifact[],
+  conversations: Conversation[],
+  scope = 'all',
+) {
   const sources = new Map(conversations.map((conversation) => [conversation.id, conversation]));
   const spaces = new Map<string, ConversationSpace>();
   for (const artifact of artifacts) {
     const source = artifact.conversationId ? sources.get(artifact.conversationId) : undefined;
+    if (scope !== 'all') {
+      const included =
+        scope === 'ungrouped'
+          ? !artifact.groupId && !artifact.publishedGroupIds?.length && !source?.groupId
+          : belongsToGroup(artifact, scope);
+      if (!included) continue;
+    }
     const key = artifact.conversationId ?? `deleted:${artifact.groupId ?? 'ungrouped'}`;
     let space = spaces.get(key);
     if (!space) {
       space = {
         key,
         conversationId: artifact.conversationId,
-        groupId: artifact.groupId,
+        groupId: source?.harness ? source.groupId : artifact.groupId,
         name: source?.title ?? (artifact.conversationId ? artifact.spaceName : '已删除对话的产物'),
         updatedAt: artifact.createdAt,
         artifacts: [],
@@ -105,10 +121,13 @@ function ProductionPageContent() {
   }, [open]);
   const spaces = data ? conversationSpaces(data.files.artifacts, data.conversations) : [];
   const query = search.trim().toLocaleLowerCase();
-  const visible = spaces
+  const scopedSpaces =
+    scope !== 'all' && data
+      ? conversationSpaces(data.files.artifacts, data.conversations, scope)
+      : spaces;
+  const visible = scopedSpaces
     .filter(
       (space) =>
-        (scope === 'all' || (scope === 'ungrouped' ? !space.groupId : space.groupId === scope)) &&
         (type === 'all' ||
           space.artifacts.some((artifact) => productionCategory(artifact) === type)) &&
         `${space.name} ${space.artifacts.map((artifact) => artifact.name).join(' ')}`
@@ -121,7 +140,8 @@ function ProductionPageContent() {
         : right.updatedAt.localeCompare(left.updatedAt) || left.key.localeCompare(right.key),
     );
   const group = data?.groups.find((item) => item.id === scope);
-  const detailGroupId = open?.kind === 'group' ? open.group.id : open?.space.groupId;
+  const detailGroupId =
+    open?.kind === 'group' ? open.group.id : (open?.groupFilter ?? open?.space.groupId);
   const detailGroup = data?.groups.find((item) => item.id === detailGroupId);
   const detailName = open?.kind === 'group' ? open.group.name : open?.space.name;
   function bindButton(key: string, button: HTMLButtonElement | null) {
@@ -169,7 +189,11 @@ function ProductionPageContent() {
                   {detailName}
                 </h2>
                 <p>
-                  {open.kind === 'group' ? '管理分组内全部共享产物' : '管理此对话生成的全部产物'}
+                  {open.kind === 'group'
+                    ? '管理分组内全部共享产物'
+                    : open.groupFilter
+                      ? '此对话在所选分组的共享产物'
+                      : '管理此对话生成的全部产物'}
                 </p>
               </div>
               <div className="llm-production-actions">
@@ -197,14 +221,15 @@ function ProductionPageContent() {
             </div>
             <ProductionLibrary
               conversationId={
-                open.kind === 'conversation' ? (open.space.conversationId ?? undefined) : undefined
+                open.kind === 'conversation' && !open.groupFilter
+                  ? (open.space.conversationId ?? undefined)
+                  : undefined
               }
               groupId={
                 open.kind === 'group'
                   ? open.group.id
-                  : !open.space.conversationId
-                    ? (open.space.groupId ?? undefined)
-                    : undefined
+                  : (open.groupFilter ??
+                    (!open.space.conversationId ? (open.space.groupId ?? undefined) : undefined))
               }
               sourceConversationId={
                 open.kind === 'conversation' ? open.space.conversationId : undefined
@@ -296,15 +321,10 @@ function ProductionPageContent() {
                     <span>
                       <strong title={item.name}>{item.name}</strong>
                       <small>
-                        {
-                          spaces.filter(
-                            (space) =>
-                              item.id === 'all' ||
-                              (item.id === 'ungrouped'
-                                ? !space.groupId
-                                : space.groupId === item.id),
-                          ).length
-                        }{' '}
+                        {item.id === 'all'
+                          ? spaces.length
+                          : conversationSpaces(data.files.artifacts, data.conversations, item.id)
+                              .length}{' '}
                         个对话
                       </small>
                     </span>
@@ -349,7 +369,7 @@ function ProductionPageContent() {
                       ref={(button) => bindButton(space.key, button)}
                       onClick={() => {
                         returnFocus.current = space.key;
-                        setOpen({ kind: 'conversation', space });
+                        setOpen({ kind: 'conversation', space, groupFilter: group?.id });
                       }}
                     >
                       <span className="llm-production-conversation-cover">

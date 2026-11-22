@@ -143,7 +143,7 @@ export function registerProductionTools(ctx: Context) {
   return ctx.extensions.registerConversationTools({
     id: 'llm-production',
     instructions:
-      "Production tools create real downloadable artifacts. Interpret the user's requested deliverables using the conversation context. When an artifact output is requested, use the corresponding production tool; a description or code block alone does not deliver an artifact. A simple single artifact in Auto mode may be generated directly with itemId=null. For multiple files, multiple images, mixed deliverables or dependent steps, call production_plan first with the full list, one item per actual file, and then generate every item with its server-issued itemId. In required-artifact mode always call production_plan before generation. Plan formats and contents follow the user's needs; never hardcode a format based on an example task. Honor explicit formats and filenames. Use production_create_file for documents, data, code, webpages and explicitly requested SVG files, and production_generate_image for native images. Native images cannot be replaced by a prompt, Markdown image link or SVG. Code examples, explanations and quoted requests alone do not request artifacts. If a requirement cannot be fulfilled without clarification, call production_plan with clarify and ask the returned question. Unsupported capabilities must be explained; do not silently substitute another format. Only claim creation from successful tool results and use their real download URLs. Do not repeat a failed image generation request within the same reply. Files use this conversation's private space, shared with its group when grouped. Fixed document renderers do not execute scripts. Existing shared files remain in their original group when their source conversation moves or is deleted.",
+      "Production tools create real downloadable artifacts. Interpret the user's requested deliverables using the conversation context. When an artifact output is requested, use the corresponding production tool; a description or code block alone does not deliver an artifact. A simple single artifact in Auto mode may be generated directly with itemId=null. For multiple files, multiple images, mixed deliverables or dependent steps, call production_plan first with the full list, one item per actual file, and then generate every item with its server-issued itemId. In required-artifact mode always call production_plan before generation. Plan formats and contents follow the user's needs; never hardcode a format based on an example task. Honor explicit formats and filenames. Use production_create_file for documents, data, code, webpages and explicitly requested SVG files, and production_generate_image for native images. Native images cannot be replaced by a prompt, Markdown image link or SVG. Code examples, explanations and quoted requests alone do not request artifacts. If a requirement cannot be fulfilled without clarification, call production_plan with clarify and ask the returned question. Unsupported capabilities must be explained; do not silently substitute another format. Only claim creation from successful tool results and use their real download URLs. Do not repeat a failed image generation request within the same reply. Workspace artifacts are private to this conversation until the user publishes or grants a specific version. Fixed document renderers do not execute scripts. Existing shared files remain in their original group when their source conversation moves or is deleted.",
     requirement(user, content, requireDelivery = false) {
       const request = productionRequest(content);
       if (!request && !requireDelivery) return;
@@ -291,7 +291,12 @@ export function registerProductionTools(ctx: Context) {
           return result(
             ctx.production.create(
               scope.user,
-              { ...scopeInput, ...file, deliveryItemId: parsed.data.itemId },
+              {
+                ...scopeInput,
+                ...file,
+                deliveryItemId: parsed.data.itemId,
+                workspaceText: parsed.data.content,
+              },
               scope.signal,
             ),
           );

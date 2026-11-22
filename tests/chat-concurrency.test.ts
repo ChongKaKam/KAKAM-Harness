@@ -71,11 +71,14 @@ before(async () => {
     let data = '';
     for await (const chunk of req) data += chunk;
     const body = JSON.parse(data);
-    const content: string = body.messages.at(-1).content;
+    assert.equal(req.url, '/v1/responses');
+    const content: string = body.input.at(-1).content;
     calls.push(content);
     streams.set(content, res);
     res.setHeader('Content-Type', 'text/event-stream');
-    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: content })}\n\n`,
+    );
     res.on('close', () => {
       if (streams.get(content) === res) streams.delete(content);
     });
@@ -206,7 +209,7 @@ test('five chats per user, independent subscribers and cancellation, idempotency
   streams
     .get('run-1')!
     .end(
-      `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ type: 'response.completed', response: { output: [], usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 } } })}\n\n`,
     );
   await waitFor(
     async () => (await json(`/conversations/${chats[1].id}`)).messages[1].status === 'complete',
@@ -267,7 +270,8 @@ test('configured concurrency cap and shutdown save every detached chat', async (
   await start(2);
   for (const chat of chats.slice(0, 2)) {
     const saved: Message[] = (await json(`/conversations/${chat.id}`)).messages;
-    assert.equal(saved[1].status, 'cancelled');
+    assert.equal(saved[1].status, 'error');
+    assert.match(saved[1].error!, /服务重启/);
   }
   assert.equal(
     (

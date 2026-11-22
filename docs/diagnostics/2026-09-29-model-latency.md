@@ -29,4 +29,4 @@
 
 管理员模型测试现在分开显示首段文本与总耗时，使用保存的来源和具体模型，支持显式选择思考程度。项目的 None 表示省略字段，可能采用上游默认思考，而非关闭推理。
 
-依据：[OpenAI 流式输出文档](https://developers.openai.com/api/docs/guides/streaming-responses)、[OpenAI 思考参数文档](https://developers.openai.com/api/docs/guides/reasoning)。常规操作和限制见 [README](../../README.md#排查-responses-与-chat-completions-的速度差异)。
+依据：[OpenAI 流式输出文档](https://developers.openai.com/api/docs/guides/streaming-responses)、[OpenAI 思考参数文档](https://developers.openai.com/api/docs/guides/reasoning)。常规操作和限制见 [README](../../README.md#排查模型流式回复的延迟)。

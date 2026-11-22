@@ -43,25 +43,25 @@ async function register(email: string) {
   };
 }
 const turnsPath = (id: string) => `/context-manager/conversations/${id}/turns`;
-async function submit(id: string, content: string) {
+async function submit(id: string, content: string, model = 'test-text') {
   const messageId = randomUUID();
   await json(`/conversations/${id}/messages`, 'POST', {
     requestId: messageId,
-    modelId: models.get('test-text'),
+    modelId: models.get(model),
     content,
   });
   await (await request(`/conversations/${id}/events`)).text();
   return { messageId, snapshot: (await json(`${turnsPath(id)}/${messageId}`)) as ContextSnapshot };
 }
-async function seed(image = false) {
+async function seed(
+  image = false,
+  contents = Array.from({ length: 6 }, (_, i) => `original-${i}:` + '历史证据'.repeat(300)),
+) {
   const { id } = await json('/conversations', 'POST');
-  const ids: string[] = [],
-    contents: string[] = [];
-  for (let i = 0; i < 6; i++) {
-    const messageId = randomUUID(),
-      content = `original-${i}:` + '历史证据'.repeat(300);
+  const ids: string[] = [];
+  for (const [i, content] of contents.entries()) {
+    const messageId = randomUUID();
     ids.push(messageId);
-    contents.push(content);
     app.kernel.ctx.db.run(
       'INSERT INTO messages(id,conversation_id,role,content,images,created_at) VALUES(?,?,?,?,?,?)',
       messageId,
@@ -111,11 +111,16 @@ before(async () => {
     { name: 'Local context mock', baseUrl: mock.url, apiKey: 'fixture' },
     admin,
   );
-  for (const name of ['test-text', 'upstream-error', 'slow', 'no-usage']) {
+  const limits: Record<string, { contextWindowTokens: number; maxOutputTokens: number }> = {
+    'main-million': { contextWindowTokens: 1_000_000, maxOutputTokens: 8_192 },
+    'main-small': { contextWindowTokens: 12_000, maxOutputTokens: 512 },
+    'summary-small': { contextWindowTokens: 2_300, maxOutputTokens: 256 },
+  };
+  for (const name of ['test-text', 'upstream-error', 'slow', 'no-usage', ...Object.keys(limits)]) {
     const model = await json(
       '/admin/models',
       'POST',
-      { providerId: provider.id, name, label: name },
+      { providerId: provider.id, name, label: name, ...limits[name] },
       admin,
     );
     await json(
@@ -191,8 +196,9 @@ test('compression changes only provider history, reuses summaries, and increment
   assert.equal(first.snapshot.compression?.status, 'compressed');
   assert.equal(first.snapshot.compression.compressedMessages, 4);
   assert.equal(first.snapshot.compression.retainedMessages, 2);
-  const providerMessages = (mock.requests.at(-1) as { messages: { content: string }[] }).messages;
-  assert.equal(providerMessages.length, 4);
+  const providerMessages = (mock.requests.at(-1) as { input: { content: string }[] }).input;
+  assert.equal(providerMessages.length, 5);
+  assert.match(providerMessages.at(-2)!.content, /当前会话\/AGENTS\.md/);
   assert.match(providerMessages[0].content, /conversation_summary/);
   assert.equal(providerMessages.at(-1)!.content, '保持当前输入原文');
   assert.deepEqual(
@@ -224,8 +230,8 @@ test('compression changes only provider history, reuses summaries, and increment
   assert.equal(third.snapshot.compression?.status, 'compressed');
   const compression = mock.requests
     .filter((r) => JSON.stringify(r).includes('Compress conversation history'))
-    .at(-1) as { messages: { content: string }[] };
-  const prompt = compression.messages[0].content;
+    .at(-1) as { input: { content: string }[] };
+  const prompt = compression.input[0].content;
   assert.ok(prompt.includes('previousSummary'));
   assert.ok(!prompt.includes(contents[0]));
   assert.ok(
@@ -245,6 +251,151 @@ test('compression changes only provider history, reuses summaries, and increment
   );
 });
 
+test('automatic compression keeps over 201 short messages intact on a configured 1M model', async () => {
+  await json('/context-manager/preferences', 'PATCH', {
+    compressionEnabled: true,
+    compressionModelId: models.get('summary-small'),
+    compressionThreshold: null,
+  });
+  const { id, contents } = await seed(
+    false,
+    Array.from({ length: 216 }, (_, i) => `turn-${i}: ` + 'short history '.repeat(20)),
+  );
+  const start = mock.requests.length;
+  const { snapshot } = await submit(id, 'Read all the history.', 'main-million');
+  assert.equal(snapshot.status, 'complete');
+  const requests = mock.requests.slice(start) as {
+    model: string;
+    input: { content: string }[];
+  }[];
+  assert.deepEqual(
+    requests.map((r) => r.model),
+    ['main-million'],
+  );
+  assert.deepEqual(
+    requests[0].input.slice(0, contents.length).map((m) => m.content),
+    contents,
+  );
+  assert.equal(requests[0].input.at(-1)?.content, 'Read all the history.');
+});
+
+test('automatic threshold and a smaller compression model summarize only a fitting complete prefix once', async () => {
+  await json('/context-manager/preferences', 'PATCH', {
+    compressionEnabled: true,
+    compressionModelId: models.get('summary-small'),
+    compressionThreshold: null,
+    compressionKeepTurns: 1,
+    compressionMaxCharacters: 500,
+  });
+  const { id, contents } = await seed(
+    false,
+    Array.from({ length: 16 }, (_, i) => `evidence-${i}: ` + 'a'.repeat(1800)),
+  );
+  const start = mock.requests.length;
+  const { snapshot } = await submit(id, 'Continue the design.', 'main-small');
+  assert.equal(snapshot.status, 'complete');
+  assert.equal(snapshot.compression?.status, 'compressed');
+  assert.equal(snapshot.compression.thresholdUnit, 'estimatedTokens');
+  const requests = mock.requests.slice(start) as {
+    model: string;
+    input: { content: string }[];
+  }[];
+  assert.deepEqual(
+    requests.map((r) => r.model),
+    ['summary-small', 'main-small'],
+  );
+  const source = JSON.parse(requests[0].input[0].content.split('\nHistory: ')[1]);
+  assert.deepEqual(source.messages, [
+    { role: 'user', content: contents[0] },
+    { role: 'assistant', content: contents[1] },
+  ]);
+  assert.equal(snapshot.compression.compressedMessages, 2);
+  const answer = requests[1].input;
+  assert.match(answer[0].content, /conversation_summary/);
+  assert.deepEqual(
+    answer.slice(1, -2).map((m) => m.content),
+    contents.slice(2),
+  );
+  assert.equal(answer.at(-1)?.content, 'Continue the design.');
+  const stored = await json(`/conversations/${id}`);
+  assert.deepEqual(
+    stored.messages.slice(0, contents.length).map((m: { content: string }) => m.content),
+    contents,
+  );
+});
+
+test('scoped tool definitions can trigger compression below the raw-history threshold', async () => {
+  const main = await json(
+    '/admin/models',
+    'POST',
+    {
+      providerId: (await json('/admin/providers', 'GET', undefined, admin))[0].id,
+      name: 'tool-compression',
+      label: 'Tool compression',
+      toolCalling: true,
+      contextWindowTokens: 80_000,
+      maxOutputTokens: 4000,
+    },
+    admin,
+  );
+  await json(
+    `/admin/models/${main.id}`,
+    'PATCH',
+    {
+      enabled: true,
+      vision: false,
+      label: 'Tool compression',
+      userIds: [owner],
+    },
+    admin,
+  );
+  models.set('tool-compression', main.id);
+  await json('/context-manager/preferences', 'PATCH', {
+    compressionEnabled: true,
+    compressionModelId: models.get('test-text'),
+    compressionThreshold: null,
+    compressionKeepTurns: 1,
+    compressionMaxCharacters: 500,
+  });
+  const remove = app.kernel.ctx.extensions.registerConversationTools({
+    id: 'context-budget-fixture',
+    instructions: '',
+    tools: (_user, scope) =>
+      scope?.useWorkspace
+        ? [
+            {
+              name: 'large_schema',
+              description: 'x'.repeat(150_000),
+              parameters: { type: 'object' },
+            },
+          ]
+        : [],
+    execute: async () => 'unused',
+  });
+  try {
+    const { id } = await seed(
+      false,
+      Array.from({ length: 12 }, () => 'a'.repeat(4000)),
+    );
+    const start = mock.requests.length;
+    const { snapshot } = await submit(id, 'Continue.', 'tool-compression');
+    assert.equal(snapshot.status, 'complete');
+    assert.equal(snapshot.compression?.status, 'compressed');
+    assert.equal(snapshot.compression?.thresholdUnit, 'estimatedTokens');
+    const requests = mock.requests.slice(start) as {
+      model: string;
+      tools?: { name: string }[];
+    }[];
+    assert.deepEqual(
+      requests.map((r) => r.model),
+      ['test-text', 'tool-compression'],
+    );
+    assert.ok(requests[1].tools?.some((t) => t.name === 'large_schema'));
+  } finally {
+    remove();
+  }
+});
+
 test('source changes invalidate the cache; images and recent original messages are preserved', async () => {
   await enableCompression();
   const { id, ids } = await seed();
@@ -259,14 +410,82 @@ test('source changes invalidate the cache; images and recent original messages a
   assert.equal(snapshot.compression?.status, 'compressed');
   const lastCompression = mock.requests
     .filter((r) => JSON.stringify(r).includes('Compress conversation history'))
-    .at(-1) as { messages: { content: string }[] };
-  assert.match(lastCompression.messages[0].content, /"previousSummary":null/);
-  assert.match(lastCompression.messages[0].content, /已修订的历史/);
+    .at(-1) as { input: { content: string }[] };
+  assert.match(lastCompression.input[0].content, /"previousSummary":null/);
+  assert.match(lastCompression.input[0].content, /已修订的历史/);
   const withImage = await seed(true);
   const imageTurn = await submit(withImage.id, '保留图片');
   assert.equal(imageTurn.snapshot.compression?.status, 'skipped');
   assert.equal(imageTurn.snapshot.imageCount, 1);
   assert.equal(imageTurn.snapshot.status, 'complete');
+});
+
+test('Auto Search uses configured compression before deciding, shares the summary with the answer and compresses once', async () => {
+  await json('/features/search', 'PATCH', { enabled: true }, admin);
+  await json(
+    '/admin/search',
+    'PATCH',
+    {
+      baseUrl: mock.url.replace('/v1', ''),
+      apiKey: 'fixture',
+      maxQueries: 3,
+      maxResults: 5,
+    },
+    admin,
+  );
+  await json(
+    '/admin/extensions/search',
+    'PATCH',
+    {
+      enabled: true,
+      strategy: 'llm',
+      llmModelId: null,
+      decisionModelId: null,
+    },
+    admin,
+  );
+  await enableCompression();
+  const seeded = await seed();
+  const before = mock.requests.length;
+  try {
+    const requestId = randomUUID();
+    await json(`/conversations/${seeded.id}/messages`, 'POST', {
+      requestId,
+      modelId: models.get('test-text'),
+      content: '请核实最新资料',
+      extensions: { search: 'auto' },
+    });
+    await (await request(`/conversations/${seeded.id}/events`)).text();
+    const requests = mock.requests.slice(before) as { input: { content: string }[] }[];
+    assert.ok(requests[0].input[0].content.startsWith('Compress conversation history'));
+    assert.equal(
+      requests.filter((r) => r.input[0].content.startsWith('Compress conversation history')).length,
+      1,
+    );
+    const decision = requests.find((r) =>
+      r.input[0].content.startsWith('Decide whether to enable'),
+    )!;
+    const auxiliary = JSON.parse(decision.input[0].content.split('\nConversation: ')[1]);
+    assert.ok(auxiliary[0].content.includes('<conversation_summary>'));
+    assert.ok(!decision.input[0].content.includes('original-0:'));
+    const snapshot = await json(`${turnsPath(seeded.id)}/${requestId}`);
+    assert.equal(snapshot.status, 'complete');
+    assert.equal(snapshot.compression.status, 'compressed');
+    assert.equal(snapshot.compression.compressedMessages, 4);
+    assert.ok(requests.at(-1)!.input[0].content.includes('<conversation_summary>'));
+    const stored = await json(`/conversations/${seeded.id}`);
+    assert.deepEqual(
+      stored.messages.slice(0, 6).map((m: { content: string }) => m.content),
+      seeded.contents,
+    );
+  } finally {
+    await json(
+      '/admin/search',
+      'PATCH',
+      { baseUrl: mock.url.replace('/v1', ''), apiKey: '', maxQueries: 3, maxResults: 5 },
+      admin,
+    );
+  }
 });
 
 test('compression failure and model revocation fall back to original history without stopping chat', async () => {

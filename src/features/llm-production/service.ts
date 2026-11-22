@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { HttpError } from '../../kernel/http';
 import type { User } from '../../shared/types';
 import { productionMimeTypes } from './generators';
+import { isHarnessConversation } from '../harness/workspace';
+import { artifactPublications, recordWorkspaceArtifact } from '../harness/artifact-workspace';
 import {
   planIdentity,
   productionPlanInput,
@@ -31,10 +33,10 @@ const mib = 1024 * 1024;
 const storageSettingsKey = 'llm-production:storage';
 const columns = `a.id,a.name,a.mime_type AS mimeType,a.size,a.created_at AS createdAt,
   a.expires_at AS expiresAt,a.conversation_id AS conversationId,a.message_id AS messageId,
-  a.group_id AS groupId,a.delivery_item_id AS deliveryItemId,
+  g.id AS groupId,a.delivery_item_id AS deliveryItemId,
   COALESCE(g.name,c.title,'已删除对话的产物') AS spaceName`;
 const joins = `FROM production_artifacts a
-  LEFT JOIN conversation_groups g ON g.id=a.group_id AND g.user_id=a.user_id
+  LEFT JOIN conversation_groups g ON g.id=COALESCE(a.group_id,(${artifactPublications} ORDER BY p.rowid LIMIT 1)) AND g.user_id=a.user_id
   LEFT JOIN conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id`;
 const artifactSchema = z.object({
   conversationId: z.string().uuid(),
@@ -82,6 +84,8 @@ export interface CreateProductionArtifact {
   data: Uint8Array;
   idempotencyKey?: string;
   deliveryItemId?: string | null;
+  /** Source used by the fixed renderer for a bounded, readable workspace excerpt. */
+  workspaceText?: string;
 }
 
 export interface ProductionMessageScope {
@@ -133,7 +137,7 @@ export class ProductionService extends Service {
       if (input.temporaryRetentionDays !== undefined) {
         const files = this.ctx.db.all<{ id: string; startedAt: string }>(
           `SELECT id,COALESCE(temporary_started_at,created_at) AS startedAt
-           FROM production_artifacts WHERE user_id=? AND group_id IS NULL`,
+           FROM production_artifacts a WHERE user_id=? AND group_id IS NULL AND NOT EXISTS(${artifactPublications})`,
           user.id,
         );
         for (const file of files)
@@ -214,15 +218,15 @@ export class ProductionService extends Service {
   ): ProductionSpace {
     const filter =
       kind === 'group'
-        ? 'group_id=?'
+        ? `(group_id=? OR ? IN (${artifactPublications}))`
         : kind === 'conversation'
           ? 'group_id IS NULL AND conversation_id=?'
-          : 'group_id IS NULL AND conversation_id IS NULL';
+          : `group_id IS NULL AND conversation_id IS NULL AND NOT EXISTS(${artifactPublications})`;
     const summary = this.ctx.db.get<{ artifactCount: number; size: number }>(
-      `SELECT COUNT(*) AS artifactCount,COALESCE(SUM(size),0) AS size FROM production_artifacts
-       WHERE user_id=? AND ${filter}`,
+      `SELECT COUNT(*) AS artifactCount,COALESCE(SUM(size),0) AS size FROM production_artifacts a
+       WHERE ${filter} AND user_id=?`,
+      ...(kind === 'orphan' ? [] : kind === 'group' ? [id, id] : [id]),
       userId,
-      ...(kind === 'orphan' ? [] : [id]),
     )!;
     return { id, kind, name, ...summary };
   }
@@ -234,7 +238,7 @@ export class ProductionService extends Service {
       userId,
     );
     const conversations = this.ctx.db.all<{ id: string; title: string }>(
-      `SELECT id,title FROM conversations WHERE user_id=? AND group_id IS NULL ORDER BY updated_at DESC,id`,
+      `SELECT id,title FROM conversations c WHERE user_id=? AND (group_id IS NULL OR EXISTS(SELECT 1 FROM harness_workspaces w WHERE w.conversation_id=c.id AND w.user_id=c.user_id)) ORDER BY updated_at DESC,id`,
       userId,
     );
     const spaces = [
@@ -256,7 +260,7 @@ export class ProductionService extends Service {
     let scopeId: string | undefined;
     if (filter.conversationId) {
       const conversation = this.conversation(userId, filter.conversationId);
-      if (conversation.groupId) {
+      if (conversation.groupId && !isHarnessConversation(this.ctx, userId, conversation.id)) {
         const group = this.group(userId, conversation.groupId);
         space = this.space(userId, 'group', group.id, group.name);
         scope = ' AND a.group_id=?';
@@ -269,16 +273,22 @@ export class ProductionService extends Service {
     } else if (filter.groupId) {
       const group = this.group(userId, filter.groupId);
       space = this.space(userId, 'group', group.id, group.name);
-      scope = ' AND a.group_id=?';
+      scope = ` AND (a.group_id=? OR ? IN (${artifactPublications}))`;
       scopeId = group.id;
     }
     return {
       space,
-      artifacts: this.ctx.db.all<ProductionArtifact>(
-        `SELECT ${columns} ${joins} WHERE a.user_id=?${scope} ORDER BY a.created_at DESC,a.id`,
-        userId,
-        ...(scopeId ? [scopeId] : []),
-      ),
+      artifacts: this.ctx.db
+        .all<ProductionArtifact & { published: string }>(
+          `SELECT ${columns},(SELECT json_group_array(group_id) FROM (${artifactPublications} ORDER BY p.rowid)) AS published
+         ${joins} WHERE a.user_id=?${scope} ORDER BY a.created_at DESC,a.id`,
+          userId,
+          ...(scopeId ? (filter.groupId ? [scopeId, scopeId] : [scopeId]) : []),
+        )
+        .map(({ published, ...artifact }) => {
+          const ids: string[] = JSON.parse(published);
+          return ids.length ? { ...artifact, publishedGroupIds: ids } : artifact;
+        }),
     };
   }
 
@@ -532,7 +542,8 @@ export class ProductionService extends Service {
       );
     const id = randomUUID();
     const createdAt = new Date().toISOString();
-    const groupId = conversation.groupId;
+    const hasWorkspace = isHarnessConversation(this.ctx, user.id, conversation.id);
+    const groupId = hasWorkspace ? null : conversation.groupId;
     if (groupId) this.group(user.id, groupId);
     const expiresAt = groupId
       ? null
@@ -540,26 +551,32 @@ export class ProductionService extends Service {
           Date.parse(createdAt) + this.preferences(user.id).temporaryRetentionDays * day,
         ).toISOString();
     signal?.throwIfAborted();
-    this.ctx.db.run(
-      `INSERT INTO production_artifacts(id,user_id,conversation_id,message_id,group_id,name,mime_type,
+    const persist = () => {
+      this.ctx.db.run(
+        `INSERT INTO production_artifacts(id,user_id,conversation_id,message_id,group_id,name,mime_type,
        size,data,content_hash,created_at,temporary_started_at,expires_at,idempotency_key,delivery_item_id)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      id,
-      user.id,
-      conversation.id,
-      validated.messageId ?? null,
-      groupId,
-      validated.name,
-      validated.mimeType,
-      input.data.byteLength,
-      input.data,
-      hash,
-      createdAt,
-      groupId ? null : createdAt,
-      expiresAt,
-      validated.idempotencyKey ?? null,
-      validated.deliveryItemId ?? null,
-    );
+        id,
+        user.id,
+        conversation.id,
+        validated.messageId ?? null,
+        groupId,
+        validated.name,
+        validated.mimeType,
+        input.data.byteLength,
+        input.data,
+        hash,
+        createdAt,
+        groupId ? null : createdAt,
+        expiresAt,
+        validated.idempotencyKey ?? null,
+        validated.deliveryItemId ?? null,
+      );
+      if (hasWorkspace)
+        recordWorkspaceArtifact(this.ctx, user.id, id, { ...input, name: validated.name });
+    };
+    if (this.ctx.db.connection.isTransaction) persist();
+    else this.ctx.db.transaction(persist);
     return this.get(user.id, id);
   }
 
@@ -581,6 +598,7 @@ export class ProductionService extends Service {
   adoptConversationArtifacts(userId: string, conversationId: string, groupId: string): void {
     this.conversation(userId, conversationId);
     this.group(userId, groupId);
+    if (isHarnessConversation(this.ctx, userId, conversationId)) return;
     this.cleanup();
     this.ctx.db.run(
       `UPDATE production_artifacts SET group_id=?,temporary_started_at=NULL,expires_at=NULL
@@ -626,7 +644,7 @@ export class ProductionService extends Service {
   removeConversationArtifacts(userId: string, conversationId: string): void {
     this.conversation(userId, conversationId);
     this.ctx.db.run(
-      'DELETE FROM production_artifacts WHERE user_id=? AND conversation_id=? AND group_id IS NULL',
+      `DELETE FROM production_artifacts AS a WHERE user_id=? AND conversation_id=? AND group_id IS NULL AND NOT EXISTS(${artifactPublications})`,
       userId,
       conversationId,
     );
@@ -635,10 +653,10 @@ export class ProductionService extends Service {
   cleanup(now = Date.now()): number {
     // A group removed outside the normal route must never leave immortal orphan files.
     this.ctx.db.run(
-      `UPDATE production_artifacts SET temporary_started_at=COALESCE(temporary_started_at,created_at),
+      `UPDATE production_artifacts AS a SET temporary_started_at=COALESCE(temporary_started_at,created_at),
        expires_at=strftime('%Y-%m-%dT%H:%M:%fZ',COALESCE(temporary_started_at,created_at),
-         '+' || COALESCE((SELECT temporary_retention_days FROM production_preferences p WHERE p.user_id=production_artifacts.user_id),7) || ' days')
-       WHERE group_id IS NULL AND expires_at IS NULL`,
+         '+' || COALESCE((SELECT temporary_retention_days FROM production_preferences p WHERE p.user_id=a.user_id),7) || ' days')
+       WHERE group_id IS NULL AND expires_at IS NULL AND NOT EXISTS(${artifactPublications})`,
     );
     return Number(
       this.ctx.db.run(

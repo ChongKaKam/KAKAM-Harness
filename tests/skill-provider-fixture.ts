@@ -1,26 +1,17 @@
 import type { Response } from 'express';
-import type { ApiMode } from '../src/shared/types';
+import type { LlmApiMode } from '../src/shared/types';
+import { toolResults } from './provider-tool-fixture';
 // Deliberately splits tool JSON and emits cumulative usage to exercise the real adapters.
-export function skillProviderFixture(body: any, mode: ApiMode, res: Response): boolean {
-  if (!body.tools?.some((tool: any) => (tool.name ?? tool.function?.name) === 'skills_read'))
-    return false;
+export function skillProviderFixture(body: any, mode: LlmApiMode, res: Response): boolean {
+  if (!body.tools?.some((tool: any) => tool.name === 'skills_read')) return false;
   const history = body.input ?? body.messages;
   const prompt = history
     .flatMap((m: any) =>
       typeof m.content === 'string' ? [m.content] : (m.content ?? []).map((b: any) => b.text ?? ''),
     )
     .find((t: string) => t.includes('Selected skills (JSON):\n'));
-  const selected = JSON.parse(prompt.split('Selected skills (JSON):\n')[1])[0];
-  const results =
-    mode === 'responses'
-      ? history.filter((m: any) => m.type === 'function_call_output').map((m: any) => m.output)
-      : mode === 'anthropic-messages'
-        ? history.flatMap((m: any) =>
-            Array.isArray(m.content)
-              ? m.content.filter((b: any) => b.type === 'tool_result').map((b: any) => b.content)
-              : [],
-          )
-        : history.filter((m: any) => m.role === 'tool').map((m: any) => m.content);
+  const selected = JSON.parse(prompt.split('Selected skills (JSON):\n')[1].split('\n', 1)[0])[0];
+  const results = toolResults(body, mode);
   const needCall =
     results.length < (body.model === 'skill-two' ? 2 : 1) || body.model === 'skill-repeat';
   const missingUsage = body.model === 'skill-no-usage' && results.length > 0;
@@ -82,12 +73,11 @@ export function skillProviderFixture(body: any, mode: ApiMode, res: Response): b
       output.forEach((item, index) =>
         emit({ type: 'response.output_item.done', output_index: index, item }),
       );
-      if (body.model === 'skill-broken' && results.length) {
-        res.end();
-        return;
-      }
       emit({
-        type: 'response.completed',
+        type:
+          body.model === 'skill-broken' && results.length
+            ? 'response.incomplete'
+            : 'response.completed',
         response: {
           output,
           ...(missingUsage
@@ -95,7 +85,7 @@ export function skillProviderFixture(body: any, mode: ApiMode, res: Response): b
             : { usage: { input_tokens: 23, output_tokens: 42, total_tokens: 65 } }),
         },
       });
-    } else if (mode === 'anthropic-messages') {
+    } else {
       emit({
         type: 'message_start',
         message: { usage: missingUsage ? undefined : { input_tokens: 23, output_tokens: 0 } },
@@ -148,41 +138,6 @@ export function skillProviderFixture(body: any, mode: ApiMode, res: Response): b
         ...(missingUsage ? {} : { usage: { output_tokens: 42 } }),
       });
       emit({ type: 'message_stop' });
-    } else {
-      if (needCall) {
-        emit({
-          choices: [
-            {
-              delta: {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: callId,
-                    type: 'function',
-                    function: { name: 'skills_read', arguments: args.slice(0, 5) },
-                  },
-                ],
-              },
-            },
-          ],
-        });
-        emit({
-          choices: [
-            { delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }] } },
-          ],
-        });
-      } else emit({ choices: [{ delta: { content: text } }] });
-      emit({ choices: [{ delta: {}, finish_reason: needCall ? 'tool_calls' : 'stop' }] });
-      if (!missingUsage)
-        emit({
-          choices: [],
-          usage: { prompt_tokens: 23, completion_tokens: 42, total_tokens: 65 },
-        });
-      if (body.model === 'skill-broken' && results.length) {
-        res.end();
-        return;
-      }
-      res.write('data: [DONE]\n\n');
     }
     res.end();
   };

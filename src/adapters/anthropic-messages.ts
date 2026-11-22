@@ -1,3 +1,4 @@
+import { generationRequest } from './generation-request';
 import { generateToolTurn } from './tool-turn';
 import type { ToolDefinition, ToolStep, ToolTurnOptions } from './registry';
 import { HttpError } from '../kernel/http';
@@ -33,6 +34,7 @@ async function check(
 }
 interface Event {
   type?: string;
+  content_block?: { type?: string; text?: string };
   message?: { usage?: Record<string, unknown> };
   delta?: { type?: string; text?: string; stop_reason?: string };
   usage?: Record<string, unknown>;
@@ -107,26 +109,9 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
       headers: headers(connection.apiKey),
       signal,
       redirect: 'error',
-      body: JSON.stringify({
-        model,
-        stream: true,
-        max_tokens: effort === 'none' ? 4096 : 16384,
-        ...(effort === 'none' ? {} : { thinking: { type: 'adaptive' }, output_config: { effort } }),
-        messages: messages.map((message) => ({
-          role: message.role,
-          content: [
-            ...(message.images ?? []).map((image) => {
-              const match = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(image.data);
-              if (!match) throw new HttpError(400, '不支持的图片格式');
-              return {
-                type: 'image',
-                source: { type: 'base64', media_type: match[1], data: match[2] },
-              };
-            }),
-            ...(message.content ? [{ type: 'text', text: message.content }] : []),
-          ],
-        })),
-      }),
+      body: JSON.stringify(
+        generationRequest('anthropic-messages', connection, model, messages, effort),
+      ),
     });
     await check(response, connection, effort);
     if (!response.body) throw new HttpError(502, 'Anthropic 服务未返回流');
@@ -169,6 +154,13 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
           if (chunk.type === 'message_start') {
             started = true;
             usage = { ...chunk.message?.usage };
+          } else if (
+            chunk.type === 'content_block_start' &&
+            chunk.content_block?.type === 'text' &&
+            typeof chunk.content_block.text === 'string' &&
+            chunk.content_block.text
+          ) {
+            yield { type: 'text', text: chunk.content_block.text };
           } else if (
             chunk.type === 'content_block_delta' &&
             chunk.delta?.type === 'text_delta' &&

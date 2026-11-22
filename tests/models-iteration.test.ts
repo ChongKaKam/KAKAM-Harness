@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../src/server/app';
 import { mockProvider, imageData } from './mock-provider';
-import type { Model, Message } from '../src/shared/types';
+import type { Model, Message, User } from '../src/shared/types';
 const config = (dataDir: string) => ({
   dataDir,
   secret: 'models-fixture-secret-at-least-32-characters',
@@ -31,6 +31,10 @@ test('model order and platform links migrate once and survive restart without re
   try {
     app = await createApp(config(dir));
     const current = app.kernel.ctx.db;
+    const sqlDefault = current
+      .all<{ name: string; dflt_value: string }>('PRAGMA table_info(providers)')
+      .find((column) => column.name === 'api_mode');
+    assert.equal(sqlDefault?.dflt_value, "'responses'");
     assert.deepEqual(
       current.all<{ id: string }>('SELECT id FROM models ORDER BY sort_order').map((m) => m.id),
       ['a', 'b'],
@@ -39,6 +43,20 @@ test('model order and platform links migrate once and survive restart without re
       current.get<{ platform_url: string | null }>('SELECT platform_url FROM providers')!
         .platform_url,
       null,
+    );
+    const limitsSql = 'SELECT context_window_tokens,max_output_tokens FROM models WHERE id=?';
+    assert.deepEqual(
+      { ...current.get<Record<string, number | null>>(limitsSql, 'a') },
+      {
+        context_window_tokens: null,
+        max_output_tokens: null,
+      },
+    );
+    current.run(
+      'UPDATE models SET context_window_tokens=?,max_output_tokens=? WHERE id=?',
+      1_000_000,
+      8192,
+      'a',
     );
     current.run("UPDATE providers SET platform_url='https://console.example.test'");
     current.run("UPDATE models SET sort_order=CASE id WHEN 'a' THEN 1 ELSE 0 END");
@@ -58,13 +76,20 @@ test('model order and platform links migrate once and survive restart without re
     assert.equal(provider.encrypted_key, 'preserve-encrypted-key');
     assert.equal(provider.platform_url, 'https://console.example.test');
     assert.equal(provider.api_mode, 'responses');
+    assert.deepEqual(
+      { ...app.kernel.ctx.db.get<Record<string, number | null>>(limitsSql, 'a') },
+      {
+        context_window_tokens: 1_000_000,
+        max_output_tokens: 8192,
+      },
+    );
   } finally {
     await app?.kernel.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('admin-only ordering, default fallback, platform URLs and Anthropic chat use the same permission and usage boundaries', async () => {
+test('admin-only ordering, default fallback, platform URLs and Anthropic chat use the same permission and usage boundaries', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'drift-model-api-'));
   const mock = await mockProvider();
   const app = await createApp(config(dir));
@@ -108,6 +133,13 @@ test('admin-only ordering, default fallback, platform URLs and Anthropic chat us
     assert.equal(providers[0].platformUrl, settings.platformUrl);
     assert.ok(!JSON.stringify(providers).includes('fixture-secret'));
     assert.equal((await req('/admin/providers', reader)).status, 403);
+    const retired = { ...settings, apiMode: 'chat-completions' };
+    for (const [path, method] of [
+      ['/admin/providers', 'POST'],
+      [`/admin/providers/${provider.id}`, 'PATCH'],
+      ['/admin/providers/discover', 'POST'],
+    ])
+      assert.equal((await req(path, admin, method, retired)).status, 400);
     for (const platformUrl of [
       'javascript:alert(1)',
       'https://name:pass@example.test',
@@ -120,9 +152,9 @@ test('admin-only ordering, default fallback, platform URLs and Anthropic chat us
     await json(`/admin/providers/${provider.id}`, admin, 'PATCH', {
       name: 'Claude',
       baseUrl: mock.url,
-      apiMode: 'anthropic-messages',
     });
     assert.equal((await json('/admin/providers', admin))[0].platformUrl, settings.platformUrl);
+    assert.equal((await json('/admin/providers', admin))[0].apiMode, 'anthropic-messages');
     await json(`/admin/providers/${provider.id}`, admin, 'PATCH', {
       ...settings,
       apiKey: undefined,
@@ -227,6 +259,236 @@ test('admin-only ordering, default fallback, platform URLs and Anthropic chat us
     // Reloaded historical messages without usage must not appear as zero-token calls.
     app.kernel.ctx.db.run('DELETE FROM usage WHERE id=?', messages[1].id);
     assert.equal((await json(`/conversations/${chat.id}`, reader)).messages[1].usage, null);
+    await t.test(
+      'saved tool probe verifies a two-call round trip and bills each attempted call independently',
+      async () => {
+        const tools = { mode: 'tools' };
+        const disabledToolPath = `/admin/models/${ids[0]}/test`;
+        const before = mock.requests.length;
+        assert.equal((await req(disabledToolPath, reader, 'POST', tools)).status, 403);
+        assert.equal((await req(disabledToolPath, admin, 'POST', tools)).status, 400);
+        assert.equal(mock.requests.length, before);
+        const source = await json('/admin/providers', admin, 'POST', {
+          ...settings,
+          name: 'Tool probe',
+          apiMode: undefined,
+        });
+        for (const [name, ok, tokens] of [
+          ['probe-success', true, [10, 20]],
+          ['probe-no-usage', true, [10, null]],
+          ['probe-wrong-tool', false, [10]],
+          ['probe-wrong-answer', false, [10, 20]],
+          ['probe-disconnect', false, [null]],
+        ] as const) {
+          const model = await json('/admin/models', admin, 'POST', {
+            providerId: source.id,
+            name,
+            label: name,
+            toolCalling: true,
+          });
+          const start = mock.requests.length;
+          const tested = await json(`/admin/models/${model.id}/test`, admin, 'POST', tools);
+          const requests = mock.requests.slice(start) as {
+            tool_choice?: string;
+            tools: { name: string }[];
+          }[];
+          assert.equal(requests.length, tokens.length);
+          assert.equal(requests[0].tool_choice, undefined);
+          assert.deepEqual(
+            requests[0].tools.map((tool) => tool.name),
+            ['read_probe'],
+          );
+          assert.equal(requests[1]?.tool_choice, undefined);
+          assert.equal(tested.ok, ok);
+          assert.deepEqual(
+            tested.toolRounds.map(
+              (round: { usage: { total: number } | null }) => round.usage?.total ?? null,
+            ),
+            tokens,
+          );
+          assert.equal(
+            tested.usage?.total ?? null,
+            tokens.some((n) => n === null)
+              ? null
+              : Array.from<number | null>(tokens).reduce<number>((sum, n) => sum + (n ?? 0), 0),
+          );
+          assert.ok(!JSON.stringify(tested).includes('fixture-secret'));
+          const rows = app.kernel.ctx.db.all<{ status: string; tokens: number | null }>(
+            'SELECT status,total_tokens AS tokens FROM usage WHERE model_name LIKE ? ORDER BY model_name',
+            `[工具测试%] ${name}`,
+          );
+          assert.deepEqual(
+            rows.map((r) => r.tokens),
+            tokens,
+          );
+          assert.deepEqual(
+            rows.map((r) => r.status),
+            tested.toolRounds.map((r: { ok: boolean }) => (r.ok ? 'complete' : 'error')),
+          );
+          assert.equal(rows.at(-1)?.status, ok ? 'complete' : 'error');
+        }
+        const tiny = await json('/admin/models', admin, 'POST', {
+          providerId: source.id,
+          name: 'tiny-probe',
+          label: 'Tiny',
+          toolCalling: true,
+          contextWindowTokens: 10,
+          maxOutputTokens: 1,
+        });
+        const baseline = mock.requests.length;
+        const blocked = await json(`/admin/models/${tiny.id}/test`, admin, 'POST', tools);
+        assert.equal(blocked.ok, false);
+        assert.equal(blocked.usage, null);
+        assert.deepEqual(blocked.toolRounds, []);
+        assert.equal(mock.requests.length, baseline);
+        assert.equal(
+          app.kernel.ctx.db.get("SELECT id FROM usage WHERE model_name LIKE '%tiny-probe'"),
+          undefined,
+        );
+      },
+    );
+    await t.test(
+      'per-model token limits preserve omitted settings, allow clearing and apply only to LLMs',
+      async () => {
+        const source = { ...settings, name: 'Limits', apiMode: 'responses' };
+        const { id: providerId } = await json('/admin/providers', admin, 'POST', source);
+        const model = { label: 'LLM', name: 'alias', providerId };
+        const { id } = await json('/admin/models', admin, 'POST', {
+          ...model,
+          contextWindowTokens: 1_000_000,
+          maxOutputTokens: 8192,
+        });
+        const edit = { label: model.label, enabled: true, vision: false, userIds: [userId] };
+        const path = `/admin/models/${id}`;
+        const saved = async (cookie: string = admin) => {
+          const models: Model[] = await json(
+            cookie === admin ? '/admin/models' : '/models',
+            cookie,
+          );
+          const { contextWindowTokens, maxOutputTokens } = models.find((m) => m.id === id)!;
+          return [contextWindowTokens, maxOutputTokens];
+        };
+        assert.deepEqual(await saved(), [1_000_000, 8192]);
+        assert.equal(
+          (await req(path, reader, 'PATCH', { ...edit, maxOutputTokens: 10 })).status,
+          403,
+        );
+        await json(path, admin, 'PATCH', { ...edit, maxOutputTokens: 16384 });
+        assert.deepEqual(await saved(reader), [1_000_000, 16384]);
+        for (const limits of [
+          { contextWindowTokens: 16384 },
+          { maxOutputTokens: 1_000_001 },
+          { maxOutputTokens: 0 },
+          { contextWindowTokens: 4.5 },
+        ]) {
+          assert.equal(
+            (await req(path, admin, 'PATCH', { ...edit, userIds: [], ...limits })).status,
+            400,
+          );
+        }
+        assert.deepEqual(await saved(reader), [1_000_000, 16384]);
+        await json(path, admin, 'PATCH', { ...edit, contextWindowTokens: null });
+        assert.deepEqual(await saved(), [null, 16384]);
+        await json(path, admin, 'PATCH', {
+          ...edit,
+          contextWindowTokens: 131072,
+          maxOutputTokens: null,
+        });
+        assert.deepEqual(await saved(), [131072, null]);
+        for (const kind of ['embedding', 'image']) {
+          assert.equal(
+            (
+              await req('/admin/models', admin, 'POST', {
+                ...model,
+                name: kind,
+                kind,
+                contextWindowTokens: 65536,
+              })
+            ).status,
+            400,
+          );
+        }
+        await json(path, admin, 'PATCH', { ...edit, kind: 'embedding' });
+        assert.deepEqual(await saved(), [null, null]);
+        const service = app.kernel.ctx.models;
+        assert.equal(service.embeddingSpaceSource(id).apiMode, 'responses');
+        app.kernel.ctx.db.run('UPDATE models SET legacy_embedding_fingerprint=1 WHERE id=?', id);
+        assert.equal(service.embeddingSpaceSource(id).apiMode, 'chat-completions');
+        assert.equal(
+          (await req(path, admin, 'PATCH', { ...edit, maxOutputTokens: 32 })).status,
+          400,
+        );
+        await json(path, admin, 'PATCH', { ...edit, kind: 'llm', maxOutputTokens: 32 });
+        assert.equal(
+          app.kernel.ctx.db.get<{ flag: number }>(
+            'SELECT legacy_embedding_fingerprint AS flag FROM models WHERE id=?',
+            id,
+          )!.flag,
+          0,
+        );
+        await json(`/admin/providers/${providerId}`, admin, 'PATCH', { ...source, apiMode: 'jev' });
+        assert.deepEqual(await saved(), [null, null]);
+      },
+    );
+    await t.test(
+      'a migrated LLM remains outside the chat picker until enabled by the administrator',
+      async () => {
+        const { id: sourceId } = await json('/admin/providers', admin, 'POST', {
+          name: 'Default Responses',
+          baseUrl: mock.url,
+        });
+        assert.equal(
+          (await json('/admin/providers', admin)).find((p: { id: string }) => p.id === sourceId)
+            .apiMode,
+          'responses',
+        );
+        const { id } = await json('/admin/models', admin, 'POST', {
+          providerId: sourceId,
+          name: 'test-text',
+          label: 'Migrated',
+        });
+        app.kernel.ctx.db.run('UPDATE models SET enabled=0,needs_protocol_review=1 WHERE id=?', id);
+        app.kernel.ctx.db.run('INSERT INTO model_grants VALUES(?,?)', id, userId);
+        const item = async () =>
+          ((await json('/admin/models', admin)) as Model[]).find((m) => m.id === id)!;
+        const visible = async () =>
+          ((await json('/models', reader)) as Model[]).some((m) => m.id === id);
+        const baseline = mock.requests.length;
+        assert.equal((await item()).needsProtocolReview, true);
+        assert.equal(await visible(), false);
+        const settings = {
+          enabled: false,
+          vision: false,
+          label: 'Edited label',
+          userIds: [userId],
+        };
+        await json(`/admin/models/${id}`, admin, 'PATCH', settings);
+        assert.equal((await item()).needsProtocolReview, true);
+        await json(`/admin/models/${id}`, admin, 'PATCH', { ...settings, enabled: true });
+        assert.equal((await item()).needsProtocolReview, false);
+        assert.equal(await visible(), true);
+        assert.equal(mock.requests.length, baseline);
+      },
+    );
+    await t.test(
+      'a running request rechecks role and active status against current model grants',
+      async () => {
+        const account = `/admin/users/${userId}`;
+        await json(account, admin, 'PATCH', { role: 'admin' });
+        const users: User[] = await json('/admin/users', admin);
+        const inFlight = users.find((u) => u.id === userId)!;
+        const { models } = app.kernel.ctx;
+        assert.equal(inFlight.role, 'admin');
+        assert.equal(models.authorize(inFlight, ids[1]).id, ids[1]);
+        await json(account, admin, 'PATCH', { role: 'user' });
+        assert.throws(() => models.authorize(inFlight, ids[1]), { status: 403 });
+        assert.ok(!models.list(inFlight).some((m) => m.id === ids[1]));
+        assert.equal(models.authorize(inFlight, ids[0]).id, ids[0]);
+        await json(account, admin, 'PATCH', { active: false });
+        assert.throws(() => models.authorize(inFlight, ids[0]), { status: 403 });
+        assert.deepEqual(models.list(inFlight), []);
+      },
+    );
   } finally {
     await new Promise<void>((resolve) => {
       server.close(() => resolve());

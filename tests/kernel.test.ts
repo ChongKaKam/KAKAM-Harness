@@ -81,11 +81,85 @@ test('v0.1 provider schema migrates in place without losing data or duplicating 
         'SELECT * FROM providers WHERE id=?',
         'existing',
       )!;
-      assert.equal(provider.api_mode, 'chat-completions');
+      assert.equal(provider.api_mode, 'responses');
       assert.equal(provider.encrypted_key, 'encrypted-placeholder');
       await kernel.stop();
     }
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('retiring Chat Completions disables only active legacy LLMs and preserves grants and non-LLM state', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kh-llm-protocol-migration-'));
+  let kernel = new KHKernel(dir);
+  try {
+    kernel.ctx.db.connection.exec(`
+      ALTER TABLE models DROP COLUMN needs_protocol_review;
+      ALTER TABLE models DROP COLUMN legacy_embedding_fingerprint;
+      INSERT INTO users(id,username,display_name,password_hash,role) VALUES('u','u','U','unused','user');
+      INSERT INTO providers(id,name,base_url,encrypted_key,api_mode) VALUES
+        ('old','Old','https://example.test/v1','saved-secret','chat-completions'),
+        ('r','Responses','https://example.test/v1','saved-secret','responses'),
+        ('m','Messages','https://example.test/v1','saved-secret','anthropic-messages'),
+        ('j','Router','https://example.test/v1','saved-secret','jev');
+      INSERT INTO models(id,provider_id,name,label,kind,enabled,sort_order) VALUES
+        ('active','old','a','Active','llm',1,4),
+        ('inactive','old','i','Inactive','llm',0,5),
+        ('embed','old','e','Embed','embedding',1,6),
+        ('img','old','p','Image','image',1,7),
+        ('r1','r','a','Responses','llm',1,8),
+        ('m1','m','a','Messages','llm',1,9),
+        ('j1','j','a','Router','jev',1,10),
+        ('r2','r','e','New embedding','embedding',1,11);
+      INSERT INTO model_grants VALUES('active','u');
+      UPDATE models SET validated_dimensions=32 WHERE id='embed';
+    `);
+    await kernel.stop();
+    kernel = new KHKernel(dir);
+    const db = kernel.ctx.db;
+    assert.deepEqual(
+      db
+        .all<{ id: string; enabled: number; needs_protocol_review: number }>(
+          'SELECT id,enabled,needs_protocol_review FROM models ORDER BY sort_order',
+        )
+        .map((m) => [m.id, m.enabled, m.needs_protocol_review]),
+      [
+        ['active', 0, 1],
+        ['inactive', 0, 0],
+        ['embed', 1, 0],
+        ['img', 1, 0],
+        ['r1', 1, 0],
+        ['m1', 1, 0],
+        ['j1', 1, 0],
+        ['r2', 1, 0],
+      ],
+    );
+    assert.ok(
+      db.get(
+        "SELECT id FROM providers WHERE id='old' AND api_mode='responses' AND encrypted_key='saved-secret'",
+      ),
+    );
+    assert.ok(db.get("SELECT model_id FROM model_grants WHERE model_id='active' AND user_id='u'"));
+    assert.ok(
+      db.get(
+        "SELECT id FROM models WHERE id='embed' AND validated_dimensions=32 AND legacy_embedding_fingerprint=1",
+      ),
+    );
+    assert.equal(
+      db.get("SELECT id FROM models WHERE id!='embed' AND legacy_embedding_fingerprint=1"),
+      undefined,
+    );
+    db.run("UPDATE models SET enabled=1,needs_protocol_review=0 WHERE id='active'");
+    await kernel.stop();
+    kernel = new KHKernel(dir);
+    assert.ok(
+      kernel.ctx.db.get(
+        "SELECT id FROM models WHERE id='active' AND enabled=1 AND needs_protocol_review=0",
+      ),
+    );
+  } finally {
+    await kernel.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });

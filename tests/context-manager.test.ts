@@ -85,16 +85,15 @@ before(async () => {
   const registered = await register('context-member@example.test');
   member = registered.cookie;
   memberId = registered.user.id;
-  for (const apiMode of ['chat-completions', 'responses']) {
+  {
+    const apiMode = 'responses';
     const provider = await json(
       '/admin/providers',
       'POST',
       { name: apiMode, baseUrl: mock.url, apiKey: 'fixture-key', apiMode },
       admin,
     );
-    for (const name of apiMode === 'responses'
-      ? ['skill-two']
-      : ['test-text', 'upstream-error', 'slow']) {
+    for (const name of ['skill-two', 'test-text', 'upstream-error', 'slow']) {
       const model = await json(
         '/admin/models',
         'POST',
@@ -256,7 +255,12 @@ test('Skill context keeps visible results once; plugin disable preserves accepte
   const snapshot: ContextSnapshot = await json(`${turnsPath(id)}/${messageId}`);
   const session = snapshot.sections.find((part) => part.id === 'session')!.entries;
   assert.equal(snapshot.requestCount, 3);
-  assert.equal(session.filter((item) => item.label.startsWith('工具定义')).length, 1);
+  const toolLabels = session
+    .filter((item) => item.label.startsWith('工具定义'))
+    .map((item) => item.label);
+  assert.equal(toolLabels.filter((label) => label === '工具定义 · skills_read').length, 1);
+  assert.ok(toolLabels.includes('工具定义 · workspace_read'));
+  assert.equal(toolLabels.length, new Set(toolLabels).size);
   assert.equal(session.filter((item) => item.role === 'tool').length, 2);
   assert.deepEqual(
     session.filter((item) => item.label.startsWith('工具续接')).map((item) => item.content),

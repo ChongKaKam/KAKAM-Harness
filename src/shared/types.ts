@@ -6,9 +6,9 @@ import type {
 } from '../features/llm-production/types';
 import type { AccentColor } from './appearance';
 export type Role = 'admin' | 'user';
-export type ApiMode = 'chat-completions' | 'responses' | 'anthropic-messages' | 'jev';
+export type LlmApiMode = 'responses' | 'anthropic-messages';
+export type ApiMode = LlmApiMode | 'jev';
 export const apiModeLabels: Record<ApiMode, string> = {
-  'chat-completions': 'Chat Completions',
   responses: 'Responses',
   'anthropic-messages': 'Anthropic Messages',
   jev: 'Jev · 决策模型',
@@ -49,6 +49,12 @@ export interface Model {
   vision: boolean;
   toolCalling?: boolean;
   enabled: boolean;
+  /** An active legacy LLM was disabled when Chat Completions was retired. */
+  needsProtocolReview?: boolean;
+  /** Total input and output capacity for this model on its configured endpoint. */
+  contextWindowTokens?: number | null;
+  /** Output token limit sent to the model. Null uses the adapter's default. */
+  maxOutputTokens?: number | null;
   /** Requested embedding dimensions. Null means the provider default. */
   embeddingDimensions?: number | null;
   /** Dimensions returned by the most recent successful validation. */
@@ -77,6 +83,8 @@ export interface ModelConnectionTest {
   configuredDimensions?: number | null;
   actualDimensions?: number | null;
   dimensionsMatch?: boolean | null;
+  /** In order: tool selection, then verification of its returned value. Only attempted calls appear. */
+  toolRounds?: { ok: boolean; usage: MessageUsage | null }[];
   diagnostics: ModelDiagnosticLog;
   error?: string;
 }
@@ -102,7 +110,21 @@ export interface Attachment {
   name: string;
   data: string;
 }
+export interface HarnessClarification {
+  question: string;
+  suggestion?: string;
+}
+export interface HarnessRun {
+  clarification?: HarnessClarification;
+  modelId?: string;
+  effort?: ReasoningEffort;
+  phase: 'prepare' | 'search' | 'answer' | 'verify' | 'waiting' | 'done' | 'error' | 'cancelled';
+  detail: string;
+  steps: { label: string; status: string }[];
+  steering: { id: string; content: string; applied: boolean; receipt?: string }[];
+}
 export interface Message {
+  harnessRun?: HarnessRun;
   artifacts?: ProductionArtifact[];
   productionMode?: ProductionMode;
   productionDelivery?: ProductionDelivery | null;
@@ -130,6 +152,7 @@ export interface MessageUsage {
   total: number;
 }
 export interface Conversation {
+  harness?: boolean;
   id: string;
   title: string;
   updatedAt: string;
@@ -168,7 +191,8 @@ export type StreamEvent =
     }
   | { type: 'skill-progress'; messageId: string; skillReads: SkillRead[]; calls: ExtensionCall[] }
   | { type: 'extensions'; messageId: string; extensions: ExtensionRun[] }
-  | { type: 'snapshot'; messages: Message[] }
+  | { type: 'harness-progress'; messageId: string; run: HarnessRun }
+  | { type: 'snapshot'; messages: Message[]; harness?: boolean }
   | { type: 'delta'; messageId: string; text: string }
   | { type: 'done'; message: Message }
   | { type: 'error'; message: string };
@@ -203,6 +227,7 @@ export interface ExtensionCall {
   usage: MessageUsage | null;
 }
 export interface ExtensionRun {
+  warning?: string;
   id: string;
   name: string;
   mode: ExtensionMode;
@@ -212,4 +237,6 @@ export interface ExtensionRun {
   sources: ExtensionSource[];
   calls: ExtensionCall[];
   error?: string;
+  /** Auto failed; no result from this capability was injected into the answer. */
+  fallback?: 'skip';
 }

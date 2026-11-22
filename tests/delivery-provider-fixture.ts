@@ -1,5 +1,6 @@
 import type { Response } from 'express';
-import type { ApiMode } from '../src/shared/types';
+import type { LlmApiMode } from '../src/shared/types';
+import { toolResults, writeToolTurn } from './provider-tool-fixture';
 
 export const deliveryItems = [
   { kind: 'file', format: 'html', name: '计算器.html', brief: '一个可下载的网页计算器' },
@@ -8,25 +9,9 @@ export const deliveryItems = [
   { kind: 'image', format: null, name: '插画二.png', brief: '第二张插画' },
 ];
 
-export function deliveryProviderFixture(body: any, mode: ApiMode, res: Response): boolean {
+export function deliveryProviderFixture(body: any, mode: LlmApiMode, res: Response): boolean {
   if (!String(body.model).startsWith('delivery-')) return false;
-  const history = body.input ?? body.messages;
-  const outputs: string[] =
-    mode === 'responses'
-      ? history
-          .filter((message: any) => message.type === 'function_call_output')
-          .map((message: any) => message.output)
-      : mode === 'anthropic-messages'
-        ? history.flatMap((message: any) =>
-            Array.isArray(message.content)
-              ? message.content
-                  .filter((block: any) => block.type === 'tool_result')
-                  .map((block: any) => block.content)
-              : [],
-          )
-        : history
-            .filter((message: any) => message.role === 'tool')
-            .map((message: any) => message.content);
+  const outputs = toolResults(body, mode);
   const parsed = outputs.map((output) => JSON.parse(output));
   const plan = parsed.find((value) => value.decision === 'deliver');
   const calls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> = [];
@@ -92,81 +77,6 @@ export function deliveryProviderFixture(body: any, mode: ApiMode, res: Response)
   }
   const text =
     body.model === 'delivery-noplan' ? '```html\n<button>计算器</button>\n```' : '本轮回答完成。';
-  const creating = calls.length > 0;
-  res.setHeader('Content-Type', 'text/event-stream');
-  const emit = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`);
-  if (mode === 'responses') {
-    const output = creating
-      ? calls.map((call) => ({
-          id: call.id,
-          type: 'function_call',
-          call_id: call.id,
-          name: call.name,
-          arguments: JSON.stringify(call.arguments),
-        }))
-      : [
-          {
-            id: 'answer',
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text, annotations: [] }],
-          },
-        ];
-    if (!creating) emit({ type: 'response.output_text.delta', delta: text });
-    output.forEach((item, index) =>
-      emit({ type: 'response.output_item.done', output_index: index, item }),
-    );
-    emit({
-      type: 'response.completed',
-      response: { output, usage: { input_tokens: 23, output_tokens: 42, total_tokens: 65 } },
-    });
-  } else if (mode === 'anthropic-messages') {
-    emit({ type: 'message_start', message: { usage: { input_tokens: 23, output_tokens: 0 } } });
-    const blocks = creating ? calls : [null];
-    blocks.forEach((call, index) => {
-      emit({
-        type: 'content_block_start',
-        index,
-        content_block: call
-          ? { type: 'tool_use', id: call.id, name: call.name, input: {} }
-          : { type: 'text', text: '' },
-      });
-      emit({
-        type: 'content_block_delta',
-        index,
-        delta: call
-          ? { type: 'input_json_delta', partial_json: JSON.stringify(call.arguments) }
-          : { type: 'text_delta', text },
-      });
-      emit({ type: 'content_block_stop', index });
-    });
-    emit({
-      type: 'message_delta',
-      delta: { stop_reason: creating ? 'tool_use' : 'end_turn' },
-      usage: { output_tokens: 42 },
-    });
-    emit({ type: 'message_stop' });
-  } else {
-    emit({
-      choices: [
-        {
-          delta: creating
-            ? {
-                tool_calls: calls.map((call, index) => ({
-                  index,
-                  id: call.id,
-                  type: 'function',
-                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                })),
-              }
-            : { content: text },
-        },
-      ],
-    });
-    emit({ choices: [{ delta: {}, finish_reason: creating ? 'tool_calls' : 'stop' }] });
-    emit({ choices: [], usage: { prompt_tokens: 23, completion_tokens: 42, total_tokens: 65 } });
-    res.write('data: [DONE]\n\n');
-  }
-  res.end();
+  writeToolTurn(mode, res, calls, text);
   return true;
 }

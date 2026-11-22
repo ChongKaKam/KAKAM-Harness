@@ -63,12 +63,7 @@ before(async () => {
   const registered = await register('prompt-member@example.test');
   member = registered.cookie;
   memberId = registered.user.id;
-  for (const apiMode of [
-    'chat-completions',
-    'responses',
-    'anthropic-messages',
-    'jev',
-  ] as ApiMode[]) {
+  for (const apiMode of ['responses', 'anthropic-messages', 'jev'] as ApiMode[]) {
     const provider = await json(
       '/admin/providers',
       'POST',
@@ -82,11 +77,9 @@ before(async () => {
     );
     for (const name of apiMode === 'anthropic-messages'
       ? ['test-text', 'broken']
-      : apiMode === 'chat-completions'
-        ? ['test-text', 'no-usage', 'upstream-error', 'slow']
-        : apiMode === 'responses'
-          ? ['test-text', 'incomplete']
-          : ['test-text']) {
+      : apiMode === 'responses'
+        ? ['test-text', 'no-usage', 'upstream-error', 'slow', 'incomplete']
+        : ['test-text']) {
       const model = await json(
         '/admin/models',
         'POST',
@@ -153,7 +146,7 @@ test('prompt editing normalizes tags, preserves omitted fields and colors, and e
 
 test('summary preferences are account-specific and revalidate model access on every invocation', async () => {
   const input = { title: '写作', content: '请帮我润色文章' };
-  const llmId = modelIds.get('chat-completions/test-text')!;
+  const llmId = modelIds.get('responses/test-text')!;
   assert.deepEqual(await json('/prompts/preferences'), { summaryModelId: null });
   assert.equal((await request('/prompts/description', 'POST', input)).status, 400);
   assert.equal(
@@ -194,10 +187,10 @@ test('summary generation uses all LLM adapters and preserves missing, cumulative
   for (const [key, status, expected] of [
     ['responses/test-text', 200, { input: 23, output: 42, total: 65 }],
     ['anthropic-messages/test-text', 200, { input: 23, output: 42, total: 65 }],
-    ['chat-completions/no-usage', 200, null],
+    ['responses/no-usage', 200, null],
     ['anthropic-messages/broken', 502, null],
     ['responses/incomplete', 502, { input: 23, output: 42, total: 65 }],
-    ['chat-completions/upstream-error', 502, null],
+    ['responses/upstream-error', 502, null],
   ] as const) {
     await json('/prompts/preferences', 'PATCH', { summaryModelId: modelIds.get(key) });
     const response = await request('/prompts/description', 'POST', {
@@ -223,7 +216,7 @@ test('summary generation uses all LLM adapters and preserves missing, cumulative
     assert.equal(row.status, status === 200 ? 'complete' : 'error');
   }
   await json('/prompts/preferences', 'PATCH', {
-    summaryModelId: modelIds.get('chat-completions/test-text'),
+    summaryModelId: modelIds.get('responses/test-text'),
   });
   assert.equal(
     (
@@ -238,7 +231,7 @@ test('summary generation uses all LLM adapters and preserves missing, cumulative
 
 test('plugin disposal cancels generation, rejects duplicate calls and preserves cards on re-enable', async () => {
   await json('/prompts/preferences', 'PATCH', {
-    summaryModelId: modelIds.get('chat-completions/slow'),
+    summaryModelId: modelIds.get('responses/slow'),
   });
   const pending = request('/prompts/description', 'POST', { title: 'Slow', content: 'test' });
   for (

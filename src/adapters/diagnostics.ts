@@ -11,6 +11,9 @@ export class ProviderDiagnostics {
   private output = '';
   private decoder = new TextDecoder();
   private secrets: string[];
+  get requestStarted() {
+    return this.log.request !== undefined;
+  }
   constructor(connection: ProviderConnection) {
     const url = URL.parse(connection.baseUrl);
     this.secrets = [

@@ -15,6 +15,13 @@ import {
   type ProductionSpace,
 } from '../src/features/llm-production/types';
 import type { User } from '../src/shared/types';
+import {
+  listWorkspaceDocuments,
+  publishWorkspaceDocument,
+  readWorkspaceDocument,
+  decideWorkspaceAccess,
+  requestWorkspaceAccess,
+} from '../src/features/harness/workspace';
 
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: ReturnType<typeof createServer>;
@@ -184,11 +191,23 @@ test('production is a protected core feature with private preferences and scoped
   assert.deepEqual(app.kernel.ctx.production.forMessage(member.user.id, messageId), []);
 });
 
-test('group spaces share files, adopt standalone files and retain files through source chat moves/deletion', async () => {
+test('legacy group spaces share files, adopt standalone files and retain files through source chat moves/deletion', async () => {
+  function legacyConversation(groupId?: string) {
+    const id = randomUUID();
+    app.kernel.ctx.db.run(
+      'INSERT INTO conversations(id,user_id,title,updated_at,group_id) VALUES(?,?,?,?,?)',
+      id,
+      member.user.id,
+      '旧会话',
+      new Date().toISOString(),
+      groupId ?? null,
+    );
+    return id;
+  }
   const group = await json('/conversation-groups', 'POST', { name: '共享文件' });
   const groupB = await json('/conversation-groups', 'POST', { name: '另一个分组' });
-  const a = await conversation(group.id);
-  const b = await conversation(group.id);
+  const a = legacyConversation(group.id);
+  const b = legacyConversation(group.id);
   const file = create(a);
   assert.equal(file.expiresAt, null);
   assert.equal(file.groupId, group.id);
@@ -196,7 +215,7 @@ test('group spaces share files, adopt standalone files and retain files through 
     (await json<ProductionList>(`/llm-production/artifacts?conversationId=${b}`)).artifacts[0].id,
     file.id,
   );
-  const solo = await conversation();
+  const solo = legacyConversation();
   const adopted = create(solo);
   await json(`/conversations/${solo}`, 'PATCH', { groupId: group.id });
   assert.equal(app.kernel.ctx.production.get(member.user.id, adopted.id).expiresAt, null);
@@ -228,6 +247,61 @@ test('group spaces share files, adopt standalone files and retain files through 
     () => app.kernel.ctx.production.get(member.user.id, removed.id),
     (error: unknown) => error instanceof HttpError && error.status === 404,
   );
+});
+
+test('workspace products remain private until an exact revision is granted or published; deletion and expiry revoke representations', async () => {
+  const ctx = app.kernel.ctx;
+  const group = await json('/conversation-groups', 'POST', { name: '版本交付' });
+  const origin = await conversation(),
+    target = await conversation(group.id),
+    owner = member.user.id;
+  const a = create(origin, { data: Buffer.from('Version one') });
+  await json('/conversations/' + origin, 'PATCH', { groupId: group.id });
+  const b = create(origin, { data: Buffer.from('Version two') });
+  const doc = listWorkspaceDocuments(ctx, owner, origin).find((d) => d.name === a.name)!;
+  assert.equal(doc.kind, 'artifact');
+  assert.equal(doc.version, 2);
+  assert.equal(ctx.production.get(owner, a.id).groupId, null);
+  assert.deepEqual(ctx.production.list(owner, { groupId: group.id }).artifacts, []);
+  assert.throws(() => readWorkspaceDocument(ctx, owner, target, doc.id));
+  const taskId = assistant(target);
+  const approval = requestWorkspaceAccess(ctx, owner, target, {
+    sourceConversationId: origin,
+    documentId: doc.id,
+    version: 1,
+    purpose: '回顾旧版',
+    taskId,
+  });
+  decideWorkspaceAccess(ctx, owner, origin, approval.id, { decision: 'approve' });
+  const v1 = JSON.parse(readWorkspaceDocument(ctx, owner, target, doc.id, 1).content);
+  assert.equal(v1.artifactId, a.id);
+  assert.equal(v1.text, 'Version one');
+  assert.throws(() => readWorkspaceDocument(ctx, owner, target, doc.id, 2));
+  publishWorkspaceDocument(ctx, owner, origin, { documentId: doc.id, version: 2 });
+  assert.equal(
+    JSON.parse(readWorkspaceDocument(ctx, owner, target, doc.id, 2).content).artifactId,
+    b.id,
+  );
+  assert.deepEqual(
+    ctx.production
+      .list(owner, { groupId: group.id })
+      .artifacts.map((x) => [x.id, x.publishedGroupIds]),
+    [[b.id, [group.id]]],
+  );
+  assert.equal(ctx.production.get(owner, b.id).expiresAt, null);
+  ctx.db.run(
+    'UPDATE production_artifacts SET expires_at=? WHERE id=?',
+    new Date(0).toISOString(),
+    a.id,
+  );
+  ctx.production.cleanup();
+  assert.throws(() => readWorkspaceDocument(ctx, owner, target, doc.id, 1));
+  await json('/conversations/' + origin, 'DELETE');
+  assert.equal(Buffer.from(ctx.production.download(owner, b.id).data).toString(), 'Version two');
+  assert.equal(readWorkspaceDocument(ctx, owner, target, doc.id, 2).scope, 'project');
+  ctx.production.remove(owner, b.id);
+  assert.throws(() => readWorkspaceDocument(ctx, owner, target, doc.id, 2));
+  assert.deepEqual(ctx.production.list(owner, { groupId: group.id }).artifacts, []);
 });
 
 test('3–7 day retention recalculates fixed creation age and expired files cannot be downloaded or resurrected', async () => {
@@ -275,7 +349,16 @@ test('3–7 day retention recalculates fixed creation age and expired files cann
     undefined,
   );
   const group = await json('/conversation-groups', 'POST', { name: '保留' });
-  const grouped = create(await conversation(group.id));
+  const groupedChat = await conversation(group.id);
+  const grouped = create(groupedChat);
+  const document = listWorkspaceDocuments(app.kernel.ctx, member.user.id, groupedChat).find(
+    (item) => item.kind === 'artifact',
+  )!;
+  publishWorkspaceDocument(app.kernel.ctx, member.user.id, groupedChat, {
+    documentId: document.id,
+    version: document.version,
+  });
+  create(id, { name: '待到期.txt' });
   const future = Date.now() + 40 * day;
   assert.ok(app.kernel.ctx.production.cleanup(future) >= 1);
   assert.equal(app.kernel.ctx.production.get(member.user.id, grouped.id).expiresAt, null);

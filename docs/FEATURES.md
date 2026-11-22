@@ -372,11 +372,22 @@ interface ModelAdapter {
 
 `ProviderEvent` 是 `{ type: 'text', text }` 或 `{ type: 'usage', usage: { input, output, total } }`；相关类型均从该契约文件导入，`ReasoningEffort` 来自共享 DTO。Adapter 必须处理取消、协议错误、流结束及真实用量，不能将无 usage 伪造成零。
 
-Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dimensions: number, usage: EmbeddingUsage | null }`，其中 usage 的三个字段分别允许 null。OpenAI-compatible 在 Chat Completions / Responses 来源下都调用 `/embeddings`，发送 `encoding_format: 'float'`，仅在指定时发送 dimensions；Anthropic / Jev 不支持。协议依据 [OpenAI Embeddings API](https://developers.openai.com/api/reference/resources/embeddings/methods/create)。`ModelsService.embed(user, modelId, inputs, signal, options?)` 托管逐调用授权、数量 / index / 有限 float32 数值 / 非零 / 维度校验与 SQLite 用量写入；策略和插件不要绕过该入口。输入为 1–128 个非空字符串，每条最多 100000 字符、合计最多 512000 字符，维度为 1–16000。可选 options 含 `expectedDimensions`（锁定既有向量空间）、`dimensions`（不得与模型已配置维度冲突）和固定业务 `purpose` 标签。
+Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dimensions: number, usage: EmbeddingUsage | null }`，其中 usage 的三个字段分别允许 null。OpenAI-compatible 在 Responses 来源下调用 `/embeddings`，发送 `encoding_format: 'float'`，仅在指定时发送 dimensions；Anthropic / Jev 不支持。协议依据 [OpenAI Embeddings API](https://developers.openai.com/api/reference/resources/embeddings/methods/create)。`ModelsService.embed(user, modelId, inputs, signal, options?)` 托管逐调用授权、数量 / index / 有限 float32 数值 / 非零 / 维度校验与 SQLite 用量写入；策略和插件不要绕过该入口。输入为 1–128 个非空字符串，每条最多 100000 字符、合计最多 512000 字符，维度为 1–16000。可选 options 含 `expectedDimensions`（锁定既有向量空间）、`dimensions`（不得与模型已配置维度冲突）和固定业务 `purpose` 标签。
 
 模型级 `kind: 'llm' | 'jev' | 'embedding' | 'image'` 独立保存；旧模型迁移时从 Jev 来源初始化类型。`embeddingDimensions` 是配置维度，`validatedDimensions` 是最近成功验证的维度，未指定 / 未验证为 null。`GET /api/models` 默认只返回可用 LLM，可显式查询 `kind=embedding / jev / image / all`。管理员模型创建 / 修改接口支持 kind 和 embeddingDimensions，Embedding / image 不具备 vision / toolCalling，也不进入聊天默认选择。改维度或来源配置清空旧验证值，记忆索引重建见 [Memory API](MEMORY_API.md#向量索引)。
 
-在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible`、`anthropic-messages` 和 `jev`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `chat-completions` / `responses`，`anthropic-messages` 处理原生 Messages，`jev` 处理 TypeSafe System One。来源表保留 `api_mode`，旧来源迁移默认 Chat Completions。
+管理员通过 `POST /api/admin/models` 或 `PATCH /api/admin/models/:id` 为具体 LLM 配置 Token 限额。一个来源下的不同模型可以使用不同的值，包括 1,000,000 Token 的窗口。配置以该来源实际开放的容量为准。两个字段均可独立留空，已有模型升级后均为空。PATCH 省略字段沿用已保存值，显式传 `null` 可清除该项。模型改为 Jev、Embedding 或 Image 时清空限额。
+
+| 模型字段              | 含义与约束                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `contextWindowTokens` | 总窗口，输入与预留输出共用，最小为 2。留空时跳过模型窗口预检。                             |
+| `maxOutputTokens`     | 单次生成的输出上限，最小为 1。两个字段都有值时须小于总窗口。留空时沿用来源协议的输出策略。 |
+
+普通生成和每轮工具调用使用同一份模型配置。服务端先通过 `ModelsService.authorize(user, modelId, kind)` 按 ID 复核模型状态和类型。与模型目录共用的查询同时读取账号当前的启用状态、角色和模型授权，运行期间停用账号、降级或撤权在下次调用时生效。将模型传给 `ModelsService.connection(model)` 可取得来源与限额。来源级目录探测使用来源 ID。输出上限分别映射至 Responses 的 `max_output_tokens` 和 Messages 的 `max_tokens`。上下文估算、预留空间及历史压缩见 [上下文管理](CONTEXT_MANAGER.md)。
+
+在 Cordis scope 中通过 `ctx.effect(() => ctx.adapters.register(id, adapter))` 注册，当前 Kernel 注册 `openai-compatible`、`anthropic-messages` 和 `jev`。`ModelsService.adapter(apiMode)` 是唯一协议路由入口：前者处理 `responses`，`anthropic-messages` 处理原生 Messages，`jev` 处理 TypeSafe System One。来源表保留 `api_mode`，新来源默认 Responses；旧 Chat Completions 来源的迁移见下文。
+
+升级时，平台在同一 SQLite 事务中将历史 `chat-completions` 来源转换为 `responses`，暂停并标记其中原本已启用的 LLM。管理员在「模型与接入」核对来源，可以选择支持的文本协议，测试具体模型，再手动启用。迁移保留模型 ID、授权、排序和历史用量；Embedding 和图片模型继续使用各自的专用端点。新建、编辑和草稿探测均拒绝显式传入旧文本协议。独立的 [OpenAI API 转发](#openai-api-转发) 面向外部 SDK，其 HTTP 接口独立于此处的 Harness。
 
 新增协议时同步共享 `ApiMode` / `apiModeLabels`、provider Zod、管理表单、ModelsService 映射与注册；已有协议值保持兼容。聊天、连通性测试、探测都传入来源的 apiMode，不在调用点硬编码 Adapter ID。如果未来协议需要独立于来源的 Adapter ID，再设计相应迁移。
 
@@ -390,14 +401,15 @@ Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dime
 
 - 已保存来源会在服务启动、添加或编辑时即时检查。周期检测使用 `nextSourceProbeDelay` 按中国时间（UTC+8）每天 08:00、10:00、12:00、14:00、16:00、18:00 调用 `ModelsService.adapter(apiMode).discover`，夜间暂停；按固定时刻调度，与服务器本地时区及重启时间无关。管理员来源页每 30 秒刷新绿 / 红状态和检查时间。该后台检查不发送聊天请求、不产生 Token 用量，也不保存模型列表；红灯表示来源的模型列表接口不可用，不能代替具体模型的生成测试。服务重启后先显示待检查 / 检查中，状态仅存进程内；更换配置时忽略旧检查的迟到结果。
 - `POST /admin/providers/discover` 接收未保存的 `{ baseUrl, apiMode, apiKey?, id? }`。编辑来源时，省略 apiKey 会沿用 id 对应的已存密钥；显式空字符串表示免鉴权。只调用 Adapter.discover，不写来源、白名单或用量。现有来源也可调用 `POST /admin/providers/:id/discover`。
-- `POST /admin/models/:id/test` 替代旧的 `/admin/providers/test`。仅管理员可调用，body 只允许可选 `reasoningEffort`，默认 none。模型 API 名称、来源与协议从数据库读取，不接受任意临时模型或连接覆盖；停用模型也可在启用前测试，不改变权限。
+- `POST /api/admin/models/:id/test` 仅供管理员手动调用。请求体允许两个可选字段，`mode` 为 `text`（默认）或 `tools`，`reasoningEffort` 默认为 `none`。服务端使用已保存的模型、来源、协议与限额，管理员可以在模型启用前完成验收。
+- `mode: "tools"` 适用于已保存且声明 `toolCalling` 的 LLM。两轮沿用 Harness 默认的 Auto 工具选择。首轮要求模型准确调用一次 `read_probe({name: "probe.txt"})`，服务端用临时内存工具返回随机验证码。第二轮通过原协议回传工具结果，检查助手正文是否引用该码。每轮发起前复核管理员权限与模型配置，合计限时 60 秒，任一轮失败即结束。本地上下文预检拒绝的轮次显示为未发起，不生成用量行。已发起 HTTP 请求后发生断流、超时或连接失败，保留该次尝试和已上报用量，缺失为 NULL，结束探测。每轮独立计量，`toolRounds` 按顺序返回已发起的轮次。只有已尝试的各轮均上报用量时才合计；诊断日志展示最近一轮。测试结果供管理员判断模型适用性，工具能力开关仍由管理员保存。
 - `features/models/connection-test.ts` 对 LLM 调用与聊天相同的 generate 流，对 Jev 调用原生 decide，单次简短请求，60 秒截止。DTO `ModelConnectionTest` 包含 ok、model、apiMode、reasoningEffort、firstTextMs（未收到则 null）、latencyMs、textChunks、usage、可选脱敏 error 与 diagnostics（请求、HTTP 响应、模型输出、错误、截断标志）。已有有效用量在后续失败时保留，累计值取最新。
 - Embedding 测试通过同文件的 `testEmbeddingConnection` 发送一条固定短文本；额外返回 kind、configuredDimensions、actualDimensions、dimensionsMatch。自动维度的 dimensionsMatch 为 null，成功时实际维度仍保存；配置不匹配、无效或零向量判失败，已上报用量仍保留。管理页显示配置 / 实际维度、校验、耗时和逐字段 Token；不把缺失 output_tokens 补成零。
 - 显式管理员测试才创建 `ProviderDiagnostics`，通过 `ProviderConnection.diagnostics` 与 `providerFetch` 观察实际适配器请求和已消费的响应字节，不使用第二次请求或全局 fetch 拦截。请求、响应和输出各保留最多 32,768 字符；已知密钥、URL 凭据 / 查询值和敏感字段脱敏，响应头只保留类型、请求 ID 和重试提示。普通聊天仍不暴露原始上游错误。日志只返回当前管理员浏览器，不写数据库 / 控制台；HTML、非 JSON、半截流、超时也保留已获得的诊断信息。
-- API 校验 / 权限错误仍使用 HTTP 错误码；完成诊断后返回 HTTP 200，客户端必须检查 ok，不能仅凭 HTTP 成功或收到 usage 判定模型连接成功。无可显示文字的流判为失败。每次真正开始生成的测试记录当前管理员的用量，独立于聊天，不保存测试文本。
+- API 校验 / 权限错误使用 HTTP 错误码。诊断完成后返回 HTTP 200，客户端根据 `ok` 显示测试结果。文本连接测试要求收到可显示的正文，工具测试要求完成两轮协议。用量归入发起测试的管理员，独立于聊天，不保存测试文本。
 - 前端来源表单探测后展示列表，保存成功再打开白名单添加弹窗。输入地址、密钥或协议变化即清除过期结果；取消不能保存配置或自动添加模型。
 
-`tests/streaming-latency.test.ts` 使用受控流在结束帧发送前验证首个文字已转发，同时覆盖拆分 UTF-8 / SSE 边界；它验证本地逐片行为，不代表真实供应商延迟。集成测试覆盖草稿探测不写库、权限、三种协议、失败用量与思考参数。真实来源问题需要用户授权后的独立诊断，不加入付费凭据或生产数据到自动测试。
+`tests/streaming-latency.test.ts` 使用受控流在结束帧发送前验证首个文字已转发，同时覆盖拆分 UTF-8 / SSE 边界；它验证本地逐片行为，不代表真实供应商延迟。集成测试覆盖草稿探测不写库、权限、两种文本协议、失败用量与思考参数。真实来源问题需要用户授权后的独立诊断，不加入付费凭据或生产数据到自动测试。
 
 ### 工作区能力的设置页
 
@@ -413,7 +425,9 @@ Embedding 使用非流式可选 `embed`，结果为 `{ vectors: number[][], dime
 4. execute 接收 `ExtensionScope`，使用 `scope.llm(stage, prompt, zodSchema)` 生成并校验 JSON；使用 `scope.track(stage, modelName, work)` 记录其他上游调用。必须传递 `scope.signal`，不得另配辅助模型凭据或自行绕过授权。通过 `run` 与 `update()` 保存查询、来源及状态，返回追加给最终回答的上下文。
 5. capability 的 client 使用 `placement: 'settings'` 与 `settingsParent: 'extensions'` 注册自己的设置页，由托管页链接访问，不新增 Shell 导航。服务端配置路由必须 requireAdmin。
 
-Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭；明确要求联网搜索或核实外部事实时开启；回答需要当前 / 易变事实、对话中未提供的外部资料或推荐所需的最新信息时开启；其余稳定知识、问候及仅凭已提供材料即可完成的分析、代码检查、改写、翻译和创作关闭。翻译或创作包含前述检索需求时仍开启。中英文口语中的“看看 / 查一下 / check / look at”需结合对象和上下文判断，不单凭词语触发，也不因联网可能补充背景而开启。这些是模型判断指令，不是程序强制规则；LLM + Jev 的英文预处理要求保留联网意愿、材料是否已提供及追问指代，实际判断仍受模型和最近六条消息上下文限制。此标准仅适用于 Auto。
+Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭；明确要求联网搜索或核实外部事实时开启；回答需要当前 / 易变事实、对话中未提供的外部资料或推荐所需的最新信息时开启；其余稳定知识、问候及仅凭已提供材料即可完成的分析、代码检查、改写、翻译和创作关闭。翻译或创作包含前述检索需求时仍开启。中英文口语中的“看看 / 查一下 / check / look at”需结合对象和上下文判断，不单凭词语触发，也不因联网可能补充背景而开启。这些是模型判断指令，不是程序强制规则；LLM + Jev 的英文预处理要求保留联网意愿、材料是否已提供及追问指代，实际判断仍受模型、摘要及辅助输入预算限制。此标准仅适用于 Auto。
+
+`ExtensionsService.prepare` 可选第六参含 `contextMessages`、`hasHistorySummary`、`queryContext` 和 `progress`：contextMessages 用于提供压缩后的历史与未注入私人参考块的当前提问，hasHistorySummary 标明首条为历史摘要，progress 只刷新活动计时。返回消息保留原请求内容并追加成功能力的结果。`ExtensionRun.fallback?: 'skip'` 表示 Auto 运行失败后跳过，该能力保留 error 和真实调用记录；字段随现有 JSON 检查点持久化并通过 SSE / snapshot / done 返回，无须表迁移。输入预算、超时、降级与 On / 停止边界以 [拓展核心](ARCHITECTURE.md#llm-拓展能力核心) 为准。
 
 当前接口：
 
@@ -435,9 +449,11 @@ Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭�
 
 ## 聊天提交与并发
 
+新会话初始化专用工作区，`GET /api/conversations/:id` 和 SSE snapshot 的 `harness` 标识区分运行范围。历史会话提交新消息返回 409。新会话提交持久保存请求指纹；同一 requestId 改变参数或重新提交已被替换的回答也返回 409。工作区版本、显式授权及继续执行、运行中的补充 API、SSE 状态详见[对话 Harness](HARNESS.md#http-契约)。开发新的聊天工具请复用已有 conversationTools，模型可请求访问，批准和发布只能由经认证的用户操作。
+
 `chat.createChatFeature(config.maxConcurrentChats)` 在服务端装配时绑定每用户活动回复上限，默认 5；环境变量配置见 [README](../README.md#聊天并发与再次生成)。每对话仍只允许一个活动回复，满额返回 409；不排队，重复 requestId 仍返回原 messageId。任务释放、订阅与重启边界以 [生成任务](ARCHITECTURE.md#生成任务与浏览器订阅) 为主要说明。
 
-`POST /api/conversations/:id/messages` 的可选 `replaceLastMessageId` 指向本人对话最后一个 user 消息，需搭配新的 requestId，允许替换已完成、失败或已停止的末条 assistant。输入继续使用 modelId、reasoningEffort、content、images、skills、extensions 与 productionMode；换模型重新执行授权、图片与工具能力检查。替换保留 user ID 和旧用量，创建新 assistant ID；旧问答不进入本次模型上下文，不增加重复提问。产物模式保留原提问的值，既有产物与 Memory 失效处理沿用原编辑 / 重试契约。
+`POST /api/conversations/:id/messages` 的可选 `replaceLastMessageId` 指向本人对话最后一个 user 消息，需搭配新的 requestId，允许替换已完成、失败或已停止的末条 assistant。输入继续使用 modelId、reasoningEffort、content、images、skills、extensions 与 productionMode；换模型重新执行授权、图片与工具能力检查。替换保留 user ID 和旧用量，创建新 assistant ID；旧问答不进入本次模型上下文，不增加重复提问。产物模式保留原提问的值，既有产物按原保留期与权限管理；新会话工作区文档单独管理版本。
 
 ## 对话分组 API
 
@@ -453,7 +469,7 @@ Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭�
 | `PATCH /api/conversations/:id`        | 增加可选 `groupId`，null 移出分组，可与 title 同时修改；保留旧 colorSlot 输入兼容                    |
 | `GET /api/conversations`              | 每项增加 `groupId: string \| null`；按更新时间降序返回全部私人对话                                   |
 
-`icon` 为 `folder / book / code / briefcase / sparkles` 或一个 emoji 字素（最长 32 个 UTF-16 code units，支持肤色、旗帜与 ZWJ 组合），以共享 `groups.ts` 验证；`colorSlot` 为 null 或 0–63 整数。跨账户分组 / 对话返回 404，未登录返回 401，输入错误返回 400。分组整理已有对话；启用 Memory 后，其分组记忆可在同一账户的成员对话中召回，移动对话只影响后续轮次，旧分组记忆不自动迁移。
+`icon` 为 `folder / book / code / briefcase / sparkles` 或一个 emoji 字素（最长 32 个 UTF-16 code units，支持肤色、旗帜与 ZWJ 组合），以共享 `groups.ts` 验证；`colorSlot` 为 null 或 0–63 整数。跨账户分组 / 对话返回 404，未登录返回 401，输入错误返回 400。分组整理同一账户的对话。新会话移组后重新校验文件可见范围，已发布项目条目留在原项目。历史三层记忆仍归原分组。
 
 ## Skill 库 API
 
@@ -478,7 +494,7 @@ Search 的 Auto 判断指令按顺序要求：用户明确禁止联网时关闭�
 
 每轮最多选择 8 个 Skill；主文档与引用片段累计最多 80000 个 UTF-16 字符。模型读工具为 `skills_read({skillId,path,offset,limit})`，单次 limit 为 1–12000，与其他聊天工具共用最多 16 次调用。单独使用 Skill 最多 8 次模型请求；交付计划可在同一调用预算内扩展请求轮数，见 [产物契约](LLM_PRODUCTION.md#接入与任务)。返回 content、totalCharacters 和 nextOffset；同样的技能/路径/offset/limit 重复读取终止本轮。首次主文档载入和工具读取均记录具体版本与范围。
 
-`ModelsService` 返回 toolCalling 布尔能力；管理员创建模型时可设置，修改时省略保留旧值。Jev 不支持此能力。旧模型默认 false，不进行付费自动探测；支持三种聊天协议的工具映射，但具体兼容供应商仍需支持对应协议。
+`ModelsService` 返回 toolCalling 布尔能力；管理员创建模型时可设置，修改时省略保留旧值。Jev 不支持此能力。旧模型默认 false，不进行付费自动探测；支持两种聊天协议的工具映射，但具体兼容供应商仍需支持对应协议。
 
 Adapter 的 generate 保持文本/用量接口；可选 generateTurn 接受 tools 和本轮 steps，返回 text、usage 以及最终 turn（calls＋不透明 continuation）。只在完整协议结束后执行工具，不执行半截 JSON。Responses 推理项和 Anthropic 签名块必须原样续传，不发送到浏览器。协议依据：[OpenAI Function calling](https://developers.openai.com/api/docs/guides/function-calling)、[Responses 状态](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[Anthropic 工具结果](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)。
 
@@ -492,9 +508,11 @@ Memory 插件通过 `extensions.registerMemoryProvider` 接入，提供 prepare 
 
 自动压缩、轨迹节点摘要、完整设置与手动重试 API 以 [上下文管理指南](CONTEXT_MANAGER.md) 为主要说明。
 
+请求观察的 `memoryRanges` 和 `currentOffset` 以每次实际请求为基准，工具说明或交付要求前插后同步平移，详见 [请求元数据契约](CONTEXT_MANAGER.md#开发契约与验证)。
+
 `context-manager` 是可停用的普通插件，页面位于设置；每轮回复的查看入口由聊天页接入。插件向 `extensions` 核心注册 `ContextObserver`，契约位于 [`context-observer.ts`](../src/features/extensions/context-observer.ts)：`begin` 接收当前用户、本轮 ID、被替换轮次、历史和当前输入，返回 `request` / `finish` recorder。`request` 观察每次回答模型请求的消息、工具定义、续接中的可见助手正文与调用 / 结果，`finish` 保存回复、状态、错误与实际用量。观察器只记录，不修改模型输入；压缩使用另行注册的 `ContextProcessor`，chat 不注入 context-manager 服务。
 
-快照按本轮助手消息 ID 保存，编辑末问或重试生成新的快照并保留替换关联。带记忆元数据的新快照展示五个部分：System prompt、长期记忆、分组记忆、Session 记忆、当前 prompt；旧快照兼容原四分区。Session 部分包含最近一次回答模型请求实际发送的历史、Skill 主指令 / 读取结果、Search 上下文和工具定义；当前 prompt 单独呈现。`requestCount` 为去重后的回答模型请求数；为 0 时仍是尚未发送的输入。当前聊天没有系统消息，System 明确为空。Memory provider 的范围元数据将实际注入正文分入长期 / 分组 / Session，不能靠字符串猜测、重复计入当前 prompt 或把 Skill / 记忆的用户级指令标成 system。图片只保存名称、大小等元数据，协议不透明推理与供应商凭据不进入快照。快照持久化的统计仍为 UTF-16 字符数、UTF-8 文本字节数和图片数量；真实 Token 沿用上游上报值。
+快照按本轮助手消息 ID 保存，编辑末问或重试生成新的快照并保留替换关联。带旧 Memory 元数据的快照展示五个部分：System prompt、长期记忆、分组记忆、Session 记忆、当前 prompt；旧快照兼容原四分区。Session 部分包含最近一次回答模型请求实际发送的历史、Skill 主指令 / 读取结果、Search 上下文和工具定义；当前 prompt 单独呈现。`requestCount` 为去重后的回答模型请求数；为 0 时仍是尚未发送的输入。新 Harness 的工作区参考和工具读取结果按权限另行处理，观察器不会另存可绕过撤权的正文副本。当前聊天没有系统消息，System 明确为空。历史 Memory provider 的范围元数据将实际注入正文分入长期 / 分组 / Session，不能靠字符串猜测、重复计入当前 prompt 或把 Skill / 记忆的用户级指令标成 system。图片只保存名称、大小等元数据，协议不透明推理与供应商凭据不进入快照。快照持久化的统计仍为 UTF-16 字符数、UTF-8 文本字节数和图片数量；真实 Token 沿用上游上报值。
 
 抽屉的「上下文字符分布」直接读取快照各分区已有的 `characters`，以各分区之和为总量和占比分母，无需分词器、Worker、新 API、数据库字段或模型调用，已有快照同样适用。计数沿用 UTF-16 字符口径（JavaScript 字符串长度），包含空格、换行以及快照中已捕获的工具定义、结果和续接可见正文；补充平面字符（如部分 emoji）计为 2，空字符串计为 0。图片、消息角色与协议序列化开销、供应商不透明推理不计入；快照中的条目标签与图片元数据不作为正文统计。没有文本时显示 0 与空图，不虚构占比。图表描述所选快照最近一次请求的输入文本（`requestCount` 为 0 时为待发送输入），不含回答输出，也不累加本轮多次请求；字符数量不换算为 Token，不覆盖供应商上报或充当计费数据。图表与交互见 [UI 指南](UI_GUIDE.md#上下文抽屉与交接)。
 

@@ -97,7 +97,7 @@ test('late artifact lists from a previous account never enter the next account w
   }
 });
 
-test('chat artifacts generate, download, share group space, manage and configure across themes', async ({
+test('chat artifacts generate privately, publish to the project and support management across themes', async ({
   page,
 }, info) => {
   await useFixtureSession(page);
@@ -175,7 +175,7 @@ test('chat artifacts generate, download, share group space, manage and configure
     await page.reload();
     await expect(file).toBeVisible();
     await trigger.click();
-    await expect(drawer.locator('.llm-production-space-summary')).toContainText('到期自动清理');
+    await expect(drawer.locator('.llm-production-space-summary')).toContainText('当前对话产物');
     await expect(drawer.locator('.llm-production-item')).toContainText('测试产物.md');
     await page.keyboard.press('Escape');
     await request.patch(`/api/conversations/${conversation.id}`, { data: { groupId: group.id } });
@@ -184,11 +184,37 @@ test('chat artifacts generate, download, share group space, manage and configure
     });
     await page.goto(`/#/chat/${otherConversation.id}`);
     await trigger.click();
-    await expect(drawer.locator('.llm-production-space-summary')).toContainText(
-      '分组共享 · 默认不过期',
-    );
-    await expect(drawer.locator('.llm-production-item')).toContainText('测试产物.md');
+    await expect(drawer.getByRole('heading', { name: '还没有产物' })).toBeVisible();
     await page.keyboard.press('Escape');
+    const projectDocuments = async (id: string) => {
+      const response = await request.get(`/api/conversations/${id}/workspace`);
+      expect(response.ok()).toBe(true);
+      return (await response.json()).documents as {
+        id: string;
+        name: string;
+        kind: string;
+        version: number;
+        scope: string;
+      }[];
+    };
+    const artifact = (await projectDocuments(conversation.id)).find(
+      (doc) => doc.kind === 'artifact',
+    )!;
+    expect(artifact.name).toBe('测试产物.md');
+    expect(await projectDocuments(otherConversation.id)).not.toContainEqual(
+      expect.objectContaining({ id: artifact.id }),
+    );
+    const published = await request.post(
+      `/api/conversations/${conversation.id}/workspace/publish`,
+      {
+        data: { documentId: artifact.id, version: artifact.version },
+      },
+    );
+    expect(published.ok()).toBe(true);
+    expect(await projectDocuments(otherConversation.id)).toContainEqual(
+      expect.objectContaining({ id: artifact.id, version: artifact.version, scope: 'project' }),
+    );
+    await page.goto(`/#/chat/${conversation.id}`);
     for (const theme of ['light', 'dark']) {
       await request.patch('/api/preferences', { data: { ...uiPreferences, theme } });
       await page.reload();
@@ -225,7 +251,7 @@ test('chat artifacts generate, download, share group space, manage and configure
         path: test.info().outputPath(`production-manager-${theme}.png`),
         fullPage: true,
       });
-      await page.goto(`/#/chat/${otherConversation.id}`);
+      await page.goto(`/#/chat/${conversation.id}`);
     }
     await page.goto('/#/llm-production');
     await expect(page.getByRole('heading', { name: '产物空间', exact: true })).toBeVisible();

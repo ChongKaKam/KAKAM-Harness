@@ -10,6 +10,13 @@ async function login(page: Page, username = 'admin') {
   await page.getByRole('button', { name: '进入工作区' }).click();
   await expect(page.getByRole('button', { name: '发送消息' })).toBeVisible();
 }
+async function openWorkspaceNavigation(page: Page) {
+  const shortcut = page
+    .getByRole('navigation', { name: '快捷导航' })
+    .getByRole('button', { name: '工作区', exact: true });
+  if ((await shortcut.isVisible()) && (await shortcut.getAttribute('aria-expanded')) === 'false')
+    await shortcut.click();
+}
 async function nav(page: Page, name: string) {
   const settings = ['用户管理', '模型与接入', '功能与插件', '通用设置', '账户设置', '相关信息'];
   if (
@@ -22,8 +29,7 @@ async function nav(page: Page, name: string) {
       .click();
     return;
   }
-  const menu = page.getByRole('button', { name: '打开导航' });
-  if (await menu.isVisible()) await menu.click();
+  await openWorkspaceNavigation(page);
   if (settings.includes(name)) {
     await page.getByRole('button', { name: '打开设置' }).click();
     await page
@@ -61,7 +67,10 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     .toBe(true);
-  await expect(page.getByRole('navigation', { name: '工作区' }).getByRole('button')).toHaveCount(2);
+  await openWorkspaceNavigation(page);
+  const workspaceNav = page.getByRole('navigation', { name: '工作区', exact: true });
+  await expect(workspaceNav.getByRole('button', { name: '对话', exact: true })).toBeVisible();
+  await expect(workspaceNav.getByRole('button', { name: /^Skill 库(?: 插件)?$/ })).toBeVisible();
   await expect(
     page.getByRole('navigation', { name: '统计' }).getByRole('button', { name: '用量统计' }),
   ).toHaveCount(1);
@@ -83,9 +92,7 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await page.getByLabel('来源名称').fill(sourceName);
   await page.getByLabel('Base URL').fill('http://127.0.0.1:3211/v1');
   await page.getByLabel('API Key').fill('test-secret');
-  await page
-    .getByLabel('响应模式')
-    .selectOption(suffix === 'desktop' ? 'responses' : 'chat-completions');
+  await page.getByLabel('响应模式').selectOption('responses');
   await page.getByRole('dialog').getByRole('button', { name: '探测模型' }).click();
   await expect(page.getByRole('dialog').getByRole('status')).toContainText('发现 6 个模型');
   await expect(page.getByRole('dialog').getByRole('button', { name: '测试连通性' })).toHaveCount(0);
@@ -202,13 +209,12 @@ test('administrator setup, rich multimodal chat, user authorization and plugin l
   await expect(page.getByRole('switch', { name: 'Skill 库开关' })).not.toBeChecked();
   await page.getByRole('switch', { name: 'Skill 库开关' }).click();
   await expect(page.getByRole('switch', { name: 'Skill 库开关' })).toBeChecked();
-  const menu = page.getByRole('button', { name: '打开导航' });
-  if (await menu.isVisible()) await menu.click();
+  await openWorkspaceNavigation(page);
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page.getByRole('button', { name: '进入工作区' })).toBeVisible();
   await login(page, username);
   await chooseModel(page, { label: `${modelLabel} · ${sourceName}` });
-  if (await menu.isVisible()) await menu.click();
+  await openWorkspaceNavigation(page);
   await expect(page.getByRole('button', { name: '用户管理', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '模型与接入', exact: true })).toHaveCount(0);
   if (await page.getByRole('button', { name: '收起导航' }).isVisible())
@@ -253,6 +259,13 @@ test('live composer supports typing, undo, math editing, paste, IME and Markdown
 }, info) => {
   await login(page);
   const input = page.getByRole('textbox', { name: '消息', exact: true });
+  await page.getByRole('button', { name: '添加内容和工具', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '添加内容和工具', exact: true })
+    .getByRole('checkbox', { name: '显示文本格式', exact: true })
+    .check();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('toolbar', { name: '文本格式', exact: true })).toBeVisible();
   await input.click();
   await input.pressSequentially('**live**');
   await expect(input.locator('strong')).toHaveText('live');
@@ -392,8 +405,7 @@ test('Color Pattern tabs keep shell neutral, color components and persist per ac
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  const menu = page.getByRole('button', { name: '打开导航' });
-  if (await menu.isVisible()) await menu.click();
+  await openWorkspaceNavigation(page);
   await page.getByRole('button', { name: '退出登录' }).click();
   await login(page, `reader-${info.project.name}`);
   await expect(page.locator('html')).toHaveAttribute('data-color-pattern', 'natural');
@@ -420,8 +432,7 @@ test('conversation and prompt colors can be assigned, remapped and reset', async
   ).json();
   await page.reload();
   await expect(page.locator('.home-intro h1')).toBeVisible();
-  const menu = page.getByRole('button', { name: '打开导航' });
-  if (await menu.isVisible()) await menu.click();
+  await openWorkspaceNavigation(page);
   const row = page.locator('.conversation-link').filter({ hasText: title });
   await expect(row.getByRole('button', { name: `管理对话 ${title}` })).toHaveCount(1);
   await expect(row.getByRole('button', { name: /设置颜色/ })).toHaveCount(0);
@@ -430,7 +441,6 @@ test('conversation and prompt colors can be assigned, remapped and reset', async
   if (await closeMenu.isVisible()) await closeMenu.click();
   await nav(page, 'Skill 库');
   const card = page.locator('.prompt-card').filter({ hasText: `配色卡片 ${info.project.name}` });
-  await card.getByRole('button', { name: /更多操作/ }).click();
   await card.getByRole('button', { name: /设置颜色/ }).click();
   await page.getByRole('dialog').getByRole('radio', { name: '玫瑰粉', exact: true }).click();
   await expect(
@@ -449,7 +459,6 @@ test('conversation and prompt colors can be assigned, remapped and reset', async
   await expect
     .poll(() => card.evaluate((element) => element.style.getPropertyValue('--item-color')))
     .toBe('#f0c9d1');
-  await card.getByRole('button', { name: /更多操作/ }).click();
   await card.getByRole('button', { name: /设置颜色/ }).click();
   await expect(
     page.getByRole('dialog').getByRole('radio', { name: '柔粉', exact: true }),
@@ -462,7 +471,7 @@ test('conversation and prompt colors can be assigned, remapped and reset', async
       (item: { id: string }) => item.id === prompt.id,
     ).colorSlot,
   ).toBe(null);
-  if (await menu.isVisible()) await menu.click();
+  await openWorkspaceNavigation(page);
   await expect
     .poll(() => row.evaluate((element) => getComputedStyle(element).color))
     .toBe(neutralRow);

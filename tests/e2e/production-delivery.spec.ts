@@ -109,7 +109,7 @@ test('required artifact mode shows real delivery, partial failure, clarification
       await request.patch('/api/preferences', { data: { ...appearance, theme } });
       await page.reload();
       await page.evaluate(() => document.documentElement.style.setProperty('--font-scale', '1.15'));
-      await answer.locator('summary').click();
+      await answer.locator('.llm-production-delivery > summary').click();
       await expect(answer.getByRole('region', { name: '产物交付清单', exact: true })).toBeVisible();
       await expect(answer.getByText('已生成', { exact: true })).toHaveCount(4);
       expect(
@@ -150,7 +150,8 @@ test('required artifact mode shows real delivery, partial failure, clarification
     await setMode('required');
     await input.fill('按约定做出来');
     await submit.click();
-    await expect(answer.getByRole('status', { name: '' })).toContainText('产物需求待补充');
+    await expect(answer.getByRole('status').filter({ hasText: '产物需求待补充' })).toBeVisible();
+    await expect(answer.locator('.harness-progress > summary')).toContainText('等待补充产物需求');
     await expect(answer).toContainText('需要交付哪些文件，内容和格式是什么？');
     await expect(answer.getByRole('link', { name: /^下载 / })).toHaveCount(0);
     await page.goto(`/#/chat/${completedId}`);

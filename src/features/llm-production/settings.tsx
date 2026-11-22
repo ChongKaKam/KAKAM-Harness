@@ -162,13 +162,13 @@ function ProductionPreferencesForm({
           </select>
         </label>
         <p className="llm-production-settings-description">
-          未分组聊天各自拥有临时空间，产物到期后自动清理；同一分组内的聊天共享产物空间，默认不过期。
+          新对话的私有产物按临时保留天数自动清理。发布到项目的版本默认长期保留。
         </p>
         <p className="llm-production-settings-description">
           修改天数会重新计算已有临时产物的到期时间，缩短后已到期的文件可能立即清理。
         </p>
         <p className="llm-production-settings-description">
-          对话移入分组时，临时产物一同转入；已有分组产物在来源对话移出或删除后仍保留在原分组。删除分组后，未归入其他分组的产物开始按临时保留时间计算。
+          在工作区选择要发布或授权的具体版本。来源对话移出或删除后，已发布版本仍留在原项目。最后一个持有该版本的项目删除后，文件开始按临时保留天数计算。历史对话沿用原分组的共享规则。
         </p>
       </section>
       <section className="llm-production-settings-section">

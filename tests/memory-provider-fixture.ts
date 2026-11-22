@@ -1,4 +1,5 @@
 import express from 'express';
+import { writeToolTurn } from './provider-tool-fixture';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,8 +11,7 @@ export async function memoryProviderFixture() {
   const delays = { embedding: 0, remember: 0 };
   const requests: {
     model: string;
-    input?: string[];
-    messages?: { role: string; content: string }[];
+    input: string[] | { role: string; content: string }[];
   }[] = [];
   app.get('/v1/models', (_req, res) =>
     res.json({
@@ -33,13 +33,13 @@ export async function memoryProviderFixture() {
       usage: { prompt_tokens: inputs.length * 3, total_tokens: inputs.length * 3 },
     });
   });
-  app.post('/v1/chat/completions', async (req, res) => {
+  app.post('/v1/responses', async (req, res) => {
     requests.push(req.body);
     if (req.body.model === 'memory-broken') {
       res.status(503).json({ error: { message: 'fixture provider unavailable' } });
       return;
     }
-    const text = req.body.messages.at(-1)?.content ?? '';
+    const text = req.body.input.at(-1)?.content ?? '';
     let answer = '收到，本轮已使用提供的上下文。';
     if (text.includes('Remember it preview')) {
       if (delays.remember) await delay(delays.remember);
@@ -97,12 +97,7 @@ export async function memoryProviderFixture() {
         ],
       });
     }
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\n`);
-    res.write(
-      `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } })}\n\n`,
-    );
-    res.end('data: [DONE]\n\n');
+    writeToolTurn('responses', res, [], answer, { input_tokens: 20, output_tokens: 10 });
   });
   const server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

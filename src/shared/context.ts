@@ -7,6 +7,7 @@ export interface ContextCompression {
   compressedMessages: number;
   retainedMessages: number;
   threshold: number;
+  thresholdUnit?: 'estimatedTokens' | 'characters';
   modelName: string | null;
   durationMs: number;
   usage: MessageUsage | null;

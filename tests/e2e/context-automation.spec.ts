@@ -36,7 +36,9 @@ test('context automation settings and generated trajectory nodes work in the dra
     await page
       .getByRole('combobox', { name: '上下文压缩模型', exact: true })
       .selectOption(model.id);
-    await page.getByRole('spinbutton', { name: '压缩触发阈值（字符）', exact: true }).fill('2000');
+    const threshold = page.getByRole('spinbutton', { name: '压缩触发阈值（字符）', exact: true });
+    await expect(threshold).toHaveAttribute('placeholder', '自动');
+    await threshold.fill('2000');
     await page.getByRole('spinbutton', { name: '保留最近原文（轮）', exact: true }).fill('1');
     await page.getByRole('spinbutton', { name: '压缩摘要预算（字符）', exact: true }).fill('500');
     await page.getByRole('checkbox', { name: '启用自动上下文压缩', exact: true }).check();
@@ -102,6 +104,14 @@ test('context automation settings and generated trajectory nodes work in the dra
     await page.screenshot({
       path: `test-results/context-automation-drawer-dark-${info.project.name}.png`,
     });
+    await page.keyboard.press('Escape');
+    await page.goto('/#/settings/context-manager');
+    await threshold.fill('');
+    await page.getByRole('button', { name: '保存设置', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('上下文设置已保存');
+    expect(
+      (await (await request.get('/api/context-manager/preferences')).json()).compressionThreshold,
+    ).toBeNull();
     expect(errors).toEqual([]);
   } finally {
     await request.patch('/api/context-manager/preferences', { data: original });

@@ -4,19 +4,20 @@
 
 ## 阅读地图
 
-| 文档                                     | 负责回答的问题                                                    |
-| ---------------------------------------- | ----------------------------------------------------------------- |
-| [README](../README.md)                   | 用户如何运行、配置、部署、备份这个应用？                          |
-| [AGENTS.md](../AGENTS.md)                | 模型和开发者工作时必须保持哪些边界、如何验证和交付？              |
-| 本文                                     | 代码在哪里、改哪一层、怎样同步规范与版本？                        |
-| [ARCHITECTURE.md](ARCHITECTURE.md)       | 引擎、平台、服务、请求、数据与后台生成如何协作？                  |
-| [FEATURES.md](FEATURES.md)               | 如何添加一个包含 server / client 的功能，如何扩展服务与 Adapter？ |
-| [UI_GUIDE.md](UI_GUIDE.md)               | 如何新增 UI 组件并继承颜色、字号、布局与交互规范？                |
-| [RELEASE.md](RELEASE.md)                 | 如何规范提交、推送并把指定提交安全部署到当前远端服务器？          |
-| [CONTEXT_MANAGER.md](CONTEXT_MANAGER.md) | 自动压缩、轨迹摘要、用户设置、缓存与手动摘要 API                  |
-| [MEMORY_API.md](MEMORY_API.md)           | 三层记忆的 HTTP API、输入限制、权限、幂等、索引和操作状态         |
-| [MEMORY_AGENTS.md](MEMORY_AGENTS.md)     | 如何新增带配套设置 UI 的记忆策略 / Agent，如何复用托管模型调用？  |
-| [MEMORY_DATABASE.md](MEMORY_DATABASE.md) | 如何接入共享 PostgreSQL、迁移、诊断、备份与恢复？                 |
+| 文档                                     | 负责回答的问题                                                       |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| [README](../README.md)                   | 用户如何运行、配置、部署、备份这个应用？                             |
+| [AGENTS.md](../AGENTS.md)                | 模型和开发者工作时必须保持哪些边界、如何验证和交付？                 |
+| 本文                                     | 代码在哪里、改哪一层、怎样同步规范与版本？                           |
+| [ARCHITECTURE.md](ARCHITECTURE.md)       | 引擎、平台、服务、请求、数据与后台生成如何协作？                     |
+| [FEATURES.md](FEATURES.md)               | 如何添加一个包含 server / client 的功能，如何扩展服务与 Adapter？    |
+| [UI_GUIDE.md](UI_GUIDE.md)               | 如何新增 UI 组件并继承颜色、字号、布局与交互规范？                   |
+| [RELEASE.md](RELEASE.md)                 | 如何规范提交、推送并把指定提交安全部署到当前远端服务器？             |
+| [CONTEXT_MANAGER.md](CONTEXT_MANAGER.md) | 自动压缩、轨迹摘要、用户设置、缓存与手动摘要 API                     |
+| [HARNESS.md](HARNESS.md)                 | 新会话资料隔离、工作区工具、发布和指定版本授权、运行与搜索怎样协作？ |
+| [MEMORY_API.md](MEMORY_API.md)           | 三层记忆的 HTTP API、输入限制、权限、幂等、索引和操作状态            |
+| [MEMORY_AGENTS.md](MEMORY_AGENTS.md)     | 如何新增带配套设置 UI 的记忆策略 / Agent，如何复用托管模型调用？     |
+| [MEMORY_DATABASE.md](MEMORY_DATABASE.md) | 如何接入共享 PostgreSQL、迁移、诊断、备份与恢复？                    |
 
 推荐先读本页的项目结构，再实际打开 `src/features/prompts/`；它是包含私人卡片、设置页和按需模型调用的完整插件实例。涉及登录、模型授权或流式生成时，再读对应 feature 和测试。
 
@@ -62,6 +63,7 @@ src/
     manifest.ts                 纯数据目录声明
     server.ts                   服务 / API / 生命周期
     client.tsx                  页面；可继续拆成组件、hooks、CSS
+  features/harness/             chat 核心装配的执行器、工作区 API、文档版本和受控工具
   client/
     main.tsx                    React 入口、UiProvider、全局 CSS 导入顺序
     App.tsx                     登录状态、Shell、hash 导航、目录刷新
@@ -163,6 +165,8 @@ npm run format:check
 
 ## 规范与文档同步
 
+修改工作区范围、运行状态、审批、流式补充或检索失败语义时，同步 [HARNESS.md](HARNESS.md)。新工作区的存储与版本测试在 `tests/harness-workspace.test.ts`，从来源聊天批准目标任务的 HTTP 回归在 `tests/harness-resume.test.ts`。工具协议见 `tests/harness-tools.test.ts`，浏览器交互见 `tests/e2e/harness-chat.spec.ts`。按本次改动选用。
+
 文档与代码在同一次变更中同步，这是交付完成条件；不是另设周期任务，也不是只在对话中说明。新增约定注明适用范围，实际实现尚不支持的内容明确标记为方案。
 
 | 变更触发                                          | 必须检查的主要说明位置                                                                     | 对应代码 / 验证                                                       |
@@ -195,13 +199,13 @@ git diff --check
 
 新增浏览器功能测试可调用 `tests/e2e-session.ts` 的 `useFixtureSession(page)`，复用临时测试服务器首次注册的会话；文件仅保存在系统临时目录且关闭服务器时移除。登录/注册行为仍由原有用例验证，不通过提高生产限流阈值来容纳测试。
 
-拓展能力回归在 `tests/extensions.test.ts` 与 `tests/e2e/extensions.spec.ts`，覆盖 Search、Jev、权限、模式、来源持久化、停止、卸载与重连；mock-provider 提供隔离的原生 Jev 和 Perplexity Search 响应，不需要真实密钥或付费调用。
+拓展能力回归在 `tests/extensions.test.ts` 与 `tests/e2e/extensions.spec.ts`，覆盖 Search、Jev、权限、模式、来源持久化、停止、卸载与重连；Auto 失败跳过、局部超时、长输入预算、两种文本协议和 Claude 初始文本 / 输出上限 / 工具 400 的阶段区分使用本地 mock。与现有自动压缩的先后顺序及一次摘要复用在 `tests/context-processing.test.ts`；浏览器的 Auto 降级提示可单独运行 `npx playwright test tests/e2e/extensions.spec.ts --grep 'Auto failure'`。不需要真实密钥或付费调用。
 
 模型诊断回归位于 `tests/model-diagnostics.test.ts`：覆盖四种协议的真实测试请求、401、半截流、超时、非 JSON、日志限长及凭据脱敏。拓展菜单与管理列表的模式同步、原生 Popover 键盘和手机布局由 `tests/e2e/extensions.spec.ts` 验证。
 
 Skill 库兼容回归位于 `tests/prompts.test.ts`（编辑、标签校验、账户隔离、三类 LLM Adapter、真实用量、停用取消）与 `tests/e2e/prompts.spec.ts`（设置模型、生成简介、编辑 / 搜索 / 标签、明暗和四档字号）；旧库升级与重启保存在 `tests/kernel.test.ts` 验证。局部迭代运行受影响用例即可，无需每次执行全部浏览器套件。
 
-Skill 文档读取与工具循环回归在 `tests/skills.test.ts`，模型工具夹具在 `tests/skill-provider-fixture.ts`，覆盖三种协议、版本绑定、读取权限、累计用量、断线、停用和停止。迁移覆盖在 `tests/kernel.test.ts`，浏览器在 `tests/e2e/skills.spec.ts`；原提示词用例继续验证兼容接口和管理页面。后续执行环境的工作范围集中在 [Skill TODO](SKILLS_TODO.md)，这些能力尚未实现。
+Skill 文档读取与工具循环回归在 `tests/skills.test.ts`，模型工具夹具在 `tests/skill-provider-fixture.ts`，覆盖两种文本协议、版本绑定、读取权限、累计用量、断线、停用和停止。迁移覆盖在 `tests/kernel.test.ts`，浏览器在 `tests/e2e/skills.spec.ts`；原提示词用例继续验证兼容接口和管理页面。后续执行环境的工作范围集中在 [Skill TODO](SKILLS_TODO.md)，这些能力尚未实现。
 
 信息中转站的针对性回归为 `npx tsx --test tests/relay.test.ts`，覆盖账户隔离、分段上传和重试、大小限制、正文和附件独立到期与持久化、清理、启停、旧库升级与重启保存。构建后运行 `npx playwright test tests/e2e/relay.spec.ts` 验证 Markdown 及附件操作与桌面 / 手机布局。使用临时 SQLite 和临时文件目录，不调用模型。
 
@@ -211,12 +215,12 @@ Embedding 的针对性回归使用 `npx tsx --test tests/embedding.test.ts tests
 
 空间、生成工具和 API 的主要契约在 [LLM Production](LLM_PRODUCTION.md)。llm-production 核心复用模型授权和聊天工具循环，文档生成依赖安装在生产依赖中；PDF 的中文字体随依赖提供，部署无需额外下载字体。产物字节随 SQLite 数据目录备份。
 
-针对性用例为 tests/llm-production.test.ts（权限 / 空间 / 清理 / 迁移）、tests/production-chat.test.ts（三协议工具循环 / SSE / 幂等 / 断线）、生成器及图片 Adapter 的相应用例；tests/e2e/production.spec.ts 验证当前空间、管理、下载、设置和受影响的明暗 / 手机布局。改动涉及模型种类或现有 Skill 工具循环时，再运行对应模型 / Skill 回归；不要求全套测试。
+针对性用例为 tests/llm-production.test.ts（权限 / 空间 / 清理 / 迁移）、tests/production-chat.test.ts（两种文本协议工具循环 / SSE / 幂等 / 断线）、生成器及图片 Adapter 的相应用例；tests/e2e/production.spec.ts 验证当前空间、管理、下载、设置和受影响的明暗 / 手机布局。改动涉及模型种类或现有 Skill 工具循环时，再运行对应模型 / Skill 回归；不要求全套测试。
 
 管理首页的对话卡片、Color Pattern、类型 / 分组筛选、来源详情与共享空间切换由 tests/e2e/production-spaces.spec.ts 验证，包含已删除来源的保留产物；预览窗口的安全源码、加载重试和明暗 / 手机布局由 tests/e2e/production-preview.spec.ts 覆盖。
 
 管理员容量默认值、权限、输入边界、即时写入限额、独立账户额度及重启持久化在 tests/llm-production.test.ts；设置入口、保存、普通用户只读与桌面 / 手机布局在 tests/e2e/production-capacity.spec.ts。测试只用临时数据库与本地服务，容量边界通过临时文件元数据模拟，不创建 GiB 级文件。
 
-触发与交付回归位于 tests/production-request.test.ts（一般文件需求、明确格式与否定 / 引用 / 示例边界）、tests/production-trigger.test.ts（原始提问、配置预检、三协议调用、模型选择网页文件格式、未调用工具不能成功、图片失败不自动重试），均使用本地 mock；工具预算仍由 tests/production-budget.test.ts 验证。
+触发与交付回归位于 tests/production-request.test.ts（一般文件需求、明确格式与否定 / 引用 / 示例边界）、tests/production-trigger.test.ts（原始提问、配置预检、两种文本协议调用、模型选择网页文件格式、未调用工具不能成功、图片失败不自动重试），均使用本地 mock；工具预算仍由 tests/production-budget.test.ts 验证。
 
-结构化计划回归在 tests/production-delivery.test.ts（三协议混合产物、必须产物模式、部分交付、澄清、十二项逐次生成、Auto 普通请求次数），服务不变量在 tests/production-delivery-service.test.ts（计划锁定、权限、项目 / 格式绑定、失败图片去重），动态通用接口在 tests/conversation-tools.test.ts。tests/e2e/production-delivery.spec.ts 仅检查新增输入模式、清单、下载、未完成提示、澄清及桌面 / 手机布局；无需为计划改动运行全套浏览器测试。
+结构化计划回归在 tests/production-delivery.test.ts（两种文本协议混合产物、必须产物模式、部分交付、澄清、十二项逐次生成、Auto 普通请求次数），服务不变量在 tests/production-delivery-service.test.ts（计划锁定、权限、项目 / 格式绑定、失败图片去重），动态通用接口在 tests/conversation-tools.test.ts。tests/e2e/production-delivery.spec.ts 仅检查新增输入模式、清单、下载、未完成提示、澄清及桌面 / 手机布局；无需为计划改动运行全套浏览器测试。

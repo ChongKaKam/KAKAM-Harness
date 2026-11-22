@@ -11,6 +11,7 @@
 | 任务                                 | 首先阅读                                                                                    |
 | ------------------------------------ | ------------------------------------------------------------------------------------------- |
 | Kernel、服务依赖、权限、聊天生命周期 | [架构](docs/ARCHITECTURE.md)、`src/kernel/`、相关 feature 的 `server.ts`                    |
+| 新对话工作区、运行、搜索或文件授权   | [Harness 契约](docs/HARNESS.md)、`src/features/harness/`、`src/features/chat/server.ts`     |
 | 新增 feature、API、模型协议          | [功能扩展](docs/FEATURES.md)、`src/features/prompts/`、两个注册入口                         |
 | Memory、Embedding、记忆策略 / Agent  | [Memory API](docs/MEMORY_API.md)、[策略开发](docs/MEMORY_AGENTS.md)、`src/features/memory/` |
 | 页面、组件、主题、字号、移动端       | [UI 指南](docs/UI_GUIDE.md)、`src/client/main.tsx`、现有同类组件                            |
@@ -29,9 +30,9 @@
 - 路由内使用 Zod 验证输入、参数化 SQL 和 `HttpError`。`adminOnly` 只控制目录可见性，管理员 API 仍必须使用 `requireAdmin`。
 - 平台 SQLite 表结构与追加迁移集中在 `src/kernel/database.ts`；Memory 使用独立 PostgreSQL/pgvector，迁移集中在 `src/kernel/memory-database.ts`。共享数据库的专属 schema / vector 扩展由管理员准备，应用账号只迁移业务表，接入与运维见 [Memory 数据库](docs/MEMORY_DATABASE.md)。不要在请求处理中改 schema。SQLite `db.transaction()` 回调同步，不能放入异步请求；PostgreSQL 事务可异步执行数据库操作，但模型和网络调用仍在事务外。
 - Context Manager 的只读观察器与异步处理器分别经 extensions 注册；压缩仅替换请求历史，保留原文，节点摘要在完成回答后生成。辅助模型逐调用授权并记录实际用量，契约见 [上下文管理](docs/CONTEXT_MANAGER.md)。
-- Memory 只经 `extensions` 注册的 provider 接入聊天，Chat 不直接依赖可停用的 manager。策略必须实现服务端契约和同 ID / settingsKey / configVersion 的设置 UI；权限、作用域、写入模式、幂等与预算由 Manager 强制校验，策略不拿数据库连接。独立 PostgreSQL 按 `MEMORY_NAMESPACE` 和 owner 隔离，不能把 namespace 当作用户可选租户。
+- 新会话使用独立 Harness 工作区，项目发布和一对一授权均固定文件版本。历史对话仅供查看，旧记忆、偏好和产物不得自动进入新命名空间。旧 Memory 插件保留经 `extensions` 注册的 provider 和管理 API。策略必须实现服务端契约和同 ID / settingsKey / configVersion 的设置 UI；权限、作用域、写入模式、幂等与预算由 Manager 强制校验，策略不拿数据库连接。独立 PostgreSQL 按 `MEMORY_NAMESPACE` 和 owner 隔离，不能把 namespace 当作用户可选租户。
 - 新长期记忆必须待用户显式纳入，自动写入、手动创建和 Remember 确认均不能跳过；正文修改重新待纳入。纳入记录真实确认时间，历史未知时间不回填。Remember 预览绑定本人已完成问答原文与哈希，确认和来源回溯重新校验；模型不能批准自己的候选。详细状态和 API 见 [Memory API](docs/MEMORY_API.md)。
-- `llm-production` 是 Core，工具向 extensions 注册，用户 / 聊天 / 消息由服务器绑定，文件保持私有。Auto 由主模型选择工具；必须产物模式先声明不可缩减的交付计划，需求不足可澄清，每项绑定真实文件并检查类型 / 明确格式。先校验配置与授权，完成前逐项核对交付；文字或代码块不能替代成功生成，失败图片不自动重复付费。未分组聊天保留 3–7 天，分组共享且默认不过期；触发、迁移、删除、清理和幂等见 [产物契约](docs/LLM_PRODUCTION.md)。固定文档生成器不执行模型脚本。
+- `llm-production` 是 Core，工具向 extensions 注册，用户 / 聊天 / 消息由服务器绑定，文件保持私有。Auto 由主模型选择工具；必须产物模式先声明不可缩减的交付计划，需求不足可澄清，每项绑定真实文件并检查类型 / 明确格式。先校验配置与授权，完成前逐项核对交付；文字或代码块不能替代成功生成，失败图片不自动重复付费。新工作区的产物默认私有，临时保留 3–7 天。用户授权指定版本或将其发布到项目，已发布版本默认不过期。历史聊天沿用原分组行为。触发、迁移、删除、清理和幂等见 [产物契约](docs/LLM_PRODUCTION.md)。固定文档生成器不执行模型脚本。
 - 客户端不导入 `server.ts`、Node 模块或密钥；共享 DTO 放 `src/shared/` 或 feature 的纯类型文件，用 `import type` 明确边界。
 
 ## 必须保留的行为
@@ -39,6 +40,7 @@
 - 首位注册用户成为管理员；后续用户为普通用户。使用邮箱、显示名称、密码；密码非空，不新增长度或字符组合限制，也不裁剪密码空格。
 - 聊天调用模型前执行模型白名单、启用状态和用户授权校验。Token 消耗使用来源上报数据，缺失值不能伪装成零消耗或估算账单。
 - 模型探测、连通性测试和聊天均通过 `ModelsService.adapter(apiMode)` 选择协议；用量为累计值时取最新值，不重复相加。模型排序必须保持授权过滤，默认是排序后首个可用模型，不能绕过启用与授权。
+- LLM 的窗口和输出上限按具体来源中的模型配置。两种文本协议共用请求构造器，在每次出站前核对已配置窗口与当轮工具续接。压缩阈值和估算规则见[上下文管理](docs/CONTEXT_MANAGER.md)。管理员可显式进行两轮只读工具测试，逐轮使用来源上报用量。
 - 模型类型为模型级 `llm / jev / embedding / image`；Embedding 与图片生成模型不进入聊天选择器。通过 `ModelsService.embed(user, modelId, inputs, signal)` 逐调用授权并记录真实用量，缺失字段保留 NULL。测试必须显示配置 / 实际维度；不同来源、模型配置和向量空间不能混用，切换后重建。
 - 聊天提交与 SSE 订阅分离：离开页面、锁屏、断网、卸载组件只清理订阅，不能因此停止服务器生成任务。主动停止才调用停止 API。
 - 每个对话最多一个活动回复，每用户默认最多 5 个，可经 MAX_CONCURRENT_CHATS 配置。最后一问编辑 / 失败回复重试 / 已完成回复再次生成沿用聊天提交路由与新 requestId；仅可替换本人对话的末条问答，旧用量保留。生成按活动进度计空闲时限并有总时限，失败原因应安全地持久化。

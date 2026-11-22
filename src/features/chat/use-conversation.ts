@@ -9,6 +9,7 @@ export function useConversation(
   onComplete: () => Promise<void>,
 ) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [harness, setHarness] = useState<boolean>();
   const [loading, setLoading] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState('');
@@ -19,7 +20,10 @@ export function useConversation(
   const complete = useRef(onComplete);
   complete.current = onComplete;
   useEffect(() => {
-    if (previousScope.current !== scope) setMessages([]);
+    if (previousScope.current !== scope) {
+      setMessages([]);
+      setHarness(undefined);
+    }
     previousScope.current = scope;
     setError('');
     if (!id) {
@@ -83,6 +87,7 @@ export function useConversation(
               receivedSnapshot = true;
               terminal = !event.messages.some((message) => message.status === 'streaming');
               setMessages(event.messages);
+              setHarness(event.harness);
               setLoading(false);
               setReconnecting(false);
               failures = 0;
@@ -92,6 +97,12 @@ export function useConversation(
                   message.id === event.messageId
                     ? { ...message, content: message.content + event.text }
                     : message,
+                ),
+              );
+            } else if (event.type === 'harness-progress') {
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === event.messageId ? { ...message, harnessRun: event.run } : message,
                 ),
               );
             } else if (event.type === 'extensions') {
@@ -163,6 +174,7 @@ export function useConversation(
     window.addEventListener('online', resume);
     window.addEventListener('offline', offline);
     window.addEventListener('drift:production-changed', resume);
+    window.addEventListener('drift:harness-resumed', resume);
     return () => {
       disposed = true;
       disconnect();
@@ -172,11 +184,13 @@ export function useConversation(
       window.removeEventListener('online', resume);
       window.removeEventListener('offline', offline);
       window.removeEventListener('drift:production-changed', resume);
+      window.removeEventListener('drift:harness-resumed', resume);
     };
   }, [id, userId, scope, revision]);
   const current = previousScope.current === scope;
   return {
     messages: current ? messages : [],
+    harness: current ? harness : undefined,
     loading: current ? loading : !!id,
     reconnecting: current ? reconnecting : false,
     error: current ? error : '',

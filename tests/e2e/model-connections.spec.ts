@@ -2,6 +2,43 @@ import { test, expect } from '@playwright/test';
 import { useFixtureSession } from '../e2e-session';
 import { fontSizes } from '../../src/shared/typography';
 
+test('administrator can verify both tool rounds on the saved model', async ({ page }, info) => {
+  await useFixtureSession(page);
+  const { id: providerId } = await (
+    await page.request.post('/api/admin/providers', {
+      data: {
+        name: `Tool probe ${info.project.name}`,
+        baseUrl: 'http://127.0.0.1:3211/v1',
+        apiMode: 'responses',
+      },
+    })
+  ).json();
+  try {
+    const { id } = await (
+      await page.request.post('/api/admin/models', {
+        data: { providerId, name: 'probe-success', label: 'Tool probe', toolCalling: true },
+      })
+    ).json();
+    await page.goto('/#/settings/models');
+    await page.getByRole('button', { name: /模型管理与授权/ }).click();
+    await page
+      .locator(`[data-model-id="${id}"]`)
+      .getByRole('button', { name: '管理', exact: true })
+      .click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(/最多发起两次模型请求/)).toBeVisible();
+    await dialog.getByRole('button', { name: '测试工具调用' }).click();
+    const result = dialog.locator('.models-probe-result');
+    await expect(result).toContainText('工具测试通过');
+    await expect(result.getByRole('listitem')).toHaveText([
+      '请求只读工具 · 通过 · Token 10',
+      '引用工具结果 · 通过 · Token 20',
+    ]);
+  } finally {
+    await page.request.delete(`/api/admin/providers/${providerId}`);
+  }
+});
+
 test('compact sources, draft discovery and per-model diagnostics fit themes and font sizes', async ({
   page,
 }, info) => {
@@ -34,6 +71,13 @@ test('compact sources, draft discovery and per-model diagnostics fit themes and 
     await card.getByRole('button', { name: `编辑 ${sourceName}` }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('button', { name: '测试连通性' })).toHaveCount(0);
+    await expect(dialog.locator('optgroup[label="Harness 对话"] option')).toHaveText([
+      'Responses · /responses',
+      'Anthropic Messages · /messages',
+    ]);
+    await expect(dialog.locator('optgroup[label="辅助决策"] option')).toHaveText([
+      'Jev 决策 · /systemone',
+    ]);
     await dialog.getByRole('button', { name: '探测模型' }).click();
     await expect(dialog.getByRole('status')).toContainText('发现 6 个模型');
     await expect(dialog.getByRole('list', { name: '探测到的模型' })).toContainText('test-vision');

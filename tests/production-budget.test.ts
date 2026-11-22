@@ -132,7 +132,7 @@ async function fixture(
             toolCalling: true,
           }),
           connection: () => ({
-            apiMode: 'chat-completions',
+            apiMode: 'responses',
             baseUrl: 'http://fixture.invalid',
             apiKey: '',
           }),

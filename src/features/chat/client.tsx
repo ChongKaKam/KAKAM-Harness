@@ -1,13 +1,24 @@
 import { SkillChips, useChatSkills } from '../skills/chat-controls';
 import { SkillDetails } from '../skills/message-details';
 import { ContextDrawer } from '../context-manager/drawer';
-import { RememberDialog } from '../memory/remember';
+import { HarnessProgress } from './harness-progress';
+import { HarnessQuestion } from './harness-question';
+import { HarnessApprovalNotice } from './harness-approval-notice';
+import './harness-chat.css';
 import { MessageArtifacts } from '../llm-production/message-artifacts';
 import { useProductionMode } from '../llm-production/use-production-mode';
 import type { ProductionMode } from '../llm-production/types';
 import { useExtensions } from '../extensions/chat-controls';
 import { ExtensionDetails } from '../extensions/message-details';
-import { useEffect, useRef, useState, type ChangeEvent, type SetStateAction } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type SetStateAction,
+} from 'react';
 import {
   ArrowUp,
   ArrowDown,
@@ -19,7 +30,8 @@ import {
   Pencil,
   RefreshCw,
   GitBranch,
-  BookmarkPlus,
+  FolderOpen,
+  CornerDownLeft,
 } from 'lucide-react';
 import { UserAvatar } from '../../client/user-avatar';
 import { ModelPicker } from './model-picker';
@@ -39,6 +51,8 @@ import { copyText } from '../../client/clipboard';
 import { Markdown } from '../../client/markdown';
 import { ErrorNote, Spinner } from '../../client/components';
 import type { Attachment, ReasoningEffort } from '../../shared/types';
+
+const HarnessWorkspace = lazy(() => import('./harness-workspace'));
 
 function sourceMessageTarget() {
   const [page, , messageId] = window.location.hash.replace(/^#\/?/, '').split('/');
@@ -69,6 +83,7 @@ export function ChatPage() {
     messages,
     loading,
     reconnecting,
+    harness: snapshotHarness,
     error: streamError,
   } = useConversation(user.id, conversationId, revision, refresh);
   const production = useProductionMode(user.id, conversationId);
@@ -125,23 +140,29 @@ export function ChatPage() {
   const [submittingViews, setSubmittingViews] = useState<Set<string>>(() => new Set());
   const viewKey = `${user.id}:${conversationId ?? 'new'}`;
   const submitting = submittingViews.has(viewKey);
+  const [sendingSupplement, setSendingSupplement] = useState('');
+  const awaitingSupplement = sendingSupplement.startsWith(`steer:${viewKey}:`);
+  const conversation = conversations.find((item) => item.id === conversationId);
+  const harness = snapshotHarness ?? conversation?.harness;
+  const legacy = !!conversationId && harness === false;
+  const [workspaceKey, setWorkspaceKey] = useState('');
+  const [workspaceTab, setWorkspaceTab] = useState<'docs' | 'access'>('docs');
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
+  function openWorkspace(tab: 'docs' | 'access') {
+    setWorkspaceTab(tab);
+    setWorkspaceKey(viewKey);
+  }
+  const activeReply = messages.find((message) => message.status === 'streaming');
+  const canSteer = harness && !!activeReply && !submitting;
   const busy = submitting || messages.some((message) => message.status === 'streaming');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
   const [regenerating, setRegenerating] = useState<string>();
-  const contextEnabled = features.some(
-    (feature) => feature.id === 'context-manager' && feature.enabled,
-  );
-  const memoryEnabled = features.some((feature) => feature.id === 'memory' && feature.enabled);
+  const contextEnabled =
+    !legacy && features.some((feature) => feature.id === 'context-manager' && feature.enabled);
   const productionEnabled = features.some(
     (feature) => feature.id === 'llm-production' && feature.enabled,
   );
-  const [rememberTurn, setRememberTurn] = useState<{
-    userId: string;
-    conversationId: string;
-    messageId: string;
-  }>();
-  useEffect(() => setRememberTurn(undefined), [user.id, conversationId, memoryEnabled]);
   const [contextTurn, setContextTurn] = useState<{
     userId: string;
     conversationId: string;
@@ -225,6 +246,8 @@ export function ChatPage() {
     const productionMode = retry ? (retry.productionMode ?? 'auto') : production.mode;
     if (
       busy ||
+      awaitingSupplement ||
+      legacy ||
       loading ||
       extensions.saving ||
       extensions.loading ||
@@ -323,6 +346,38 @@ export function ChatPage() {
       await refresh().catch(() => {});
     }
   }
+  async function steer() {
+    if (!conversationId || !canSteer || !activeReply || !draft.trim() || images.length) return;
+    const owner = user.id;
+    const key = `steer:${viewKey}:${activeReply.id}`;
+    if (sendingSupplement === key) return;
+    const content = draft.trim();
+    const previous = pending.current.get(key);
+    const requestId = previous?.body === content ? previous.requestId : crypto.randomUUID();
+    pending.current.set(key, { requestId, body: content });
+    setSendingSupplement(key);
+    setError('');
+    try {
+      await post(`/conversations/${conversationId}/steer`, {
+        messageId: activeReply.id,
+        requestId,
+        content,
+      });
+      pending.current.delete(key);
+      setChatDraft(
+        (current) => (current.content === draft ? { ...current, content: '' } : current),
+        conversationId,
+      );
+    } catch (error) {
+      if (mounted.current && ownerId.current === owner && viewId.current === conversationId)
+        setError((error as Error).message);
+    } finally {
+      if (mounted.current && ownerId.current === owner) {
+        setSendingSupplement((current) => (current === key ? '' : current));
+        if (viewId.current === conversationId) setRevision((value) => value + 1);
+      }
+    }
+  }
   async function stop() {
     if (conversationId) {
       const startingOwner = user.id;
@@ -339,6 +394,17 @@ export function ChatPage() {
   const empty = !conversationId && !messages.length;
   const lastUser = messages.at(-2)?.role === 'user' ? messages.at(-2) : undefined;
   const lastAssistant = messages.at(-1)?.role === 'assistant' ? messages.at(-1) : undefined;
+  function answerClarification(suggestion?: string) {
+    if (suggestion) {
+      const answer = '我采用这个建议：' + suggestion;
+      setDraft((current) =>
+        current.trimEnd().endsWith(answer)
+          ? current
+          : [current.trimEnd(), answer].filter(Boolean).join('\n\n'),
+      );
+    }
+    input.current?.focus();
+  }
   function editLastQuestion() {
     if (!lastUser || busy) return;
     setEditing({
@@ -391,10 +457,16 @@ export function ChatPage() {
             !empty && (
               <div className="messages" ref={scroll.content}>
                 <div className="conversation-heading">
-                  <span>
-                    {conversations.find((c) => c.id === conversationId)?.title ?? '新对话'}
-                  </span>
+                  <span>{conversation?.title ?? '新对话'}</span>
                   <span>仅自己可见</span>
+                  {harness && (
+                    <button
+                      className="button small harness-workspace-trigger"
+                      onClick={() => openWorkspace('docs')}
+                    >
+                      <FolderOpen size={16} /> 对话工作区
+                    </button>
+                  )}
                 </div>
                 {messages.map((m) => (
                   <article key={m.id} data-message-id={m.id} className={`message ${m.role}`}>
@@ -409,8 +481,17 @@ export function ChatPage() {
                       {m.id === sourceTarget && <span>来源消息</span>}
                     </div>
                     <div className="message-content">
-                      <SkillDetails message={m} />
-                      <ExtensionDetails runs={m.extensions} />
+                      {m.harnessRun ? (
+                        <HarnessProgress run={m.harnessRun} taskId={m.id}>
+                          <SkillDetails message={m} />
+                          <ExtensionDetails runs={m.extensions} />
+                        </HarnessProgress>
+                      ) : (
+                        <>
+                          <SkillDetails message={m} />
+                          <ExtensionDetails runs={m.extensions} />
+                        </>
+                      )}
                       {m.images.length > 0 && (
                         <div className="message-images">
                           {m.images.map((img, i) => (
@@ -418,9 +499,24 @@ export function ChatPage() {
                           ))}
                         </div>
                       )}
-                      {m.content ? (
+                      {m.harnessRun?.clarification ? (
+                        <HarnessQuestion
+                          clarification={m.harnessRun.clarification}
+                          content={m.content}
+                          respond={
+                            !legacy &&
+                            !busy &&
+                            !editing &&
+                            m.status === 'complete' &&
+                            m.id === lastAssistant?.id
+                              ? answerClarification
+                              : undefined
+                          }
+                        />
+                      ) : m.content ? (
                         <Markdown content={m.content} streaming={m.status === 'streaming'} />
                       ) : m.status === 'streaming' ? (
+                        !m.harnessRun &&
                         !m.extensions?.some(
                           (run) => run.status === 'deciding' || run.status === 'running',
                         ) && (
@@ -444,13 +540,17 @@ export function ChatPage() {
                         delivery={m.productionDelivery}
                         messageStatus={m.status}
                       />
-                      {m.role === 'user' && m.id === lastUser?.id && !busy && !editing && (
-                        <div className="chat-message-actions">
-                          <button className="copy-button" onClick={editLastQuestion}>
-                            <Pencil size={14} /> 编辑提问
-                          </button>
-                        </div>
-                      )}
+                      {!legacy &&
+                        m.role === 'user' &&
+                        m.id === lastUser?.id &&
+                        !busy &&
+                        !editing && (
+                          <div className="chat-message-actions">
+                            <button className="copy-button" onClick={editLastQuestion}>
+                              <Pencil size={14} /> 编辑提问
+                            </button>
+                          </div>
+                        )}
                       {m.role === 'assistant' && (m.status !== 'streaming' || contextEnabled) && (
                         <div className="chat-message-actions">
                           {m.content && m.status !== 'streaming' && (
@@ -490,27 +590,8 @@ export function ChatPage() {
                               上下文
                             </button>
                           )}
-                          {memoryEnabled &&
-                            conversationId &&
-                            m.status === 'complete' &&
-                            m.content && (
-                              <button
-                                type="button"
-                                className="copy-button memory-remember-trigger"
-                                aria-label="Remember it · 记住这条回复"
-                                onClick={() =>
-                                  setRememberTurn({
-                                    userId: user.id,
-                                    conversationId,
-                                    messageId: m.id,
-                                  })
-                                }
-                              >
-                                <BookmarkPlus size={14} aria-hidden="true" />
-                                Remember it
-                              </button>
-                            )}
-                          {!editing &&
+                          {!legacy &&
+                            !editing &&
                             m.id === lastAssistant?.id &&
                             lastUser &&
                             m.status === 'complete' && (
@@ -523,7 +604,8 @@ export function ChatPage() {
                                 <RefreshCw size={14} /> 再次生成
                               </button>
                             )}
-                          {!editing &&
+                          {!legacy &&
+                            !editing &&
                             m.id === lastAssistant?.id &&
                             lastUser &&
                             (m.status === 'error' || m.status === 'cancelled') && (
@@ -552,6 +634,15 @@ export function ChatPage() {
           )}
         </div>
         <div className="composer-wrap">
+          {harness && conversationId && conversation?.groupId && (
+            <HarnessApprovalNotice
+              key={viewKey}
+              conversationId={conversationId}
+              lastMessageStatus={lastAssistant ? lastAssistant.id + lastAssistant.status : ''}
+              notificationRevision={workspaceRevision}
+              open={() => openWorkspace('access')}
+            />
+          )}
           {!empty && scroll.away && (
             <button
               className="latest-message"
@@ -573,135 +664,180 @@ export function ChatPage() {
               连接恢复后会自动同步；已提交的回复仍在服务器上继续生成。
             </p>
           )}
-          {!models.length && (
-            <div className="notice">
-              {user.role === 'admin' ? (
-                <>
-                  还没有可用模型。
-                  <button onClick={() => navigate('models')}>
-                    添加模型来源与白名单 <ArrowUpRight size={14} />
-                  </button>
-                </>
-              ) : (
-                '还没有向你授权的模型，请联系管理员。'
-              )}
+          {legacy ? (
+            <div className="harness-archive">
+              <span>历史对话 · 只读</span>
+              <button className="button" onClick={() => navigate('chat')}>
+                开始新对话
+              </button>
             </div>
-          )}
-          <div className="composer">
-            {editing && (
-              <div className="chat-editing-note">
-                <span>正在修改最后一次提问 · 发送后将替换原提问和回复</span>
-                <button type="button" onClick={cancelEdit} aria-label="取消编辑提问">
-                  <X size={14} /> 取消
-                </button>
-              </div>
-            )}
-            <SkillChips controls={skills} disabled={busy || skills.loading} />
-            <LiveComposer
-              key={viewKey}
-              ref={input}
-              value={draft}
-              onChange={setDraft}
-              onSend={() => void send()}
-              disabled={busy}
-              formatting={formatting}
-            />
-            {images.length > 0 && (
-              <div className="attachment-list">
-                {images.map((img, i) => (
-                  <div key={i}>
-                    <img src={img.data} alt={img.name} />
-                    <button
-                      aria-label={`移除 ${img.name}`}
-                      onClick={() => setImages((prev) => prev.filter((_, n) => n !== i))}
-                    >
-                      <X size={12} />
+          ) : (
+            <>
+              {!models.length && (
+                <div className="notice">
+                  {user.role === 'admin' ? (
+                    <>
+                      还没有可用模型。
+                      <button onClick={() => navigate('models')}>
+                        添加模型来源与白名单 <ArrowUpRight size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    '还没有向你授权的模型，请联系管理员。'
+                  )}
+                </div>
+              )}
+              <div className="composer">
+                {editing && (
+                  <div className="chat-editing-note">
+                    <span>正在修改最后一次提问 · 发送后将替换原提问和回复</span>
+                    <button type="button" onClick={cancelEdit} aria-label="取消编辑提问">
+                      <X size={14} /> 取消
                     </button>
                   </div>
-                ))}
-              </div>
-            )}
-            <div className="composer-tools">
-              <input
-                ref={file}
-                type="file"
-                hidden
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                onChange={addImages}
-              />
-              <ComposerActions
-                key={viewKey}
-                disabled={busy || loading}
-                vision={!!selected?.vision}
-                toolCalling={!!selected?.toolCalling}
-                addImages={() => file.current?.click()}
-                skills={skills}
-                skillsEnabled={features.some(
-                  (feature) => feature.id === 'prompts' && feature.enabled,
                 )}
-                productionEnabled={productionEnabled}
-                productionMode={production.mode}
-                onProductionMode={(value) => production.setMode(value)}
-                formatting={formatting}
-                onFormatting={setFormatting}
-                extensions={extensions}
-              />
-              <span className="grow" />
-              <ModelPicker
-                models={models}
-                modelId={modelId}
-                effort={effort}
-                disabled={busy}
-                onModel={(id) => {
-                  setModelId(id);
-                  try {
-                    localStorage.setItem('kh:model', id);
-                  } catch {}
-                }}
-                onEffort={(value) => {
-                  setEffort(value);
-                  try {
-                    localStorage.setItem(`drift:effort:${user.id}:${modelId}`, value);
-                  } catch {}
-                }}
-              />
-              {busy ? (
-                <button
-                  className="send-button"
-                  aria-label="停止生成"
-                  disabled={submitting}
-                  onClick={stop}
-                >
-                  <Square size={14} fill="currentColor" />
-                </button>
-              ) : (
-                <button
-                  className="send-button"
-                  aria-label="发送消息"
-                  disabled={
-                    !modelId ||
-                    (production.mode === 'required' && !selected?.toolCalling) ||
-                    (!draft.trim() && !images.length) ||
-                    loading ||
-                    extensions.saving ||
-                    extensions.loading ||
-                    skills.loading ||
-                    !!skills.error
-                  }
-                  onClick={() => void send()}
-                >
-                  <ArrowUp size={20} />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="composer-caption">
-            <span className="desktop-hint">Enter 发送 · Shift + Enter 换行</span>
-            <span>AI 可能会出错，请核实重要信息</span>
-          </div>
+                <SkillChips controls={skills} disabled={busy || skills.loading} />
+                <LiveComposer
+                  key={viewKey}
+                  ref={input}
+                  value={draft}
+                  onChange={setDraft}
+                  onSend={() => void (canSteer ? steer() : send())}
+                  disabled={(busy && !canSteer) || awaitingSupplement}
+                  formatting={formatting}
+                />
+                {images.length > 0 && (
+                  <div className="attachment-list">
+                    {images.map((img, i) => (
+                      <div key={i}>
+                        <img src={img.data} alt={img.name} />
+                        <button
+                          aria-label={`移除 ${img.name}`}
+                          onClick={() => setImages((prev) => prev.filter((_, n) => n !== i))}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {canSteer && (
+                  <small className="harness-steer-note">
+                    {activeReply.content
+                      ? '正文已开始，本次补充将在后续处理。'
+                      : '补充将在下一次可用执行步骤处理。'}
+                  </small>
+                )}
+                <div className="composer-tools">
+                  <input
+                    ref={file}
+                    type="file"
+                    hidden
+                    accept="image/png,image/jpeg,image/webp"
+                    multiple
+                    onChange={addImages}
+                  />
+                  <ComposerActions
+                    key={viewKey}
+                    disabled={busy || loading}
+                    vision={!!selected?.vision}
+                    toolCalling={!!selected?.toolCalling}
+                    addImages={() => file.current?.click()}
+                    skills={skills}
+                    skillsEnabled={features.some(
+                      (feature) => feature.id === 'prompts' && feature.enabled,
+                    )}
+                    productionEnabled={productionEnabled}
+                    productionMode={production.mode}
+                    onProductionMode={(value) => production.setMode(value)}
+                    formatting={formatting}
+                    onFormatting={setFormatting}
+                    extensions={extensions}
+                  />
+                  <span className="grow" />
+                  <ModelPicker
+                    models={models}
+                    modelId={modelId}
+                    effort={effort}
+                    disabled={busy}
+                    onModel={(id) => {
+                      setModelId(id);
+                      try {
+                        localStorage.setItem('kh:model', id);
+                      } catch {}
+                    }}
+                    onEffort={(value) => {
+                      setEffort(value);
+                      try {
+                        localStorage.setItem(`drift:effort:${user.id}:${modelId}`, value);
+                      } catch {}
+                    }}
+                  />
+                  {canSteer && (
+                    <button
+                      type="button"
+                      className="button small"
+                      disabled={!draft.trim() || !!images.length || awaitingSupplement}
+                      onClick={() => void steer()}
+                    >
+                      <CornerDownLeft size={16} /> 发送补充
+                    </button>
+                  )}
+                  {busy ? (
+                    <button
+                      className="send-button"
+                      aria-label="停止生成"
+                      disabled={submitting}
+                      onClick={stop}
+                    >
+                      <Square size={14} fill="currentColor" />
+                    </button>
+                  ) : (
+                    <button
+                      className="send-button"
+                      aria-label="发送消息"
+                      disabled={
+                        awaitingSupplement ||
+                        !modelId ||
+                        (production.mode === 'required' && !selected?.toolCalling) ||
+                        (!draft.trim() && !images.length) ||
+                        loading ||
+                        extensions.saving ||
+                        extensions.loading ||
+                        skills.loading ||
+                        !!skills.error
+                      }
+                      onClick={() => void send()}
+                    >
+                      <ArrowUp size={20} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="composer-caption">
+                <span className="desktop-hint">
+                  Enter {canSteer ? '发送补充' : '发送'} · Shift + Enter 换行
+                </span>
+                <span>AI 可能会出错，请核实重要信息</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
+      {harness && conversationId && workspaceKey === viewKey && (
+        <Suspense fallback={<Spinner />}>
+          <HarnessWorkspace
+            key={viewKey}
+            conversationId={conversationId}
+            messages={messages}
+            initialTab={workspaceTab}
+            close={() => {
+              setWorkspaceKey('');
+              setWorkspaceRevision((n) => n + 1);
+            }}
+          />
+        </Suspense>
+      )}
       {regenerating === viewKey && lastUser && lastAssistant?.status === 'complete' && !editing && (
         <RegenerateDialog
           models={models}
@@ -736,16 +872,6 @@ export function ChatPage() {
             conversationId={contextTurn.conversationId}
             messageId={contextTurn.messageId}
             close={() => setContextTurn(undefined)}
-          />
-        )}
-      {memoryEnabled &&
-        rememberTurn?.userId === user.id &&
-        rememberTurn.conversationId === conversationId && (
-          <RememberDialog
-            key={`${user.id}:${rememberTurn.messageId}`}
-            conversationId={rememberTurn.conversationId}
-            messageId={rememberTurn.messageId}
-            close={() => setRememberTurn(undefined)}
           />
         )}
     </div>

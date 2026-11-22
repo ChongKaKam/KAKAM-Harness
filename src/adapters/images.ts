@@ -63,7 +63,7 @@ export async function generateCompatibleImage(
   prompt: string,
   signal: AbortSignal,
 ): Promise<ImageGenerationResult> {
-  if (connection.apiMode && !['chat-completions', 'responses'].includes(connection.apiMode))
+  if (connection.apiMode && connection.apiMode !== 'responses')
     throw new HttpError(400, '图片生成仅支持 OpenAI-compatible 来源');
   const gptImage = /(?:^|\/)gpt-image(?:-|$)/i.test(model);
   const response = await providerFetch(

@@ -50,7 +50,7 @@ before(async () => {
   });
   assert.equal(registration.status, 201);
   cookie = registration.headers.get('set-cookie')!.split(';')[0];
-  for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages'] as const) {
+  for (const apiMode of ['responses', 'anthropic-messages'] as const) {
     const source = await json('/admin/providers', 'POST', {
       name: apiMode,
       baseUrl: provider.url,
@@ -77,7 +77,7 @@ after(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-for (const apiMode of ['chat-completions', 'responses', 'anthropic-messages'] as const) {
+for (const apiMode of ['responses', 'anthropic-messages'] as const) {
   test(`${apiMode}: actual file tool output is persisted, downloadable, replayable and request-idempotent`, async () => {
     const conversation = await json('/conversations', 'POST');
     const requestId = randomUUID();
@@ -126,7 +126,7 @@ test('viewer disconnection preserves file generation and final snapshot; disabli
   const requestId = randomUUID();
   await json(`/conversations/${conversation.id}/messages`, 'POST', {
     requestId,
-    modelId: models.get('chat-completions'),
+    modelId: models.get('responses'),
     content: '生成文件 [production-slow]',
   });
   const controller = new AbortController();
@@ -151,7 +151,7 @@ test('viewer disconnection preserves file generation and final snapshot; disabli
   const noFilesId = randomUUID();
   await json(`/conversations/${ordinary.id}/messages`, 'POST', {
     requestId: noFilesId,
-    modelId: models.get('chat-completions'),
+    modelId: models.get('responses'),
     content: '普通聊天',
   });
   await (await request(`/conversations/${ordinary.id}/events`)).text();
@@ -183,7 +183,7 @@ test('image tool uses the selected authorized model and persists real image byte
   const messageId = randomUUID();
   await json(`/conversations/${conversation.id}/messages`, 'POST', {
     requestId: messageId,
-    modelId: models.get('chat-completions'),
+    modelId: models.get('responses'),
     content: '生成图片 [production-image] [production-slow]',
   });
   await (await request(`/conversations/${conversation.id}/events`)).text();

@@ -88,6 +88,16 @@ test('Anthropic provider, platform link, smooth model reordering/default and per
     await expect(rows.first()).toHaveAttribute('data-model-id', ids[0]);
     await expect(rows.first().getByText('默认模型')).toBeVisible();
     await rows.first().getByRole('button', { name: '管理', exact: true }).click();
+    const windowTokens = page.getByLabel('上下文窗口（Token）');
+    const outputTokens = page.getByLabel('最大输出（Token）');
+    await expect(windowTokens).toHaveValue('');
+    await windowTokens.fill('1000000');
+    await outputTokens.fill('8192');
+    await page.getByRole('button', { name: '保存模型' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await rows.first().getByRole('button', { name: '管理', exact: true }).click();
+    await expect(windowTokens).toHaveValue('1000000');
+    await expect(outputTokens).toHaveValue('8192');
     await page.getByRole('button', { name: '测试连通性' }).click();
     await expect(page.locator('.models-probe-result')).toContainText(
       '连接成功 · Anthropic Messages',

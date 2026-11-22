@@ -13,7 +13,7 @@ export class Database extends Service {
       PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL COLLATE NOCASE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','user')), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, name TEXT NOT NULL, base_url TEXT NOT NULL, encrypted_key TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, name TEXT NOT NULL, base_url TEXT NOT NULL, encrypted_key TEXT NOT NULL, api_mode TEXT NOT NULL DEFAULT 'responses');
       CREATE TABLE IF NOT EXISTS models (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE, name TEXT NOT NULL, label TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, vision INTEGER NOT NULL DEFAULT 0, UNIQUE(provider_id, name));
       CREATE TABLE IF NOT EXISTS model_grants (model_id TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(model_id,user_id));
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -28,7 +28,8 @@ export class Database extends Service {
       CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
       CREATE TABLE IF NOT EXISTS ui_preferences (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, theme TEXT NOT NULL DEFAULT 'system', assistant_icon TEXT);
     `);
-    // Additive migration: keep the existing DB filename/volume and existing provider settings.
+    // Providers created before protocol selection all used Chat Completions. Mark them
+    // with their real protocol here so the LLM transition below also covers these databases.
     if (
       !this.all<{ name: string }>('PRAGMA table_info(providers)').some((c) => c.name === 'api_mode')
     ) {
@@ -232,6 +233,38 @@ export class Database extends Service {
         );
       });
     }
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(models)').some(
+        (c) => c.name === 'needs_protocol_review',
+      )
+    ) {
+      this.transaction(() => {
+        this.connection.exec(`
+          ALTER TABLE models ADD COLUMN needs_protocol_review INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE models ADD COLUMN legacy_embedding_fingerprint INTEGER NOT NULL DEFAULT 0;
+          UPDATE models SET legacy_embedding_fingerprint=1
+            WHERE kind='embedding' AND provider_id IN
+              (SELECT id FROM providers WHERE api_mode='chat-completions');
+          UPDATE models SET enabled=0, needs_protocol_review=1
+            WHERE enabled=1 AND kind='llm' AND provider_id IN
+              (SELECT id FROM providers WHERE api_mode='chat-completions');
+          UPDATE providers SET api_mode='responses' WHERE api_mode='chat-completions';
+        `);
+        const mode = this.all<{ name: string; dflt_value: string | null }>(
+          'PRAGMA table_info(providers)',
+        ).find((c) => c.name === 'api_mode')!;
+        if (mode.dflt_value !== "'responses'") {
+          // SQLite does not change a column default in place. Preserve the provider rows
+          // and their foreign keys, replacing only the protocol column.
+          this.connection.exec(`
+            ALTER TABLE providers ADD COLUMN new_api_mode TEXT NOT NULL DEFAULT 'responses';
+            UPDATE providers SET new_api_mode=api_mode;
+            ALTER TABLE providers DROP COLUMN api_mode;
+            ALTER TABLE providers RENAME COLUMN new_api_mode TO api_mode;
+          `);
+        }
+      });
+    }
     for (const column of ['embedding_dimensions', 'validated_dimensions']) {
       if (!this.all<{ name: string }>('PRAGMA table_info(models)').some((c) => c.name === column))
         this.connection.exec(
@@ -273,6 +306,15 @@ export class Database extends Service {
         this.connection.exec('PRAGMA foreign_keys=ON');
       }
     }
+    const modelColumns = this.all<{ name: string }>('PRAGMA table_info(models)').map((c) => c.name);
+    if (!modelColumns.includes('context_window_tokens'))
+      this.connection.exec(
+        'ALTER TABLE models ADD COLUMN context_window_tokens INTEGER CHECK(context_window_tokens >= 2)',
+      );
+    if (!modelColumns.includes('max_output_tokens'))
+      this.connection.exec(
+        'ALTER TABLE models ADD COLUMN max_output_tokens INTEGER CHECK(max_output_tokens > 0 AND max_output_tokens < context_window_tokens)',
+      );
     // Snapshots belong to the conversation, not the replaceable assistant message.
     // Keep edited/retried attempts until their owner deletes the conversation.
     this.connection.exec(`
@@ -389,6 +431,100 @@ export class Database extends Service {
       CREATE INDEX IF NOT EXISTS idx_relay_attachments_card ON relay_attachments(card_id,created_at);
       CREATE INDEX IF NOT EXISTS idx_relay_attachments_expiry ON relay_attachments(expires_at)
         WHERE expires_at IS NOT NULL;
+    `);
+    if (
+      !this.all<{ name: string }>('PRAGMA table_info(messages)').some(
+        (c) => c.name === 'harness_run',
+      )
+    )
+      this.connection.exec('ALTER TABLE messages ADD COLUMN harness_run TEXT');
+    // Only explicit new-chat initialization creates a workspace. Legacy rows stay outside this namespace.
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS harness_workspaces (
+        conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS harness_submissions (
+        request_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES harness_workspaces(conversation_id) ON DELETE CASCADE,
+        fingerprint TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_harness_submissions_chat ON harness_submissions(conversation_id);
+      CREATE TABLE IF NOT EXISTS harness_documents (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id TEXT REFERENCES harness_workspaces(conversation_id) ON DELETE CASCADE,
+        group_id TEXT REFERENCES conversation_groups(id) ON DELETE CASCADE,
+        name TEXT NOT NULL COLLATE NOCASE, kind TEXT NOT NULL, version INTEGER NOT NULL,
+        CHECK((conversation_id IS NULL) <> (group_id IS NULL)),
+        UNIQUE(conversation_id,name), UNIQUE(group_id,name)
+      );
+      CREATE TABLE IF NOT EXISTS harness_revisions (
+        document_id TEXT NOT NULL REFERENCES harness_documents(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL, content TEXT NOT NULL, size_bytes INTEGER AS (length(CAST(content AS BLOB)) + 256) STORED, PRIMARY KEY(document_id,version)
+      );
+      CREATE TABLE IF NOT EXISTS harness_publications (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+        document_id TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,
+        source_conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+        content TEXT NOT NULL, size_bytes INTEGER AS (length(CAST(content AS BLOB)) + 256) STORED, PRIMARY KEY(group_id,document_id,version)
+      );
+      CREATE TABLE IF NOT EXISTS harness_direct_shares (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+        target_conversation_id TEXT NOT NULL REFERENCES harness_workspaces(conversation_id) ON DELETE CASCADE,
+        document_id TEXT NOT NULL, version INTEGER NOT NULL,
+        PRIMARY KEY(user_id,target_conversation_id,group_id,document_id,version),
+        FOREIGN KEY(document_id,version) REFERENCES harness_revisions(document_id,version) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS harness_access (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+        source_conversation_id TEXT NOT NULL REFERENCES harness_workspaces(conversation_id) ON DELETE CASCADE,
+        target_conversation_id TEXT NOT NULL REFERENCES harness_workspaces(conversation_id) ON DELETE CASCADE,
+        task_id TEXT NOT NULL, purpose TEXT NOT NULL,
+        document_id TEXT REFERENCES harness_documents(id) ON DELETE CASCADE, version INTEGER,
+        status TEXT NOT NULL CHECK(status IN ('pending','preauthorized','approved','rejected')),
+        created_at TEXT NOT NULL, expires_at TEXT, request_key TEXT, grant_key TEXT,
+        UNIQUE(user_id,request_key), UNIQUE(user_id,grant_key),
+        CHECK((version IS NULL) = (document_id IS NULL))
+      );
+      CREATE INDEX IF NOT EXISTS idx_harness_access_target ON harness_access(user_id,target_conversation_id,status);
+      CREATE TABLE IF NOT EXISTS harness_preferences (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL, version INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','active','withdrawn')), admitted_at TEXT,
+        size_bytes INTEGER AS (length(CAST(content AS BLOB)) + 256) STORED
+      );
+      CREATE INDEX IF NOT EXISTS idx_harness_preferences_user ON harness_preferences(user_id,status);
+    `);
+    // A published version can outlive its source conversation. Its bytes remain in the
+    // owner-counted artifact store; deleting the bytes invalidates all views of that version.
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS harness_artifact_revisions (
+        document_id TEXT NOT NULL, version INTEGER NOT NULL,
+        artifact_id TEXT NOT NULL UNIQUE REFERENCES production_artifacts(id) ON DELETE CASCADE,
+        PRIMARY KEY(document_id,version)
+      );
+      CREATE TRIGGER IF NOT EXISTS harness_artifact_revision_removed AFTER DELETE ON harness_artifact_revisions BEGIN
+        DELETE FROM harness_publications WHERE document_id=OLD.document_id AND version=OLD.version;
+        DELETE FROM harness_access WHERE document_id=OLD.document_id AND version=OLD.version;
+        DELETE FROM harness_revisions WHERE document_id=OLD.document_id AND version=OLD.version;
+        DELETE FROM harness_documents WHERE id=OLD.document_id AND kind='artifact'
+          AND NOT EXISTS(SELECT 1 FROM harness_revisions WHERE document_id=OLD.document_id);
+      END;
+      CREATE TRIGGER IF NOT EXISTS harness_artifact_published AFTER INSERT ON harness_publications WHEN NEW.kind='artifact' BEGIN
+        UPDATE production_artifacts SET expires_at=NULL,temporary_started_at=NULL WHERE user_id=NEW.user_id
+          AND id=(SELECT artifact_id FROM harness_artifact_revisions WHERE document_id=NEW.document_id AND version=NEW.version);
+      END;
+      CREATE TRIGGER IF NOT EXISTS harness_artifact_unpublished AFTER DELETE ON harness_publications WHEN OLD.kind='artifact' BEGIN
+        UPDATE production_artifacts SET temporary_started_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+          expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','+' || COALESCE(
+            (SELECT temporary_retention_days FROM production_preferences WHERE user_id=OLD.user_id),7) || ' days')
+          WHERE user_id=OLD.user_id AND group_id IS NULL
+            AND id=(SELECT artifact_id FROM harness_artifact_revisions WHERE document_id=OLD.document_id AND version=OLD.version)
+            AND NOT EXISTS(SELECT 1 FROM harness_publications WHERE document_id=OLD.document_id AND version=OLD.version);
+      END;
     `);
     this.transaction(() => {
       const legacy = this.all<{ name: string }>('PRAGMA table_info(openai_gateway_keys)').some(
