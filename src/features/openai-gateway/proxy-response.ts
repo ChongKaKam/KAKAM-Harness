@@ -7,6 +7,8 @@ import type { EmbeddingUsage } from '../../shared/types';
 const maxPayload = 32 * 1024 * 1024;
 export interface RelayResult {
   usage: EmbeddingUsage | null;
+  cachedInputTokens: number | null;
+  endedAt?: number;
   status: 'complete' | 'error' | 'cancelled';
 }
 
@@ -40,7 +42,11 @@ export function sdkError(status: number, message: string, providerCode?: unknown
 }
 
 function observe(payload: Record<string, any>, result: RelayResult) {
-  const usage = embeddingUsage(payload.response?.usage ?? payload.usage);
+  const reported = payload.response?.usage ?? payload.usage;
+  const cached =
+    reported?.input_tokens_details?.cached_tokens ?? reported?.prompt_tokens_details?.cached_tokens;
+  if (Number.isSafeInteger(cached) && cached >= 0) result.cachedInputTokens = cached;
+  const usage = embeddingUsage(reported);
   if (usage) {
     result.usage = {
       input: usage.input ?? result.usage?.input ?? null,
@@ -154,6 +160,8 @@ async function streamResponse(
     }
     throw new HttpError(502, 'OpenAI closed the stream before the final event.');
   } finally {
+    // The terminal event or stream failure precedes releasing the upstream reader.
+    result.endedAt ??= performance.now();
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }

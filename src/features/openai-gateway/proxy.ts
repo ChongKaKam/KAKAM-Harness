@@ -210,8 +210,13 @@ export function createProxyRouter(
       if (!res.writableEnded) controller.abort();
     };
     res.once('close', disconnect);
-    const result: RelayResult = { usage: null, status: 'error' };
+    const result: RelayResult = { usage: null, cachedInputTokens: null, status: 'error' };
     const forward = async () => {
+      const startedAt = performance.now();
+      const markAborted = () => {
+        result.endedAt ??= performance.now();
+      };
+      signal.addEventListener('abort', markAborted, { once: true });
       try {
         const upstream = await (options.fetch ?? fetch)(
           'https://api.openai.com/v1/' + (responses ? 'responses' : 'chat/completions'),
@@ -236,19 +241,32 @@ export function createProxyRouter(
           res,
         );
       } finally {
+        const durationMs = Math.round((result.endedAt ?? performance.now()) - startedAt);
+        signal.removeEventListener('abort', markAborted);
         res.off('close', disconnect);
         active.delete(controller);
-        db.run(
-          'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
-          randomUUID(),
-          user.id,
-          '[OpenAI Gateway] ' + model.name,
-          result.usage?.input ?? null,
-          result.usage?.output ?? null,
-          result.usage?.total ?? null,
-          result.status,
-          new Date().toISOString(),
-        );
+        const usageId = randomUUID();
+        const input = result.usage?.input ?? null;
+        const cached = result.cachedInputTokens;
+        db.transaction(() => {
+          db.run(
+            'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
+            usageId,
+            user.id,
+            '[OpenAI Gateway] ' + model.name,
+            input,
+            result.usage?.output ?? null,
+            result.usage?.total ?? null,
+            result.status,
+            new Date().toISOString(),
+          );
+          db.run(
+            'INSERT INTO openai_gateway_metrics(usage_id,cached_input_tokens,duration_ms) VALUES(?,?,?)',
+            usageId,
+            cached !== null && input !== null && cached > input ? null : cached,
+            durationMs,
+          );
+        });
       }
     };
     const finished = Promise.resolve().then(forward);

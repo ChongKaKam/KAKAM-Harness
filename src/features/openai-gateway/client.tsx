@@ -102,6 +102,11 @@ function GatewaySettingsContent() {
       <PageHeader
         eyebrow="DEVELOPER API"
         title="OpenAI API 转发"
+        action={
+          <a className="button" href="#/usage/openai-gateway">
+            查看转发看板
+          </a>
+        }
         description="给每台开发机单独签发密钥。请求经本站转发，OpenAI API Key 保存在服务器上。"
       />
       <div className="panel openai-gateway-panel">

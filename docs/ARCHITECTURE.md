@@ -41,7 +41,7 @@ Cordis 固定在 `3.18.1` 稳定版；不依赖 `latest` 的候选版本。启�
 | `auth`            | core   | AuthService、邮箱注册 / 登录、账户资料、个人头像                       | 登录页 / 设置中的账户设置            |
 | `users`           | core   | 管理用户、角色、停用、重置与会话撤销                                   | 管理员设置                           |
 | `models`          | core   | ModelsService、来源、白名单、模型授权、连通性测试                      | 管理员设置；聊天可见已授权模型       |
-| `openai-gateway`  | plugin | 开发机转发密钥与 OpenAI HTTP / SSE 网关                                | 管理员设置                           |
+| `openai-gateway`  | plugin | 开发机转发密钥、OpenAI HTTP / SSE 网关及调用指标                       | 管理员设置 / 用量统计                |
 | `extensions`      | core   | 托管能力注册、Auto 决策、辅助模型用量                                  | 管理员设置；聊天能力开关             |
 | `search`          | plugin | Perplexity 搜索、查询生成与来源记录                                    | 拓展能力的子设置页                   |
 | `llm-production`  | core   | ProductionService、文件 / 图片生成、私有空间、下载与清理               | 聊天右上角 / 工作区 / 设置           |

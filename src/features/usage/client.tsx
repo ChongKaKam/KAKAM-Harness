@@ -3,12 +3,49 @@ import { useState } from 'react';
 import { Activity, ArrowDownLeft, ArrowUpRight, Hash } from 'lucide-react';
 import { api } from '../../client/api';
 import { useWorkspace } from '../../client/context';
-import { PageHeader, Spinner, ErrorNote, Empty, useLoad } from '../../client/components';
+import { PageHeader, Spinner, ErrorNote, useLoad } from '../../client/components';
 import type { UsageData, User } from '../../shared/types';
 import { usePatternColors } from '../../client/color-pattern';
+import { SegmentedControl } from '../../client/segmented-control';
+import { GatewayDashboardPanel } from '../openai-gateway/dashboard';
 import './usage.css';
 const number = (n: number | null) => (n === null ? '未上报' : n.toLocaleString());
 export function UsagePage() {
+  const { user, features, navigate, conversationId: view } = useWorkspace();
+  const gatewayEnabled =
+    user.role === 'admin' && features.some((f) => f.id === 'openai-gateway' && f.enabled);
+  const gatewayView = gatewayEnabled && view === 'openai-gateway';
+  return (
+    <div className="page">
+      <PageHeader
+        eyebrow="USAGE & INSIGHTS"
+        title={gatewayView ? 'OpenAI 转发看板' : '每一次思考，都有迹可循'}
+        description={
+          gatewayView
+            ? '查看通过你签发的开发机密钥发往 OpenAI 的调用。'
+            : user.role === 'admin'
+              ? '查看工作区全部用户的模型调用与 Token 消耗。'
+              : '查看你自己的模型调用与 Token 消耗。'
+        }
+      />
+      {gatewayEnabled && (
+        <SegmentedControl
+          className="gateway-dashboard-views"
+          label="用量统计视图"
+          value={gatewayView ? 'openai-gateway' : 'all'}
+          options={[
+            { value: 'all', label: '全部用量' },
+            { value: 'openai-gateway', label: 'OpenAI 转发看板' },
+          ]}
+          onChange={(value) => navigate('usage', value === 'all' ? undefined : value)}
+        />
+      )}
+      {gatewayView ? <GatewayDashboardPanel key={user.id} /> : <UsageOverview key={user.id} />}
+    </div>
+  );
+}
+
+function UsageOverview() {
   const colors = usePatternColors();
   const { user } = useWorkspace();
   const [days, setDays] = useState('365');
@@ -21,16 +58,7 @@ export function UsagePage() {
     [days, userId],
   );
   return (
-    <div className="page">
-      <PageHeader
-        eyebrow="USAGE & INSIGHTS"
-        title="每一次思考，都有迹可循"
-        description={
-          user.role === 'admin'
-            ? '查看工作区全部用户的模型调用与 Token 消耗。'
-            : '查看你自己的模型调用与 Token 消耗。'
-        }
-      />
+    <>
       <div className="toolbar">
         {user.role === 'admin' && (
           <label className="usage-filter">
@@ -176,6 +204,6 @@ export function UsagePage() {
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }

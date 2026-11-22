@@ -6,6 +6,7 @@ import { digest } from '../../kernel/crypto';
 import { HttpError, requireAdmin } from '../../kernel/http';
 import type { User } from '../../shared/types';
 import { publicUser } from '../auth/server';
+import { dashboardQuery, readGatewayDashboard } from './dashboard-data';
 
 export function isOpenAIProvider(baseUrl: string, apiMode: string) {
   return (
@@ -35,6 +36,10 @@ export function createKeyRouter(ctx: Context) {
   router.use(root, requireAdmin, (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();
+  });
+  router.get(root + '/dashboard', (req, res) => {
+    const { days } = dashboardQuery.parse(req.query);
+    res.json(readGatewayDashboard(ctx.db, req.user!.id, days));
   });
   router.get(root, (req, res) => {
     const providers = ctx.db

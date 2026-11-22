@@ -400,6 +400,21 @@ export class Database extends Service {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_openai_gateway_keys_user ON openai_gateway_keys(user_id, created_at)`);
+    this.transaction(() => {
+      if (
+        this.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name='openai_gateway_metrics'")
+      )
+        return;
+      // The original gateway recorded its source only in model_name. Identify old calls
+      // at upgrade time and leave their unmeasured cache counts and latency unknown.
+      this.connection.exec(`CREATE TABLE openai_gateway_metrics (
+        usage_id TEXT PRIMARY KEY REFERENCES usage(id) ON DELETE CASCADE,
+        cached_input_tokens INTEGER CHECK(cached_input_tokens >= 0),
+        duration_ms INTEGER CHECK(duration_ms >= 0)
+      );
+      INSERT INTO openai_gateway_metrics(usage_id)
+        SELECT id FROM usage WHERE instr(model_name, '[OpenAI Gateway] ')=1`);
+    });
     ctx.on('dispose', () => this.connection.close());
   }
   all<T>(sql: string, ...params: SQLInputValue[]): T[] {

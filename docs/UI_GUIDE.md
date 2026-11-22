@@ -281,6 +281,8 @@ Skill 卡片的本地样式位于 `features/prompts/prompts.css`，使用 `promp
 
 用量统计的最近调用表格局部采用 font-ui（标准档 14px，原为 font-caption 的 12px）；表头、状态和正文遵循统一缩放，手机端不额外缩小。`features/usage/usage.css` 的 usage-status 使用独立的语义色：完成为绿色、失败为红色，已停止 / 生成中保持中性。明暗主题各有高对比前景和淡底色，保留文字和圆点标记，不依赖颜色独自传达状态。这属于语义色例外，不跟随装饰性的 Color Pattern，也不改写全局 badge 或 td。
 
+启用 OpenAI 转发时，管理员在用量统计页可切换「全部用量」与「OpenAI 转发看板」。网关看板的指标卡显示取样次数；时间范围和趋势指标可用键盘切换，逐日数据也可展开表格阅读。指标定义见[转发看板](FEATURES.md#转发看板指标)。
+
 这些 feature CSS 在所属模块显式导入，类名前缀为 models-* / chat-token-*；通用 Tooltip 使用 ds-tooltip。不要修改全局表格或 copy-button 规则来实现局部外观。
 
 ## 验证与同步

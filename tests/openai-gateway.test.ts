@@ -76,6 +76,17 @@ function latestUsage() {
   };
 }
 
+function latestMetrics() {
+  const row = app.kernel.ctx.db.get<{ cached: number | null; durationMs: number }>(
+    `SELECT m.cached_input_tokens AS cached, m.duration_ms AS durationMs
+     FROM usage u LEFT JOIN openai_gateway_metrics m ON m.usage_id=u.id
+     WHERE u.user_id=? ORDER BY u.rowid DESC LIMIT 1`,
+    owner.id,
+  );
+  assert.ok(row && Number.isSafeInteger(row.durationMs) && row.durationMs >= 0);
+  return row;
+}
+
 before(async () => {
   directory = await mkdtemp(join(tmpdir(), 'kh-openai-gateway-'));
   // Only our client helper may open a socket, and it always targets the loopback app.
@@ -287,7 +298,12 @@ test('Responses uses server credentials and supports an explicit two-turn functi
         object: 'response',
         status: 'completed',
         output: sent.length === 1 ? [call] : [],
-        usage: { input_tokens: 6, output_tokens: 2, total_tokens: 8 },
+        usage: {
+          input_tokens: 6,
+          output_tokens: 2,
+          total_tokens: 8,
+          input_tokens_details: { cached_tokens: sent.length === 1 ? 0 : 0.5 },
+        },
       },
       { headers: { 'set-cookie': 'should-not-reach-client=true' } },
     );
@@ -298,6 +314,7 @@ test('Responses uses server credentials and supports an explicit two-turn functi
     assert.equal(response.headers.get('set-cookie'), null);
     const payload = await response.json();
     if (index === 0) assert.deepEqual(payload.output, [call]);
+    assert.equal(latestMetrics().cached, index === 0 ? 0 : null);
     assert.deepEqual(sent[index].input, body.input);
     assert.deepEqual(sent[index].tools, tools);
     assert.equal(sent[index].store, false);
@@ -362,12 +379,30 @@ test('Chat Completions delivers SSE before completion and records the final upst
       text += decoder.decode(value, { stream: true });
     }
   } finally {
+    await delay(30);
     controller.enqueue(
-      event({ choices: [], usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }),
+      event({
+        choices: [],
+        usage: {
+          prompt_tokens: 2,
+          completion_tokens: 1,
+          total_tokens: 3,
+          prompt_tokens_details: { cached_tokens: 1 },
+        },
+      }),
     );
     controller.enqueue(
-      event({ choices: [], usage: { prompt_tokens: 8, completion_tokens: 5, total_tokens: 13 } }),
+      event({
+        choices: [],
+        usage: {
+          prompt_tokens: 8,
+          completion_tokens: 5,
+          total_tokens: 13,
+          prompt_tokens_details: { cached_tokens: 6 },
+        },
+      }),
     );
+    controller.enqueue(event({ choices: [], usage: { total_tokens: 13 } }));
     controller.enqueue(event('[DONE]'));
     controller.close();
   }
@@ -376,6 +411,12 @@ test('Chat Completions delivers SSE before completion and records the final upst
   assert.match(text, /\[DONE\]/);
   assert.equal(count(), before + 1);
   assert.deepEqual(latestUsage(), { input_tokens: 8, output_tokens: 5, total_tokens: 13 });
+  const metrics = latestMetrics();
+  assert.equal(metrics.cached, 6);
+  assert.ok(
+    metrics.durationMs >= 20,
+    'Streaming duration includes time before the last usage frame',
+  );
 });
 
 function lastUsageRowId() {
@@ -409,7 +450,12 @@ test('Responses commits completion when the SDK disconnects at response.complete
     response: {
       id: 'resp_done',
       status: 'completed',
-      usage: { input_tokens: 14, output_tokens: 3, total_tokens: 17 },
+      usage: {
+        input_tokens: 14,
+        output_tokens: 3,
+        total_tokens: 17,
+        input_tokens_details: { cached_tokens: 10 },
+      },
     },
   };
   respond = (req) =>
@@ -451,6 +497,7 @@ test('Responses commits completion when the SDK disconnects at response.complete
     output_tokens: 3,
     total_tokens: 17,
   });
+  assert.equal(latestMetrics().cached, 10);
 });
 
 test('disconnecting an SDK stream cancels its upstream request', async () => {
@@ -484,6 +531,7 @@ test('disconnecting an SDK stream cancels its upstream request', async () => {
   await reader.cancel();
   await cancelled;
   assert.equal((await waitForNextUsage(afterId)).status, 'cancelled');
+  assert.equal(latestMetrics().cached, null);
 });
 
 test('upstream error does not reflect credentials and missing usage remains NULL', async () => {
@@ -502,4 +550,5 @@ test('upstream error does not reflect credentials and missing usage remains NULL
   assert.ok(error.error.message);
   assert.ok(!JSON.stringify(error).includes(upstreamKey));
   assert.deepEqual(latestUsage(), { input_tokens: null, output_tokens: null, total_tokens: null });
+  assert.equal(latestMetrics().cached, null);
 });
