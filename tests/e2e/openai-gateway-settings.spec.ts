@@ -3,8 +3,17 @@ import { useFixtureSession } from '../e2e-session';
 
 test('administrator saves an upstream key and installs or revokes a device key', async ({
   page,
+  baseURL,
 }) => {
   await useFixtureSession(page);
+  const officialOrigin = 'https://drift.kakamlab.com';
+  const command = `curl -fsSL ${officialOrigin}/install.sh | bash`;
+  // Render the official-site UI entirely through the local test server.
+  await page.route(`${officialOrigin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    const response = await page.request.get(new URL(url.pathname + url.search, baseURL).href);
+    await route.fulfill({ response });
+  });
   const deviceKey = 'dsk_' + 'a'.repeat(43);
   let configured = false;
   let issued = false;
@@ -35,6 +44,11 @@ test('administrator saves an upstream key and installs or revokes a device key',
     return route.fulfill({ json: { ok: true } });
   });
   await page.goto('/#/settings/openai-gateway');
+  await expect(page.getByRole('heading', { name: '开发机接入' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '复制配置命令' })).toHaveCount(0);
+  await page.goto(`${officialOrigin}/#/settings/openai-gateway`);
+  await expect(page.getByText(command, { exact: true })).toBeVisible();
+
   await page.getByLabel('OpenAI API 密钥', { exact: true }).fill('fixture-upstream');
   await page.getByRole('button', { name: '保存 OpenAI 密钥' }).click();
   await expect(page.getByLabel('新的 OpenAI API 密钥')).toBeEmpty();
@@ -42,20 +56,27 @@ test('administrator saves an upstream key and installs or revokes a device key',
   await page.getByRole('button', { name: '签发设备密钥' }).click();
   const dialog = page.getByRole('dialog', { name: '保存设备密钥并配置 Codex' });
   await expect(dialog.getByLabel('开发机转发密钥')).toHaveValue(deviceKey);
+  await expect(dialog.getByText(command, { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          document.body.dataset.clipboard = text;
+        },
+      },
+    });
+  });
+  await dialog.getByRole('button', { name: '复制配置命令' }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-clipboard', command);
+  await expect(dialog.getByRole('button', { name: '配置命令已复制' })).toBeVisible();
+  await dialog.getByText('使用独立启动器 codex-drift').click();
   await dialog.getByText('在远端终端粘贴安装').click();
   const pasteScript = await dialog.getByLabel('终端安装脚本').inputValue();
   expect(pasteScript).toContain('</dev/tty');
   expect(pasteScript).not.toContain(deviceKey);
-  await page.evaluate((expected) => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: {
-        async writeText(value: string) {
-          if (value !== expected) throw new Error('脚本内容不一致');
-        },
-      },
-    });
-  }, pasteScript);
   await dialog.getByRole('button', { name: '复制安装脚本' }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-clipboard', pasteScript);
   await expect(dialog.getByRole('status')).toHaveText('安装脚本已复制');
   const pending = page.waitForEvent('download');
   await dialog.getByRole('button', { name: '下载已配置脚本' }).click();

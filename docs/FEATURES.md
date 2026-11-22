@@ -321,6 +321,8 @@ ctx.effect(() => {
 | `POST /api/openai/v1/responses`             | 接收原生 Responses 请求，支持 JSON、SSE 和显式重放工具调用及结果                |
 | `POST /api/openai/v1/chat/completions`      | 接收原生 Chat Completions 请求，支持 JSON 和 SSE，流式请求向上游索取实际用量    |
 
+正式站的公开静态脚本 `/install.sh` 为当前用户的 Codex CLI 配置转发。脚本在终端读取设备密钥，也可沿用已有 `codex-drift` 的正式站连接，成功请求模型列表后才写入配置。设置页和设备密钥签发弹窗提供同一条命令。自建站点继续按本站地址生成独立启动器。
+
 公开静态文件 `/export-cc-switch.sh` 在设备上读取已有的 `codex-drift` 连接，只在本机生成含设备凭据的 CC Switch 导入文件。
 
 每次请求重新校验设备密钥、签发人当前管理员身份和启用状态。模型 ID、工具能力、图像输入和模型额度由上游项目校验。本站聊天、模型管理的来源、授权与窗口设置仅用于站内功能。

@@ -12,11 +12,43 @@ type GatewaySettings = { configured: boolean; keys: GatewayKey[] };
 
 const adminPath = '/admin/openai-gateway';
 const installerFile = 'install-codex-drift.sh';
+const driftOrigin = 'https://drift.kakamlab.com';
+const installCommand = `curl -fsSL ${driftOrigin}/install.sh | bash`;
 
 export function GatewaySettingsPage() {
   const { user } = useWorkspace();
   if (user.role !== 'admin') return <ErrorNote text="需要管理员权限" />;
   return <GatewaySettingsContent key={user.id} />;
+}
+
+function CodexTerminalSetup() {
+  const [copyResult, setCopyResult] = useState<'copied' | 'failed'>();
+  async function copyCommand() {
+    try {
+      await copyText(installCommand);
+      setCopyResult('copied');
+    } catch {
+      setCopyResult('failed');
+    }
+  }
+
+  return (
+    <section className="openai-gateway-install-section">
+      <h3>配置 Codex CLI</h3>
+      <p className="small muted">
+        在开发机的终端运行，按提示粘贴设备密钥。若已有可用的 codex-drift，按回车即可沿用密钥。
+      </p>
+      <code className="openai-gateway-command">{installCommand}</code>
+      <button className="button" onClick={() => void copyCommand()} aria-live="polite">
+        <Copy size={15} aria-hidden="true" />
+        {copyResult === 'copied' ? '配置命令已复制' : '复制配置命令'}
+      </button>
+      {copyResult === 'failed' && <ErrorNote text="复制失败，请选中命令手动复制。" />}
+      <p className="small muted">
+        配置完成后，在项目目录直接运行 <code>codex</code>。
+      </p>
+    </section>
+  );
 }
 
 function IssuedKeyDialog({ deviceKey, close }: { deviceKey: string; close: () => void }) {
@@ -54,7 +86,7 @@ function IssuedKeyDialog({ deviceKey, close }: { deviceKey: string; close: () =>
 
   return (
     <Modal title="保存设备密钥并配置 Codex" close={close} className="openai-gateway-install">
-      <p className="small muted">完整设备密钥仅显示这一次。关闭前请保存密钥或下载安装文件。</p>
+      <p className="small muted">完整设备密钥仅显示这一次，请在关闭前复制并保存。</p>
       <label className="openai-gateway-secret">
         开发机转发密钥
         <textarea
@@ -70,51 +102,38 @@ function IssuedKeyDialog({ deviceKey, close }: { deviceKey: string; close: () =>
         <Copy size={15} aria-hidden="true" />
         复制设备密钥
       </button>
-      <section className="openai-gateway-install-section">
-        <h3>在开发机安装</h3>
+      {location.origin === driftOrigin && <CodexTerminalSetup />}
+      <details className="openai-gateway-install-section" open={location.origin !== driftOrigin}>
+        <summary>使用独立启动器 codex-drift</summary>
         <p className="small muted">
-          适用于已安装 Codex CLI 的 macOS 或
-          Linux。在下载目录运行以下命令，脚本会为当前用户完成配置。
+          在目标机用 Bash 运行下载的文件，再用 <code>~/.local/bin/codex-drift</code> 启动。
+          文件含完整设备密钥，请仅保存在自己的设备上。
         </p>
         <code className="openai-gateway-command">bash {installerFile}</code>
-        <button className="button primary" onClick={download}>
+        <button className="button" onClick={download}>
           <Download size={15} aria-hidden="true" />
           下载已配置脚本
         </button>
-        <p className="small muted">
-          文件内含完整设备密钥。请只传到目标机器，并在安装后删除下载副本。
-        </p>
-      </section>
-      <details className="openai-gateway-install-section">
-        <summary>在远端终端粘贴安装</summary>
-        <p className="small muted">
-          将脚本粘贴到目标机的 Bash 或 Zsh，等到输入提示再粘贴设备密钥并回车。输入时密钥会隐藏。
-        </p>
-        <label className="openai-gateway-secret">
-          终端安装脚本
-          <textarea
-            aria-label="终端安装脚本"
-            readOnly
-            rows={5}
-            spellCheck={false}
-            value={pasteScript}
-            onFocus={(event) => event.currentTarget.select()}
-          />
-        </label>
-        <button className="button" onClick={() => void copy(pasteScript, '安装脚本')}>
-          <Copy size={15} aria-hidden="true" />
-          复制安装脚本
-        </button>
+        <details className="openai-gateway-install-section">
+          <summary>在远端终端粘贴安装</summary>
+          <p className="small muted">将脚本粘贴到目标机的 Bash 或 Zsh，再按提示粘贴设备密钥。</p>
+          <label className="openai-gateway-secret">
+            终端安装脚本
+            <textarea
+              aria-label="终端安装脚本"
+              readOnly
+              rows={5}
+              spellCheck={false}
+              value={pasteScript}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </label>
+          <button className="button" onClick={() => void copy(pasteScript, '安装脚本')}>
+            <Copy size={15} aria-hidden="true" />
+            复制安装脚本
+          </button>
+        </details>
       </details>
-      <section className="openai-gateway-install-section">
-        <h3>启动 Codex</h3>
-        <code className="openai-gateway-command">~/.local/bin/codex-drift</code>
-        <p className="small muted">
-          在项目目录运行。若命令搜索路径包含 <code>~/.local/bin</code>，可直接输入{' '}
-          <code>codex-drift</code>。 默认使用 CLI 选择的模型，也可追加 <code>-m 模型ID</code> 指定此
-          OpenAI 密钥可用的模型。 独立配置保存在 <code>~/.codex-drift</code>。
-        </p>
-      </section>
       <ErrorNote text={failure} />
       {feedback && (
         <p className="small" role="status">
@@ -295,6 +314,7 @@ function GatewaySettingsContent() {
             ) : (
               <p className="small muted">保存 OpenAI 密钥后即可签发设备密钥。</p>
             )}
+            {location.origin === driftOrigin && <CodexTerminalSetup />}
             <details>
               <summary>将已有的 codex-drift 配置导入 CC Switch</summary>
               <p className="small muted">

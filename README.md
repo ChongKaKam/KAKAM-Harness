@@ -75,19 +75,17 @@
 
 ### 在目标服务器配置 Codex CLI
 
-在签发成功的弹窗中下载已配置的脚本，传到已安装 Codex CLI 的目标 Linux 或 macOS 机器，使用运行 Codex 的账号执行：
+在 macOS 或 Linux 开发机上准备好 Codex CLI、Bash、curl 和 Python 3。Python 3.11 起内置 TOML 解析器，较早版本可使用 pip 附带的 `tomli`。用平时运行 `codex` 的账号打开终端，执行 Drift 正式站提供的命令：
 
 ```sh
-bash install-codex-drift.sh
+curl -fsSL https://drift.kakamlab.com/install.sh | bash
 ```
 
-下载文件包含本次签发的 Drift Key，请按设备凭据保管。也可以复制弹窗提供的安装命令，在目标终端执行，按提示粘贴 Drift Key。安装后在项目目录运行：
+在提示处粘贴网页签发的 `dsk_` 设备密钥，输入时密钥会隐藏。若检测到本机 `codex-drift` 的正式站连接，可以直接按回车沿用设备密钥。脚本通过模型列表验证连接，并尽量沿用当前已配置的模型。完成后，在项目目录直接运行 `codex`。
 
-```sh
-~/.local/bin/codex-drift
-```
+脚本会更新 `~/.codex/config.toml`（设置了 `CODEX_HOME` 时使用该目录）。已有配置需要修改时，脚本先备份并显示备份路径。需要恢复时，将备份复制回原来的 `config.toml`。
 
-启动器使用独立的 Codex 配置。可传入 `-m 模型ID` 选择 OpenAI 项目可访问的 Codex 兼容模型，或附加 `-s read-only` 试读项目。在含有 README.md 的项目里，可先让 Codex 实际读取该文件、列出前两个标题，再在同一会话追问第二个标题下的第一句话。[Codex 配置参考](https://developers.openai.com/codex/config-reference)
+自建站点或希望使用独立配置时，可在签发弹窗展开「使用独立启动器 codex-drift」，下载安装文件并运行 `bash install-codex-drift.sh`，再通过 `~/.local/bin/codex-drift` 启动。安装文件含设备密钥，请按凭据保管。独立配置位于 `~/.codex-drift`。[Codex 配置参考](https://developers.openai.com/codex/config-reference)
 
 如已在这台机器使用 Drift 正式站的 `codex-drift`，可用同一账号导出 CC Switch 配置（需要 Python 3）：
 
