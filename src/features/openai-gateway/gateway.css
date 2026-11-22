@@ -45,3 +45,37 @@
   font-family: monospace;
   font-size: var(--font-code);
 }
+
+.modal.openai-gateway-install {
+  width: min(640px, calc(100vw - var(--space-8)));
+  overflow-wrap: anywhere;
+}
+
+.openai-gateway-install-section {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.openai-gateway-install details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.openai-gateway-install details[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+.openai-gateway-install .openai-gateway-secret {
+  width: 100%;
+}
+
+.openai-gateway-command {
+  display: block;
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-alt);
+  font-size: var(--font-code);
+}

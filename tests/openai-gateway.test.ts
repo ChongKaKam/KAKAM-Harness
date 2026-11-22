@@ -11,10 +11,13 @@ import { createApp } from '../src/server/app';
 
 const adminPath = '/admin/openai-gateway';
 const sdkPath = '/openai/v1';
-const providerId = randomUUID();
-const otherProviderId = randomUUID();
 const officialBase = 'https://api.openai.com/v1';
 const upstreamKey = 'fixture-upstream-secret';
+const sdkModel = 'upstream-model';
+const modelList = {
+  object: 'list',
+  data: [{ id: sdkModel, object: 'model', created: 1730000000, owned_by: 'upstream-project' }],
+};
 const localFetch = globalThis.fetch;
 const upstreamCalls: Request[] = [];
 let respond: (request: Request) => Promise<Response> | Response;
@@ -52,12 +55,14 @@ async function register(name: string) {
   };
 }
 
-async function issue(name: string) {
-  const response = await request(
-    adminPath + '/keys',
-    { cookie: owner.cookie },
-    { name, providerId },
-  );
+async function configure(cookie: string, apiKey: string) {
+  const response = await request(adminPath + '/config', { cookie }, { apiKey }, 'PUT');
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+}
+
+async function issue(name: string, cookie = owner.cookie) {
+  const response = await request(adminPath + '/keys', { cookie }, { name });
   assert.equal(response.status, 201);
   const { key } = await response.json();
   assert.equal(typeof key, 'string');
@@ -92,7 +97,6 @@ before(async () => {
   // Only our client helper may open a socket, and it always targets the loopback app.
   globalThis.fetch = async (input, init) => {
     const req = new Request(input, init);
-    if (req.method === 'GET' && req.url.endsWith('/models')) return Response.json({ data: [] });
     upstreamCalls.push(req);
     return respond(req);
   };
@@ -109,34 +113,12 @@ before(async () => {
   origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   owner = await register('owner');
   other = await register('other');
-  const { db, models } = app.kernel.ctx;
-  for (const [id, url] of [
-    [providerId, officialBase],
-    [otherProviderId, 'https://example.test/v1'],
-  ])
-    db.run(
-      'INSERT INTO providers(id,name,base_url,encrypted_key,api_mode) VALUES(?,?,?,?,?)',
-      id,
-      id,
-      url,
-      models.encrypt(upstreamKey),
-      'responses',
-    );
-  for (const [name, id, enabled, kind] of [
-    ['allowed', providerId, 1, 'llm'],
-    ['disabled', providerId, 0, 'llm'],
-    ['image', providerId, 1, 'image'],
-    ['other-source', otherProviderId, 1, 'llm'],
-  ] as const)
-    db.run(
-      'INSERT INTO models(id,provider_id,name,label,enabled,kind,tool_calling) VALUES(?,?,?,?,?,?,1)',
-      randomUUID(),
-      id,
-      name,
-      name,
-      enabled,
-      kind,
-    );
+  assert.equal(app.kernel.ctx.db.get('SELECT id FROM providers LIMIT 1'), undefined);
+  assert.deepEqual(await (await request(adminPath, { cookie: owner.cookie })).json(), {
+    configured: false,
+    keys: [],
+  });
+  await configure(owner.cookie, upstreamKey);
 });
 
 after(async () => {
@@ -157,17 +139,21 @@ test('owner-only issuance, one-time plaintext, SDK bearer isolation and revocati
   const cookie = { cookie: owner.cookie };
   assert.equal((await request(adminPath)).status, 401);
   assert.equal((await request(adminPath, { cookie: other.cookie })).status, 403);
-  const invalidSource = await request(adminPath + '/keys', cookie, {
-    name: 'bad',
-    providerId: otherProviderId,
-  });
-  assert.ok(invalidSource.status >= 400 && invalidSource.status < 500);
+  assert.equal(
+    (
+      await request(
+        adminPath + '/config',
+        { cookie: other.cookie },
+        { apiKey: 'member-key' },
+        'PUT',
+      )
+    ).status,
+    403,
+  );
   const key = await issue('laptop');
   const listing = await (await request(adminPath, cookie)).json();
-  assert.deepEqual(
-    listing.providers.map((p: { id: string }) => p.id),
-    [providerId],
-  );
+  assert.deepEqual(Object.keys(listing).sort(), ['configured', 'keys']);
+  assert.equal(listing.configured, true);
   assert.ok(!JSON.stringify(listing).includes(key));
   assert.ok(!JSON.stringify(listing).includes(upstreamKey));
   const device = listing.keys.find((entry: { name: string }) => entry.name === 'laptop');
@@ -181,21 +167,39 @@ test('owner-only issuance, one-time plaintext, SDK bearer isolation and revocati
   assert.equal((await request(sdkPath + '/models', cookie)).status, 401);
   assert.equal((await request(adminPath, bearer(key))).status, 401);
   assert.equal((await request(sdkPath + '/models', bearer(upstreamKey))).status, 401);
-  const models = await (await request(sdkPath + '/models', bearer(key))).json();
-  assert.equal(models.object, 'list');
-  assert.deepEqual(
-    models.data.map((m: { id: string }) => m.id),
-    ['allowed'],
-  );
   const { db } = app.kernel.ctx;
+  const storedConfig = db.get<{ encrypted_key: string }>(
+    'SELECT encrypted_key FROM openai_gateway_config WHERE user_id=?',
+    owner.id,
+  );
+  assert.ok(storedConfig?.encrypted_key);
+  assert.ok(!storedConfig.encrypted_key.includes(upstreamKey));
+
   db.run("UPDATE users SET role='admin' WHERE id=?", other.id);
   try {
     const otherAdmin = { cookie: other.cookie };
-    assert.deepEqual((await (await request(adminPath, otherAdmin)).json()).keys, []);
+    assert.deepEqual(await (await request(adminPath, otherAdmin)).json(), {
+      configured: false,
+      keys: [],
+    });
+    assert.equal((await request(adminPath + '/keys', otherAdmin, { name: 'early' })).status, 400);
     assert.equal(
       (await request(adminPath + '/keys/' + device.id, otherAdmin, {}, 'DELETE')).status,
       404,
     );
+    const otherKey = 'second-fixture-official-key';
+    const rotated = 'replacement-fixture-official-key';
+    await configure(other.cookie, otherKey);
+    const otherDevice = await issue('laptop', other.cookie);
+    await configure(owner.cookie, rotated);
+    respond = () => Response.json(modelList);
+    for (const [deviceKey, expected] of [
+      [key, rotated],
+      [otherDevice, otherKey],
+    ]) {
+      assert.equal((await request(sdkPath + '/models', bearer(deviceKey))).status, 200);
+      assert.equal(upstreamCalls.at(-1)!.headers.get('authorization'), 'Bearer ' + expected);
+    }
     for (const update of ["role='user'", 'active=0']) {
       db.run('UPDATE users SET ' + update + ' WHERE id=?', owner.id);
       assert.ok([401, 403].includes((await request(sdkPath + '/models', bearer(key))).status));
@@ -204,62 +208,122 @@ test('owner-only issuance, one-time plaintext, SDK bearer isolation and revocati
   } finally {
     db.run("UPDATE users SET role='admin',active=1 WHERE id=?", owner.id);
     db.run("UPDATE users SET role='user' WHERE id=?", other.id);
+    await configure(owner.cookie, upstreamKey);
   }
   assert.equal((await request(adminPath + '/keys/' + device.id, cookie, {}, 'DELETE')).status, 200);
   assert.equal((await request(sdkPath + '/models', bearer(key))).status, 401);
 });
 
-test('model and source changes apply before the next upstream request', async () => {
-  const headers = bearer(await issue('scoped'));
+test('GET models uses the official catalog and redacts upstream errors', async () => {
+  const key = await issue('model discovery');
+  const headers = {
+    ...bearer(key),
+    cookie: owner.cookie,
+    'openai-project': 'client-project',
+    'x-api-key': 'client-credential',
+  };
   const start = upstreamCalls.length;
-  for (const model of ['disabled', 'image', 'other-source']) {
-    const response = await request(sdkPath + '/responses', headers, { model, input: 'hello' });
-    assert.ok(response.status >= 400 && response.status < 500);
-  }
-  const { db } = app.kernel.ctx;
-  db.run('UPDATE providers SET base_url=? WHERE id=?', 'https://wrong.example.test/v1', providerId);
-  try {
-    assert.ok(
-      (await request(sdkPath + '/responses', headers, { model: 'allowed', input: 'hello' }))
-        .status >= 400,
+  const beforeUsage = lastUsageRowId();
+  respond = () => Response.json(modelList);
+  const listing = await request(sdkPath + '/models', headers);
+  assert.equal(listing.status, 200);
+  assert.deepEqual(await listing.json(), modelList);
+  respond = () =>
+    Response.json(
+      { error: { message: 'Invalid key: ' + upstreamKey, code: 'invalid_api_key' } },
+      { status: 401, headers: { 'set-cookie': 'bad=' + upstreamKey } },
     );
-  } finally {
-    db.run('UPDATE providers SET base_url=? WHERE id=?', officialBase, providerId);
+  const failure = await request(sdkPath + '/models', headers);
+  assert.equal(failure.status, 401);
+  assert.equal(failure.headers.get('set-cookie'), null);
+  const error = await failure.json();
+  assert.ok(error.error.message);
+  assert.ok(!JSON.stringify(error).includes(upstreamKey));
+  assert.equal(upstreamCalls.length, start + 2);
+  for (const req of upstreamCalls.slice(start)) {
+    assert.equal(req.method, 'GET');
+    assert.equal(req.url, officialBase + '/models');
+    assert.equal(req.redirect, 'error');
+    assert.equal(req.headers.get('authorization'), 'Bearer ' + upstreamKey);
+    assert.equal(req.headers.get('cookie'), null);
+    assert.equal(req.headers.get('openai-project'), null);
+    assert.equal(req.headers.get('x-api-key'), null);
   }
-  assert.equal(upstreamCalls.length, start);
+  assert.equal(lastUsageRowId(), beforeUsage);
 });
 
-test('tool declarations, tool continuations and image inputs respect model capabilities', async () => {
-  const headers = bearer(await issue('capabilities'));
-  const { db } = app.kernel.ctx;
-  const start = upstreamCalls.length;
-  db.run('UPDATE models SET tool_calling=0 WHERE provider_id=? AND name=?', providerId, 'allowed');
-  try {
-    for (const body of [
+test('a disabled site model does not restrict gateway generation or client tools', async () => {
+  const headers = bearer(await issue('independent client'));
+  const { db, models } = app.kernel.ctx;
+  const providerId = randomUUID();
+  db.run(
+    'INSERT INTO providers(id,name,base_url,encrypted_key,api_mode) VALUES(?,?,?,?,?)',
+    providerId,
+    'site provider',
+    'https://example.test/v1',
+    models.encrypt('site-key'),
+    'responses',
+  );
+  db.run(
+    'INSERT INTO models(id,provider_id,name,label,enabled,vision,tool_calling) VALUES(?,?,?,?,0,0,0)',
+    randomUUID(),
+    providerId,
+    sdkModel,
+    'Site label',
+  );
+  const body = {
+    model: sdkModel,
+    input: [
       {
-        input: 'hello',
-        tools: [{ type: 'function', name: 'read_version', parameters: { type: 'object' } }],
-      },
-      { input: [{ type: 'function_call_output', call_id: 'call_fixture', output: '1.0' }] },
-      {
-        input: [
-          {
-            role: 'user',
-            content: [{ type: 'input_image', image_url: 'data:image/png;base64,AA==' }],
-          },
+        type: 'additional_tools',
+        role: 'developer',
+        tools: [
+          { type: 'namespace', name: 'functions', tools: [{ type: 'custom', name: 'exec' }] },
         ],
       },
-    ])
-      assert.equal(
-        (await request(sdkPath + '/responses', headers, { model: 'allowed', ...body })).status,
-        400,
-      );
-  } finally {
-    db.run(
-      'UPDATE models SET tool_calling=1 WHERE provider_id=? AND name=?',
-      providerId,
-      'allowed',
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'x'.repeat(3000) },
+          { type: 'input_image', image_url: 'data:image/png;base64,AA==' },
+        ],
+      },
+    ],
+    tools: [{ type: 'function', name: 'read_version', parameters: { type: 'object' } }],
+    max_output_tokens: 512,
+  };
+  const start = upstreamCalls.length;
+  try {
+    respond = () => Response.json({ object: 'response', status: 'completed', output: [] });
+    const response = await request(sdkPath + '/responses', headers, body);
+    assert.equal(response.status, 200);
+    assert.equal(upstreamCalls.length, start + 1);
+    const upstream = upstreamCalls[start];
+    assert.equal(upstream.url, officialBase + '/responses');
+    assert.equal(upstream.headers.get('authorization'), 'Bearer ' + upstreamKey);
+    assert.deepEqual(await upstream.json(), { ...body, store: false });
+    assert.equal(
+      db.get<{ model_name: string }>('SELECT model_name FROM usage ORDER BY rowid DESC LIMIT 1')!
+        .model_name,
+      '[OpenAI Gateway] ' + sdkModel,
     );
+  } finally {
+    db.run('DELETE FROM providers WHERE id=?', providerId);
+  }
+});
+
+test('generation rejects stored project references before contacting OpenAI', async () => {
+  const headers = bearer(await issue('project isolation'));
+  const start = upstreamCalls.length;
+  for (const body of [
+    { input: 'hello', previous_response_id: 'resp_fixture' },
+    { input: 'hello', store: true },
+    { input: 'hello', tools: [{ type: 'file_search', vector_store_ids: ['vs_fixture'] }] },
+    { input: [{ type: 'additional_tools', tools: [{ type: 'file_search' }] }] },
+    { input: [{ role: 'user', content: [{ type: 'input_file', file_id: 'file_fixture' }] }] },
+  ]) {
+    const response = await request(sdkPath + '/responses', headers, { model: sdkModel, ...body });
+    assert.equal(response.status, 400);
   }
   assert.equal(upstreamCalls.length, start);
 });
@@ -286,7 +350,7 @@ test('Responses uses server credentials and supports an explicit two-turn functi
   };
   const result = { type: 'function_call_output', call_id: call.call_id, output: '1.0' };
   const prompt = { role: 'user', content: 'What version is installed?' };
-  const initial = { model: 'allowed', input: [prompt], tools };
+  const initial = { model: sdkModel, input: [prompt], tools };
   const replay = { ...initial, input: [prompt, call, result] };
   const start = upstreamCalls.length;
   const sent: Record<string, unknown>[] = [];
@@ -345,8 +409,11 @@ test('Chat Completions delivers SSE before completion and records the final upst
       'data: ' + (typeof body === 'string' ? body : JSON.stringify(body)) + '\n\n',
     );
   let controller!: ReadableStreamDefaultController<Uint8Array>;
-  respond = (req) => {
+  respond = async (req) => {
     assert.equal(req.url, officialBase + '/chat/completions');
+    const body = await req.json();
+    assert.equal(body.model, sdkModel);
+    assert.deepEqual(body.stream_options, { include_usage: true });
     return new Response(
       new ReadableStream<Uint8Array>({
         start(c) {
@@ -363,10 +430,10 @@ test('Chat Completions delivers SSE before completion and records the final upst
     );
   };
   const response = await request(sdkPath + '/chat/completions', headers, {
-    model: 'allowed',
+    model: sdkModel,
     messages: [{ role: 'user', content: 'hello' }],
     stream: true,
-    stream_options: { include_usage: true },
+    stream_options: { include_usage: false },
   });
   assert.equal(response.status, 200);
   const reader = response.body!.getReader();
@@ -476,7 +543,7 @@ test('Responses commits completion when the SDK disconnects at response.complete
       { headers: { 'content-type': 'text/event-stream' } },
     );
   const response = await request(sdkPath + '/responses', headers, {
-    model: 'allowed',
+    model: sdkModel,
     input: 'hello',
     stream: true,
   });
@@ -519,7 +586,7 @@ test('disconnecting an SDK stream cancels its upstream request', async () => {
     );
   };
   const response = await request(sdkPath + '/chat/completions', headers, {
-    model: 'allowed',
+    model: sdkModel,
     messages: [{ role: 'user', content: 'hello' }],
     stream: true,
   });
@@ -542,7 +609,7 @@ test('upstream error does not reflect credentials and missing usage remains NULL
       { status: 401 },
     );
   const response = await request(sdkPath + '/chat/completions', headers, {
-    model: 'allowed',
+    model: sdkModel,
     messages: [{ role: 'user', content: 'hello' }],
   });
   assert.ok(response.status >= 400);

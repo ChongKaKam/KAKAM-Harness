@@ -390,16 +390,50 @@ export class Database extends Service {
       CREATE INDEX IF NOT EXISTS idx_relay_attachments_expiry ON relay_attachments(expires_at)
         WHERE expires_at IS NOT NULL;
     `);
-    this.connection.exec(`CREATE TABLE IF NOT EXISTS openai_gateway_keys (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      prefix TEXT NOT NULL,
-      key_hash TEXT NOT NULL UNIQUE,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_openai_gateway_keys_user ON openai_gateway_keys(user_id, created_at)`);
+    this.transaction(() => {
+      const legacy = this.all<{ name: string }>('PRAGMA table_info(openai_gateway_keys)').some(
+        (column) => column.name === 'provider_id',
+      );
+      if (legacy)
+        this.connection.exec(
+          'ALTER TABLE openai_gateway_keys RENAME TO openai_gateway_legacy_keys',
+        );
+      this.connection.exec(`
+        CREATE TABLE IF NOT EXISTS openai_gateway_config (
+          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          encrypted_key TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS openai_gateway_keys (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          prefix TEXT NOT NULL,
+          key_hash TEXT NOT NULL UNIQUE,
+          created_at INTEGER NOT NULL,
+          legacy_encrypted_key TEXT
+        );
+      `);
+      if (legacy) {
+        // Snapshot only the official OpenAI source each device was actually bound to.
+        // Several devices may have used different upstream projects under one admin.
+        this.connection.exec(`
+          INSERT INTO openai_gateway_keys(id,user_id,name,prefix,key_hash,created_at,legacy_encrypted_key)
+          SELECT k.id,k.user_id,k.name,k.prefix,k.key_hash,k.created_at,p.encrypted_key
+          FROM openai_gateway_legacy_keys k LEFT JOIN providers p ON p.id=k.provider_id
+            AND rtrim(p.base_url,'/')='https://api.openai.com/v1'
+            AND p.api_mode IN ('responses','chat-completions');
+          INSERT INTO openai_gateway_config(user_id,encrypted_key)
+          SELECT k.user_id, MIN(k.legacy_encrypted_key)
+          FROM openai_gateway_keys k JOIN openai_gateway_legacy_keys old ON old.id=k.id
+          GROUP BY k.user_id
+          HAVING COUNT(DISTINCT old.provider_id)=1 AND MIN(k.legacy_encrypted_key) IS NOT NULL;
+          DROP TABLE openai_gateway_legacy_keys;
+        `);
+      }
+      this.connection.exec(
+        'CREATE INDEX IF NOT EXISTS idx_openai_gateway_keys_user ON openai_gateway_keys(user_id, created_at)',
+      );
+    });
     this.transaction(() => {
       if (
         this.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name='openai_gateway_metrics'")

@@ -2,35 +2,52 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { Context } from 'cordis';
 import { Router } from 'express';
 import { z } from 'zod';
-import { digest } from '../../kernel/crypto';
+import { digest, type SecretVault } from '../../kernel/crypto';
 import { HttpError, requireAdmin } from '../../kernel/http';
-import type { User } from '../../shared/types';
-import { publicUser } from '../auth/server';
 import { dashboardQuery, readGatewayDashboard } from './dashboard-data';
 
-export function isOpenAIProvider(baseUrl: string, apiMode: string) {
-  return (
-    (apiMode === 'responses' || apiMode === 'chat-completions') &&
-    baseUrl.replace(/\/+$/, '') === 'https://api.openai.com/v1'
-  );
+const apiKeySchema = z
+  .string()
+  .trim()
+  .max(4096)
+  .regex(/^[!-~]+$/, '请输入有效的 OpenAI API Key');
+
+function readCredential(vault: SecretVault, encrypted?: string | null) {
+  if (!encrypted) return;
+  try {
+    const credential = apiKeySchema.safeParse(vault.decrypt(encrypted));
+    if (credential.success) return credential.data;
+  } catch {
+    // Unreadable credentials can be replaced in settings without exposing vault errors.
+  }
 }
 
-export function resolveGatewayKey(ctx: Context, authorization?: string) {
+function configuredKey(ctx: Context, vault: SecretVault, userId: string) {
+  const config = ctx.db.get<{ encrypted_key: string }>(
+    'SELECT encrypted_key FROM openai_gateway_config WHERE user_id=?',
+    userId,
+  );
+  return readCredential(vault, config?.encrypted_key);
+}
+
+export function resolveGatewayKey(ctx: Context, vault: SecretVault, authorization?: string) {
   const token = /^Bearer (dsk_[\w-]{43})$/i.exec(authorization ?? '')?.[1];
   const row =
     token &&
-    ctx.db.get<User & { providerId: string }>(
-      `SELECT u.id,u.email,u.username AS legacyUsername,u.display_name AS displayName,
-        u.avatar,u.role,u.active,k.provider_id AS providerId
+    ctx.db.get<{ userId: string; encryptedKey: string | null }>(
+      `SELECT k.user_id AS userId, COALESCE(c.encrypted_key,k.legacy_encrypted_key) AS encryptedKey
       FROM openai_gateway_keys k JOIN users u ON u.id=k.user_id
+      LEFT JOIN openai_gateway_config c ON c.user_id=k.user_id
       WHERE k.key_hash=? AND u.active=1 AND u.role='admin'`,
       digest(token),
     );
   if (!row) throw new HttpError(401, '转发 Key 无效或已撤销');
-  return { user: publicUser(row), providerId: row.providerId };
+  const apiKey = readCredential(vault, row.encryptedKey);
+  if (!apiKey) throw new HttpError(503, '请在转发设置中配置 OpenAI API Key');
+  return { userId: row.userId, apiKey };
 }
 
-export function createKeyRouter(ctx: Context) {
+export function createKeyRouter(ctx: Context, vault: SecretVault) {
   const router = Router();
   const root = '/admin/openai-gateway';
   router.use(root, requireAdmin, (_req, res, next) => {
@@ -42,37 +59,40 @@ export function createKeyRouter(ctx: Context) {
     res.json(readGatewayDashboard(ctx.db, req.user!.id, days));
   });
   router.get(root, (req, res) => {
-    const providers = ctx.db
-      .all<{ id: string; name: string; baseUrl: string; apiMode: string }>(
-        'SELECT id,name,base_url AS baseUrl,api_mode AS apiMode FROM providers ORDER BY name,id',
-      )
-      .filter((p) => isOpenAIProvider(p.baseUrl, p.apiMode) && ctx.models.connection(p.id).apiKey)
-      .map(({ id, name }) => ({ id, name }));
+    const userId = req.user!.id;
     const keys = ctx.db.all(
-      `SELECT k.id,k.name,k.prefix,k.created_at AS createdAt,k.provider_id AS providerId,p.name AS providerName
-        FROM openai_gateway_keys k JOIN providers p ON p.id=k.provider_id
-        WHERE k.user_id=? ORDER BY k.created_at DESC,k.id`,
-      req.user!.id,
+      `SELECT id,name,prefix,created_at AS createdAt FROM openai_gateway_keys
+        WHERE user_id=? ORDER BY created_at DESC,id`,
+      userId,
     );
-    res.json({ providers, keys });
+    res.json({ configured: !!configuredKey(ctx, vault, userId), keys });
+  });
+  router.put(root + '/config', (req, res) => {
+    const { apiKey } = z.strictObject({ apiKey: apiKeySchema }).parse(req.body);
+    const userId = req.user!.id;
+    ctx.db.transaction(() => {
+      ctx.db.run(
+        `INSERT INTO openai_gateway_config(user_id,encrypted_key) VALUES(?,?)
+          ON CONFLICT(user_id) DO UPDATE SET encrypted_key=excluded.encrypted_key`,
+        userId,
+        vault.encrypt(apiKey),
+      );
+      ctx.db.run(
+        'UPDATE openai_gateway_keys SET legacy_encrypted_key=NULL WHERE user_id=? AND legacy_encrypted_key IS NOT NULL',
+        userId,
+      );
+    });
+    res.json({ ok: true });
   });
   router.post(root + '/keys', (req, res) => {
-    const { name, providerId } = z
-      .object({
-        name: z.string().trim().min(1).max(80),
-        providerId: z.uuid(),
-      })
-      .strict()
-      .parse(req.body);
-    const connection = ctx.models.connection(providerId);
-    if (!isOpenAIProvider(connection.baseUrl, connection.apiMode) || !connection.apiKey)
-      throw new HttpError(400, '请选择已配置 API Key 的 OpenAI 官方来源');
+    const { name } = z.strictObject({ name: z.string().trim().min(1).max(80) }).parse(req.body);
+    const userId = req.user!.id;
+    if (!configuredKey(ctx, vault, userId)) throw new HttpError(400, '请先配置 OpenAI API Key');
     const key = 'dsk_' + randomBytes(32).toString('base64url');
     ctx.db.run(
-      'INSERT INTO openai_gateway_keys(id,user_id,provider_id,name,prefix,key_hash,created_at) VALUES(?,?,?,?,?,?,?)',
+      'INSERT INTO openai_gateway_keys(id,user_id,name,prefix,key_hash,created_at) VALUES(?,?,?,?,?,?)',
       randomUUID(),
-      req.user!.id,
-      providerId,
+      userId,
       name,
       key.slice(0, 12),
       digest(key),

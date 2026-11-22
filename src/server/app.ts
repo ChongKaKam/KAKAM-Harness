@@ -30,7 +30,7 @@ export async function createApp(config: Config) {
     await kernel.register(models, modelsFeature(config.secret));
     await kernel.register(
       openaiGateway.manifest,
-      openaiGateway.createGatewayFeature(config.maxConcurrentChats),
+      openaiGateway.createGatewayFeature(config.secret, config.maxConcurrentChats),
     );
     await kernel.register(extensions.manifest, extensions.server);
     await kernel.register(production.manifest, production.server);

@@ -81,7 +81,7 @@ Core 和可选插件都按 feature 组织；“core”指平台启动必须具�
 - 新用户提供 email / displayName / password；邮箱去掉首尾空白并转小写，以大小写无关唯一索引保证不重复，显示名称不作为身份标识。`users.email` 追加迁移允许旧账户暂为 NULL；旧 username 仅用于凭原密码绑定邮箱，不伪造地址或修改原用户 ID。更改邮箱需要当前密码并撤销其他会话，管理员变更邮箱会撤销该用户会话。
 - Session 使用随机 256-bit token，数据库只保存 SHA-256 摘要；HttpOnly + SameSite=Strict Cookie，7 天过期。停用 / 改角色 / 管理员重置密码会撤销对应账户 session。
 - API Key 使用 AES-256-GCM 加密，密钥从 `APP_SECRET` 派生。查询响应仅返回 `hasKey`，错误不反射上游凭据。管理员主动连通性测试可接收经脱敏且限长的输入 / 输出 / 错误诊断，只存在本次响应，不写数据库；普通模型调用不启用捕获。诊断契约见 [功能指南](FEATURES.md#来源探测与模型连通性测试)。
-- 开发机转发密钥由 32 字节随机数生成，SQLite 仅保存摘要、显示前缀与管理员 / 来源绑定。网关验证开发机身份后读取该来源的加密 OpenAI Key，向固定官方地址发出请求；角色、来源、模型授权与能力均按当前配置检查。客户端持有会话历史和工具执行权限。接口及生命周期见 [OpenAI API 转发](FEATURES.md#openai-api-转发)。
+- 网关独立保存每位管理员经 SecretVault 加密的 OpenAI Key。设备密钥由 32 字节随机数生成，SQLite 仅保存其摘要、显示前缀与签发人。网关逐请求验证设备和管理员，使用本人上游凭据向固定 OpenAI 官方地址请求模型列表或生成。客户端持有会话历史和工具执行权限。[OpenAI API 转发与迁移](FEATURES.md#openai-api-转发)
 - 修改 API 要求 JSON 与匹配 Origin（浏览器请求）。登录限速、CSP、HTML 非执行渲染、Mermaid strict 模式作为补充。
 - `providers.api_mode` 追加迁移默认 `chat-completions`。`ModelsService.adapter(apiMode)` 将 Chat Completions / Responses 路由到 OpenAI 兼容 Adapter，将 `anthropic-messages` 路由到独立 Anthropic Adapter；探测、测试和聊天必须统一使用此映射。思考字段只在非 none 时发送。`ui_preferences` 以 user_id 隔离主题和头像。
 - 来源地址只允许管理员配置 HTTP(S)，默认不跟随重定向。支持内网模型是预期能力，因此没有阻止管理员选择私网地址。插件与管理员都属于可信边界，不能用它作为不可信租户任意网络访问的平台。

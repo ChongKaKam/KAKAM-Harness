@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Context } from 'cordis';
-import { Router, type Response, type ErrorRequestHandler } from 'express';
+import { Router, type Request, type Response, type ErrorRequestHandler } from 'express';
 import { z } from 'zod';
+import type { SecretVault } from '../../kernel/crypto';
 import { HttpError } from '../../kernel/http';
-import type { Model } from '../../shared/types';
-import { isOpenAIProvider, resolveGatewayKey } from './keys';
+import { resolveGatewayKey } from './keys';
 import { relayResponse, sdkError, type RelayResult } from './proxy-response';
 
 const prefix = '/openai/v1';
@@ -52,12 +52,10 @@ function validateTools(tools: unknown) {
   }
 }
 
-function validateContent(parts: unknown, vision: boolean) {
+function validateContent(parts: unknown) {
   if (!Array.isArray(parts)) return;
   for (const part of parts) {
     if (!isObject(part)) continue;
-    if (!vision && (part.type === 'image_url' || part.type === 'input_image'))
-      throw new HttpError(400, 'Enable image input for this model in Drift Space.');
     if (part.file_id != null || (isObject(part.file) && part.file.file_id != null))
       throw new HttpError(400, 'Send inline content instead of an OpenAI project file ID.');
   }
@@ -65,6 +63,7 @@ function validateContent(parts: unknown, vision: boolean) {
 
 const replayItems = new Set([
   'message',
+  'additional_tools',
   'reasoning',
   'compaction',
   'function_call',
@@ -81,7 +80,7 @@ const replayItems = new Set([
   'tool_search_output',
   'web_search_call',
 ]);
-function validateInput(input: unknown, responses: boolean, model: Model) {
+function validateInput(input: unknown, responses: boolean) {
   if (responses && typeof input === 'string') return;
   if (!Array.isArray(input))
     throw new HttpError(400, responses ? 'Provide input.' : 'Provide messages.');
@@ -108,18 +107,23 @@ function validateInput(input: unknown, responses: boolean, model: Model) {
       );
     if (isObject(item.audio) && item.audio.id != null)
       throw new HttpError(400, 'Stored audio references are unavailable through the gateway.');
-    if (
-      !model.toolCalling &&
-      ((type !== 'message' && type !== 'reasoning' && type !== 'compaction') ||
-        ['tool', 'function'].includes(String(item.role)) ||
-        item.tool_calls != null ||
-        item.function_call != null)
-    )
-      throw new HttpError(400, 'Enable tool calling for this model in Drift Space.');
-    if (type === 'tool_search_output') validateTools(item.tools);
-    validateContent(item.content, model.vision);
-    validateContent(item.output, model.vision);
+    if (type === 'tool_search_output' || type === 'additional_tools') validateTools(item.tools);
+    validateContent(item.content);
+    validateContent(item.output);
   }
+}
+
+function generationBody(payload: unknown, responses: boolean) {
+  const parsed = generation.safeParse(payload);
+  if (!parsed.success)
+    throw new HttpError(400, 'Invalid generation request or unsupported server-side state.');
+  const body = parsed.data;
+  validateInput(responses ? body.input : body.messages, responses);
+  if (body.tools) validateTools(body.tools);
+  body.store = false;
+  if (!responses && body.stream)
+    body.stream_options = { ...body.stream_options, include_usage: true };
+  return body;
 }
 
 function handleError(error: unknown, res: Response) {
@@ -138,6 +142,7 @@ function handleError(error: unknown, res: Response) {
 
 export function createProxyRouter(
   ctx: Context,
+  vault: SecretVault,
   options: { fetch?: typeof fetch; maxConcurrentRequests?: number } = {},
 ) {
   const router = Router();
@@ -156,123 +161,93 @@ export function createProxyRouter(
   router.use(prefix, (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     if (stopping) throw new HttpError(503, 'Gateway stopped.');
-    const identity = resolveGatewayKey(ctx, req.get('authorization'));
-    const connection = ctx.models.connection(identity.providerId);
-    if (!isOpenAIProvider(connection.baseUrl, connection.apiMode) || !connection.apiKey)
-      throw new HttpError(503, 'The OpenAI source is unavailable.');
-    res.locals.gateway = identity;
-    res.locals.connection = connection;
+    res.locals.gateway = resolveGatewayKey(ctx, vault, req.get('authorization'));
     next();
   });
-  router.get(prefix + '/models', (_req, res) => {
-    const { user, providerId } = res.locals.gateway as ReturnType<typeof resolveGatewayKey>;
-    const models = ctx.models
-      .list(user)
-      .filter((m) => m.providerId === providerId && m.kind === 'llm');
-    res.json({
-      object: 'list',
-      data: models.map((m) => ({ id: m.name, object: 'model', created: 0, owned_by: 'openai' })),
-    });
-  });
-  router.post([prefix + '/responses', prefix + '/chat/completions'], async (req, res) => {
-    const { user, providerId } = res.locals.gateway as ReturnType<typeof resolveGatewayKey>;
-    const parsed = generation.safeParse(req.body);
-    if (!parsed.success)
-      throw new HttpError(400, 'Invalid generation request or unsupported server-side state.');
-    const body = parsed.data;
-    const responses = req.path.toLowerCase().replace(/\/$/, '').endsWith('/responses');
-    const model = ctx.models
-      .list(user)
-      .find((m) => m.providerId === providerId && m.kind === 'llm' && m.name === body.model);
-    if (!model) throw new HttpError(403, 'This model is unavailable for the gateway key.');
-    ctx.models.authorize(user, model.id, 'llm');
-    validateInput(responses ? body.input : body.messages, responses, model);
-    if (
-      !model.toolCalling &&
-      (body.tools?.length || body.functions != null || body.web_search_options != null)
-    )
-      throw new HttpError(400, 'Enable tool calling for this model in Drift Space.');
-    if (body.tools) validateTools(body.tools);
-    body.store = false;
-    if (!responses && body.stream)
-      body.stream_options = { ...body.stream_options, include_usage: true };
-    const connection = res.locals.connection;
-    if (
-      [...active.values()].filter((run) => run.userId === user.id).length >=
-      (options.maxConcurrentRequests ?? 5)
-    )
-      throw new HttpError(429, 'Too many concurrent gateway requests.');
+  const forwardEndpoint =
+    (endpoint: 'models' | 'responses' | 'chat/completions') =>
+    async (req: Request, res: Response) => {
+      const { userId, apiKey } = res.locals.gateway as ReturnType<typeof resolveGatewayKey>;
+      const responses = endpoint === 'responses';
+      const body = endpoint === 'models' ? undefined : generationBody(req.body, responses);
+      if (
+        [...active.values()].filter((run) => run.userId === userId).length >=
+        (options.maxConcurrentRequests ?? 5)
+      )
+        throw new HttpError(429, 'Too many concurrent gateway requests.');
 
-    const controller = new AbortController();
-    const timeout = AbortSignal.timeout(10 * 60_000);
-    const signal = AbortSignal.any([controller.signal, timeout]);
-    const disconnect = () => {
-      if (!res.writableEnded) controller.abort();
-    };
-    res.once('close', disconnect);
-    const result: RelayResult = { usage: null, cachedInputTokens: null, status: 'error' };
-    const forward = async () => {
-      const startedAt = performance.now();
-      const markAborted = () => {
-        result.endedAt ??= performance.now();
+      const controller = new AbortController();
+      const timeout = AbortSignal.timeout(10 * 60_000);
+      const signal = AbortSignal.any([controller.signal, timeout]);
+      const disconnect = () => {
+        if (!res.writableEnded) controller.abort();
       };
-      signal.addEventListener('abort', markAborted, { once: true });
-      try {
-        const upstream = await (options.fetch ?? fetch)(
-          'https://api.openai.com/v1/' + (responses ? 'responses' : 'chat/completions'),
-          {
-            method: 'POST',
+      res.once('close', disconnect);
+      const result: RelayResult = { usage: null, cachedInputTokens: null, status: 'error' };
+      const forward = async () => {
+        const startedAt = performance.now();
+        const markAborted = () => {
+          result.endedAt ??= performance.now();
+        };
+        signal.addEventListener('abort', markAborted, { once: true });
+        try {
+          const upstream = await (options.fetch ?? fetch)('https://api.openai.com/v1/' + endpoint, {
+            method: body ? 'POST' : 'GET',
             headers: {
-              Authorization: 'Bearer ' + connection.apiKey,
-              'Content-Type': 'application/json',
+              Authorization: 'Bearer ' + apiKey,
+              ...(body && { 'Content-Type': 'application/json' }),
             },
             body: JSON.stringify(body),
             redirect: 'error',
             signal,
-          },
-        );
-        await relayResponse(upstream, res, result, signal, responses);
-      } catch (error) {
-        if (controller.signal.aborted) result.status = 'cancelled';
-        handleError(
-          timeout.aborted
-            ? new HttpError(504, 'OpenAI request timed out.')
-            : (controller.signal.reason ?? error),
-          res,
-        );
-      } finally {
-        const durationMs = Math.round((result.endedAt ?? performance.now()) - startedAt);
-        signal.removeEventListener('abort', markAborted);
-        res.off('close', disconnect);
-        active.delete(controller);
-        const usageId = randomUUID();
-        const input = result.usage?.input ?? null;
-        const cached = result.cachedInputTokens;
-        db.transaction(() => {
-          db.run(
-            'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
-            usageId,
-            user.id,
-            '[OpenAI Gateway] ' + model.name,
-            input,
-            result.usage?.output ?? null,
-            result.usage?.total ?? null,
-            result.status,
-            new Date().toISOString(),
+          });
+          await relayResponse(upstream, res, result, signal, responses);
+        } catch (error) {
+          if (controller.signal.aborted) result.status = 'cancelled';
+          handleError(
+            timeout.aborted
+              ? new HttpError(504, 'OpenAI request timed out.')
+              : (controller.signal.reason ?? error),
+            res,
           );
-          db.run(
-            'INSERT INTO openai_gateway_metrics(usage_id,cached_input_tokens,duration_ms) VALUES(?,?,?)',
-            usageId,
-            cached !== null && input !== null && cached > input ? null : cached,
-            durationMs,
-          );
-        });
-      }
+        } finally {
+          const durationMs = Math.round((result.endedAt ?? performance.now()) - startedAt);
+          signal.removeEventListener('abort', markAborted);
+          res.off('close', disconnect);
+          active.delete(controller);
+          if (body) {
+            const usageId = randomUUID();
+            const input = result.usage?.input ?? null;
+            const cached = result.cachedInputTokens;
+            db.transaction(() => {
+              db.run(
+                'INSERT INTO usage VALUES(?,?,?,?,?,?,?,?)',
+                usageId,
+                userId,
+                '[OpenAI Gateway] ' + body.model,
+                input,
+                result.usage?.output ?? null,
+                result.usage?.total ?? null,
+                result.status,
+                new Date().toISOString(),
+              );
+              db.run(
+                'INSERT INTO openai_gateway_metrics(usage_id,cached_input_tokens,duration_ms) VALUES(?,?,?)',
+                usageId,
+                cached !== null && input !== null && cached > input ? null : cached,
+                durationMs,
+              );
+            });
+          }
+        }
+      };
+      const finished = Promise.resolve().then(forward);
+      active.set(controller, { userId, finished });
+      await finished;
     };
-    const finished = Promise.resolve().then(forward);
-    active.set(controller, { userId: user.id, finished });
-    await finished;
-  });
+  router.get(prefix + '/models', forwardEndpoint('models'));
+  router.post(prefix + '/responses', forwardEndpoint('responses'));
+  router.post(prefix + '/chat/completions', forwardEndpoint('chat/completions'));
   router.use(prefix, (_req, res) =>
     res.status(404).json(sdkError(404, 'Unknown gateway endpoint.')),
   );

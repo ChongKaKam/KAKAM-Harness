@@ -69,34 +69,27 @@
 
 ## 在开发机上通过本站调用 OpenAI
 
-1. 管理员在「设置 → 管理员 → 模型与接入」保存官方来源，Base URL 填 `https://api.openai.com/v1`，选择 Responses 或 Chat Completions，填入 OpenAI API Key。将需要的 LLM 加入白名单并启用。Codex 读文件、运行命令需要模型勾选「支持工具调用」，发送图片还需要勾选「支持图片输入」。
-2. 在「设置 → 管理员 → OpenAI API 转发」复制本站 Base URL，选择该来源，用设备名签发转发密钥。完整的 `dsk_` 密钥仅在签发时显示一次。每台开发机使用自己的密钥，在同一页面撤销后，该设备的后续请求会被拒绝。
-3. 开发机使用本站的 **HTTPS** Base URL 和刚签发的转发密钥。OpenAI SDK 可以直接设置 `base_url` 和 `api_key`。服务器需要能访问官方 API，费用计入所选来源的 OpenAI 项目。
+1. 管理员打开「设置 → 管理员 → OpenAI API 转发」，输入自己的 OpenAI API Key 并保存。网关使用独立加密存储，直接访问 OpenAI 官方 API。转发可用的模型和能力由这把 Key 对应的 OpenAI 项目决定。
+2. 填写设备名称，签发一把 Drift API Key。以 `dsk_` 开头的完整密钥仅在签发成功的弹窗显示一次。OpenAI SDK 的 `base_url` 填本页显示的本站 HTTPS 地址（以 `/api/openai/v1` 结尾），`api_key` 填这把 Drift Key。可以使用 `GET /api/openai/v1/models` 查看对应 OpenAI 项目返回的模型 ID。
+3. 每台服务器或开发机可以各用一把 Drift Key。撤销某把设备密钥后，该设备的后续请求会被拒绝。管理员保存新的 OpenAI Key 后，本人设备的后续调用使用新凭据，扣费归属相应的 OpenAI 项目。
 
-管理员从「统计 → 用量统计 → OpenAI 转发看板」查看本人签发密钥的调用，也可从转发设置页打开。看板提供最近 7、30 或 90 天的缓存命中率、成功率、平均返回时间、Token 消耗和每日趋势。历史调用沿用已有的状态和用量；缓存与耗时自升级后开始采集。[指标定义](docs/FEATURES.md#转发看板指标)
+### 在目标服务器配置 Codex CLI
 
-### 临时启动一个 Codex CLI 会话
+在签发成功的弹窗中下载已配置的脚本，传到已安装 Codex CLI 的目标 Linux 或 macOS 机器，使用运行 Codex 的账号执行：
 
-在已有项目目录运行下面的 zsh 示例。将示例域名换成页面上复制的 Base URL，将 `已启用的模型ID` 换成来源中的精确模型名。提示输入时粘贴开发机的转发密钥。所有 provider 参数仅作用于这次命令，桌面 App 和已有 CLI 的默认配置都可继续使用。[Codex 配置参考](https://developers.openai.com/codex/config-reference)
-
-```zsh
-(
-  read -rs 'DRIFT_CODEX_KEY?粘贴开发机转发密钥并回车：'
-  printf '\n'
-  export DRIFT_CODEX_KEY
-  codex --no-daemon -s read-only -m '已启用的模型ID' \
-    -c 'model_provider="drift"' \
-    -c 'model_providers.drift.name="Drift Space"' \
-    -c 'model_providers.drift.base_url="https://drift.example.com/api/openai/v1"' \
-    -c 'model_providers.drift.env_key="DRIFT_CODEX_KEY"' \
-    -c 'model_providers.drift.wire_api="responses"' \
-    -c 'model_providers.drift.supports_websockets=false'
-)
+```sh
+bash install-codex-drift.sh
 ```
 
-验证时，在包含 README.md 的项目里先问「请实际读取 README.md，列出前两个标题」。在同一会话追问「再读一次文件，引用第二个标题下面的第一句」。检查工具输出和两次回答是否与开发机上的文件一致。这两步会向 OpenAI 发起模型请求。Codex 在开发机上按本地权限读取文件，并通过网关把相关内容与工具结果送给模型；网站的「统计」中可按 `[OpenAI Gateway]` 识别用量。
+下载文件包含本次签发的 Drift Key，请按设备凭据保管。也可以复制弹窗提供的安装命令，在目标终端执行，按提示粘贴 Drift Key。安装后在项目目录运行：
 
-此入口支持模型列表、Responses 和 Chat Completions 的 JSON / SSE。客户端需携带历史和工具结果来续问。接口范围、模型权限和并发设置见[网关契约](docs/FEATURES.md#openai-api-转发)。
+```sh
+~/.local/bin/codex-drift
+```
+
+启动器使用独立的 Codex 配置。可传入 `-m 模型ID` 选择 OpenAI 项目可访问的 Codex 兼容模型，或附加 `-s read-only` 试读项目。在含有 README.md 的项目里，可先让 Codex 实际读取该文件、列出前两个标题，再在同一会话追问第二个标题下的第一句话。[Codex 配置参考](https://developers.openai.com/codex/config-reference)
+
+管理员从「统计 → 用量统计 → OpenAI 转发看板」查看本人签发密钥的调用，也可从转发设置页打开。看板提供最近 7、30 或 90 天的缓存命中率、成功率、平均返回时间、Token 消耗和每日趋势。[指标定义与接口范围](docs/FEATURES.md#转发看板指标)
 
 ## 聊天并发与再次生成
 
